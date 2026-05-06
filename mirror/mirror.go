@@ -23,6 +23,9 @@ func EnsureRepo(ctx context.Context, opts Options) error {
 		return errors.New("repo path is required")
 	}
 	if _, err := os.Stat(filepath.Join(opts.RepoPath, ".git")); err == nil {
+		if opts.Remote != "" {
+			return setOrigin(ctx, opts)
+		}
 		return nil
 	}
 	if opts.Remote != "" {
@@ -49,6 +52,17 @@ func EnsureRepo(ctx context.Context, opts Options) error {
 	return nil
 }
 
+func EnsureRemote(ctx context.Context, opts Options) error {
+	opts = normalize(opts)
+	if opts.Remote == "" {
+		return errors.New("remote is required")
+	}
+	if err := EnsureRepo(ctx, opts); err != nil {
+		return err
+	}
+	return setOrigin(ctx, opts)
+}
+
 func Pull(ctx context.Context, opts Options) error {
 	opts = normalize(opts)
 	if opts.Remote == "" {
@@ -67,19 +81,51 @@ func Pull(ctx context.Context, opts Options) error {
 	return run(ctx, opts.RepoPath, opts.Git, "checkout", "-B", opts.Branch, "origin/"+opts.Branch)
 }
 
+func PullCurrent(ctx context.Context, opts Options) error {
+	opts = normalize(opts)
+	if opts.Remote != "" {
+		return Pull(ctx, opts)
+	}
+	if err := EnsureRepo(ctx, opts); err != nil {
+		return err
+	}
+	if err := run(ctx, opts.RepoPath, opts.Git, "fetch", "--prune", "origin"); err != nil {
+		return err
+	}
+	if _, err := output(ctx, opts.RepoPath, opts.Git, "rev-parse", "--verify", "refs/heads/"+opts.Branch); err != nil {
+		return run(ctx, opts.RepoPath, opts.Git, "checkout", "-B", opts.Branch, "origin/"+opts.Branch)
+	}
+	if err := run(ctx, opts.RepoPath, opts.Git, "checkout", opts.Branch); err != nil {
+		return err
+	}
+	return run(ctx, opts.RepoPath, opts.Git, "pull", "--ff-only", "origin", opts.Branch)
+}
+
 func Commit(ctx context.Context, opts Options, message string) (bool, error) {
+	return CommitPaths(ctx, opts, message, []string{"."})
+}
+
+func CommitPaths(ctx context.Context, opts Options, message string, paths []string) (bool, error) {
 	opts = normalize(opts)
 	if message == "" {
 		message = "archive: update snapshot"
 	}
-	if err := run(ctx, opts.RepoPath, opts.Git, "add", "."); err != nil {
-		return false, err
-	}
-	dirty, err := Dirty(ctx, opts)
+	pathspecs, err := cleanPathspecs(paths)
 	if err != nil {
 		return false, err
 	}
-	if !dirty {
+	if len(pathspecs) == 0 {
+		return false, nil
+	}
+	args := append([]string{"add", "--"}, pathspecs...)
+	if err := run(ctx, opts.RepoPath, opts.Git, args...); err != nil {
+		return false, err
+	}
+	staged, err := staged(ctx, opts)
+	if err != nil {
+		return false, err
+	}
+	if !staged {
 		return false, nil
 	}
 	if err := run(ctx, opts.RepoPath, opts.Git,
@@ -117,6 +163,37 @@ func Dirty(ctx context.Context, opts Options) (bool, error) {
 	return strings.TrimSpace(out) != "", nil
 }
 
+func CleanSQLiteSidecars(rootDir string) (int, error) {
+	rootDir = strings.TrimSpace(rootDir)
+	if rootDir == "" {
+		return 0, errors.New("root dir is required")
+	}
+	count := 0
+	err := filepath.WalkDir(rootDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !isSQLiteSidecar(path) {
+			return nil
+		}
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("remove sqlite sidecar %s: %w", path, err)
+		}
+		count++
+		return nil
+	})
+	if err != nil {
+		return count, fmt.Errorf("clean sqlite sidecars: %w", err)
+	}
+	return count, nil
+}
+
 func normalize(opts Options) Options {
 	opts.RepoPath = strings.TrimSpace(opts.RepoPath)
 	opts.Remote = strings.TrimSpace(opts.Remote)
@@ -129,6 +206,63 @@ func normalize(opts Options) Options {
 		opts.Git = "git"
 	}
 	return opts
+}
+
+func setOrigin(ctx context.Context, opts Options) error {
+	current, err := output(ctx, opts.RepoPath, opts.Git, "remote", "get-url", "origin")
+	if err != nil {
+		return run(ctx, opts.RepoPath, opts.Git, "remote", "add", "origin", opts.Remote)
+	}
+	if strings.TrimSpace(current) == opts.Remote {
+		return nil
+	}
+	return run(ctx, opts.RepoPath, opts.Git, "remote", "set-url", "origin", opts.Remote)
+}
+
+func cleanPathspecs(paths []string) ([]string, error) {
+	var out []string
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if filepath.IsAbs(path) {
+			return nil, fmt.Errorf("commit path %q must be relative", path)
+		}
+		clean := filepath.Clean(path)
+		if clean == "." {
+			out = append(out, ".")
+			continue
+		}
+		if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("commit path %q must stay inside the repo", path)
+		}
+		out = append(out, filepath.ToSlash(clean))
+	}
+	return out, nil
+}
+
+func staged(ctx context.Context, opts Options) (bool, error) {
+	opts = normalize(opts)
+	out, err := output(ctx, opts.RepoPath, opts.Git, "diff", "--cached", "--quiet")
+	if err == nil {
+		return false, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return true, nil
+	}
+	return false, fmt.Errorf("git diff --cached --quiet: %w\n%s", err, strings.TrimSpace(out))
+}
+
+func isSQLiteSidecar(path string) bool {
+	name := filepath.Base(path)
+	return strings.HasSuffix(name, ".db-wal") ||
+		strings.HasSuffix(name, ".db-shm") ||
+		strings.HasSuffix(name, ".sqlite-wal") ||
+		strings.HasSuffix(name, ".sqlite-shm") ||
+		strings.HasSuffix(name, ".sqlite3-wal") ||
+		strings.HasSuffix(name, ".sqlite3-shm")
 }
 
 func run(ctx context.Context, dir, git string, args ...string) error {
