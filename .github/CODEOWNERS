@@ -1,0 +1,10 @@
+# Protect ownership and automation rules.
+/.github/CODEOWNERS @openclaw/openclaw-secops
+/.github/dependabot.yml @openclaw/openclaw-secops
+/.github/workflows/ @openclaw/openclaw-secops
+/AGENTS.md @openclaw/openclaw-secops
+
+# Release and package integrity surfaces.
+/docs/publishing.md @openclaw/openclaw-secops
+/go.mod @openclaw/openclaw-secops
+/go.sum @openclaw/openclaw-secops
