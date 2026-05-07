@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bump routine Go module dependencies.
+
 ## v0.4.1 - 2026-05-06
 
 - Add GitHub Sponsors funding metadata.
