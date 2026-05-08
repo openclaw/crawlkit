@@ -11,7 +11,7 @@ safe desktop-cache snapshot utilities.
 ## Install
 
 ```bash
-go get github.com/vincentkoc/crawlkit@latest
+go get github.com/openclaw/crawlkit@latest
 ```
 
 Go packages are published by tagging this repository. There is no separate
@@ -22,7 +22,7 @@ See `docs/boundary.md` for the crawlkit-versus-app ownership boundary.
 
 - `config`: standard TOML config paths, runtime dirs, and token diagnostics.
 - `store`: SQLite open/read-only/transaction/query helpers.
-- `snapshot`: `manifest.json` plus JSONL/Gzip table snapshot export and import.
+- `snapshot`: `manifest.json` plus JSONL/Gzip table snapshot export, file fingerprints, full import, and planned incremental shard import.
 - `mirror`: clone/init/pull/commit/push helpers for private snapshot repos.
 - `state`: generic crawler cursor and freshness records.
 - `output`: text/json/log output helpers.

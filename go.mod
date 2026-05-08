@@ -1,4 +1,4 @@
-module github.com/vincentkoc/crawlkit
+module github.com/openclaw/crawlkit
 
 go 1.26.2
 

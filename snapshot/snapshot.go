@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vincentkoc/crawlkit/store"
+	"github.com/openclaw/crawlkit/store"
 )
 
 const ManifestName = "manifest.json"
@@ -38,12 +41,15 @@ type ImportOptions struct {
 	DeleteTables []string
 	DeleteTable  DeleteFunc
 	Filter       RowFilter
+	ImportRow    RowImportFunc
 	Progress     func(ImportProgress)
 	BeforeImport func(context.Context, *sql.Tx) error
 	AfterImport  func(context.Context, *sql.Tx) error
 }
 
 type RowFilter func(table string, row map[string]any) (bool, error)
+
+type RowImportFunc func(ctx context.Context, tx *sql.Tx, table string, row map[string]any) error
 
 type DeleteFunc func(ctx context.Context, tx *sql.Tx, table string) error
 
@@ -72,14 +78,57 @@ type Manifest struct {
 }
 
 type TableManifest struct {
-	Name    string   `json:"name"`
-	File    string   `json:"file,omitempty"`
-	Files   []string `json:"files"`
-	Columns []string `json:"columns"`
-	Rows    int      `json:"rows"`
+	Name          string         `json:"name"`
+	File          string         `json:"file,omitempty"`
+	Files         []string       `json:"files"`
+	FileManifests []FileManifest `json:"file_manifests,omitempty"`
+	Columns       []string       `json:"columns"`
+	Rows          int            `json:"rows"`
+}
+
+type FileManifest struct {
+	Path   string `json:"path"`
+	Rows   int    `json:"rows"`
+	Size   int64  `json:"size,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 var ErrNoManifest = errors.New("pack manifest not found")
+
+type TableImportMode string
+
+const (
+	TableImportSkip    TableImportMode = "skip"
+	TableImportReplace TableImportMode = "replace"
+	TableImportFiles   TableImportMode = "files"
+)
+
+type ImportPlan struct {
+	Full   bool
+	Reason string
+	Tables []TableImportPlan
+}
+
+type TableImportPlan struct {
+	Table  TableManifest
+	Mode   TableImportMode
+	Files  []FileManifest
+	Reason string
+}
+
+type IncrementalImportOptions struct {
+	DB           *sql.DB
+	RootDir      string
+	Previous     Manifest
+	Current      Manifest
+	Plan         ImportPlan
+	DeleteTable  DeleteFunc
+	Filter       RowFilter
+	ImportRow    RowImportFunc
+	Progress     func(ImportProgress)
+	BeforeImport func(context.Context, *sql.Tx) error
+	AfterImport  func(context.Context, *sql.Tx) error
+}
 
 func Export(ctx context.Context, opts ExportOptions) (Manifest, error) {
 	if opts.DB == nil {
@@ -170,7 +219,7 @@ func Import(ctx context.Context, opts ImportOptions) (Manifest, error) {
 		}
 	}
 	for _, table := range manifest.Tables {
-		rows, err := importTable(ctx, tx, opts.RootDir, table, opts.Filter, opts.Progress)
+		rows, err := importTable(ctx, tx, opts.RootDir, table, opts.Filter, opts.ImportRow, opts.Progress)
 		if err != nil {
 			return Manifest{}, err
 		}
@@ -186,6 +235,130 @@ func Import(ctx context.Context, opts ImportOptions) (Manifest, error) {
 	}
 	committed = true
 	return manifest, nil
+}
+
+func PlanIncrementalImport(previous, current Manifest) ImportPlan {
+	if current.Version != previous.Version {
+		return ImportPlan{Full: true, Reason: "manifest version changed"}
+	}
+	previousTables := make(map[string]TableManifest, len(previous.Tables))
+	for _, table := range previous.Tables {
+		previousTables[table.Name] = table
+	}
+	currentTables := make(map[string]TableManifest, len(current.Tables))
+	for _, table := range current.Tables {
+		currentTables[table.Name] = table
+	}
+	for name := range previousTables {
+		if _, ok := currentTables[name]; !ok {
+			return ImportPlan{Full: true, Reason: "table removed: " + name}
+		}
+	}
+	plan := ImportPlan{}
+	for _, table := range current.Tables {
+		previousTable, ok := previousTables[table.Name]
+		if !ok {
+			plan.Tables = append(plan.Tables, TableImportPlan{
+				Table:  table,
+				Mode:   TableImportReplace,
+				Files:  tableFileManifests(table),
+				Reason: "new table",
+			})
+			continue
+		}
+		tablePlan := planTableIncrement(previousTable, table)
+		plan.Tables = append(plan.Tables, tablePlan)
+	}
+	return plan
+}
+
+func (p ImportPlan) Changed() bool {
+	if p.Full {
+		return true
+	}
+	for _, table := range p.Tables {
+		if table.Mode != TableImportSkip {
+			return true
+		}
+	}
+	return false
+}
+
+func ImportIncremental(ctx context.Context, opts IncrementalImportOptions) (Manifest, ImportPlan, error) {
+	if opts.DB == nil {
+		return Manifest{}, ImportPlan{}, errors.New("db is required")
+	}
+	current := opts.Current
+	var err error
+	if len(current.Tables) == 0 {
+		current, err = ReadManifest(opts.RootDir)
+		if err != nil {
+			return Manifest{}, ImportPlan{}, err
+		}
+	}
+	plan := opts.Plan
+	if len(plan.Tables) == 0 && !plan.Full && plan.Reason == "" {
+		plan = PlanIncrementalImport(opts.Previous, current)
+	}
+	if plan.Full {
+		return Manifest{}, plan, errors.New("incremental import requires a non-full plan: " + plan.Reason)
+	}
+	if !plan.Changed() {
+		return current, plan, nil
+	}
+	tx, err := opts.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return Manifest{}, plan, fmt.Errorf("begin incremental import tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if opts.BeforeImport != nil {
+		if err := opts.BeforeImport(ctx, tx); err != nil {
+			return Manifest{}, plan, err
+		}
+	}
+	for _, tablePlan := range plan.Tables {
+		switch tablePlan.Mode {
+		case TableImportSkip:
+			continue
+		case TableImportReplace:
+			if err := deleteImportTable(ctx, tx, tablePlan.Table.Name, opts.DeleteTable); err != nil {
+				return Manifest{}, plan, err
+			}
+			rows, err := importTable(ctx, tx, opts.RootDir, tablePlan.Table, opts.Filter, opts.ImportRow, opts.Progress)
+			if err != nil {
+				return Manifest{}, plan, err
+			}
+			reportImportProgress(opts.Progress, ImportProgress{Phase: "table_done", Table: tablePlan.Table.Name, Rows: rows, TotalRows: tablePlan.Table.Rows})
+		case TableImportFiles:
+			table := tablePlan.Table
+			table.File = ""
+			table.Files = fileManifestPaths(tablePlan.Files)
+			table.FileManifests = tablePlan.Files
+			table.Rows = fileManifestRows(tablePlan.Files)
+			rows, err := importTable(ctx, tx, opts.RootDir, table, opts.Filter, opts.ImportRow, opts.Progress)
+			if err != nil {
+				return Manifest{}, plan, err
+			}
+			reportImportProgress(opts.Progress, ImportProgress{Phase: "table_done", Table: tablePlan.Table.Name, Rows: rows, TotalRows: table.Rows})
+		default:
+			return Manifest{}, plan, fmt.Errorf("unknown table import mode %q for %s", tablePlan.Mode, tablePlan.Table.Name)
+		}
+	}
+	if opts.AfterImport != nil {
+		if err := opts.AfterImport(ctx, tx); err != nil {
+			return Manifest{}, plan, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return Manifest{}, plan, fmt.Errorf("commit incremental import tx: %w", err)
+	}
+	committed = true
+	return current, plan, nil
 }
 
 func ReadManifest(rootDir string) (Manifest, error) {
@@ -278,10 +451,10 @@ func exportTable(ctx context.Context, db *sql.DB, rootDir, table string, maxShar
 	if err := writer.close(); err != nil {
 		return TableManifest{}, err
 	}
-	return TableManifest{Name: table, Files: writer.files, Columns: cols, Rows: count}, nil
+	return TableManifest{Name: table, Files: writer.files, FileManifests: writer.fileManifests, Columns: cols, Rows: count}, nil
 }
 
-func importTable(ctx context.Context, tx *sql.Tx, rootDir string, table TableManifest, filter RowFilter, progress func(ImportProgress)) (int, error) {
+func importTable(ctx context.Context, tx *sql.Tx, rootDir string, table TableManifest, filter RowFilter, importRow RowImportFunc, progress func(ImportProgress)) (int, error) {
 	files := table.Files
 	if len(files) == 0 && strings.TrimSpace(table.File) != "" {
 		files = []string{table.File}
@@ -299,7 +472,7 @@ func importTable(ctx context.Context, tx *sql.Tx, rootDir string, table TableMan
 		}
 		fileProgress := ImportProgress{Phase: "file_start", Table: table.Name, File: rel, FileIndex: index + 1, FileCount: len(files), TotalRows: table.Rows}
 		reportImportProgress(progress, fileProgress)
-		rows, err := importJSONLGzip(ctx, tx, file, table.Name, filter)
+		rows, err := importJSONLGzip(ctx, tx, file, table.Name, filter, importRow)
 		if err != nil {
 			_ = file.Close()
 			return totalRows, err
@@ -315,7 +488,7 @@ func importTable(ctx context.Context, tx *sql.Tx, rootDir string, table TableMan
 	return totalRows, nil
 }
 
-func importJSONLGzip(ctx context.Context, tx *sql.Tx, reader io.Reader, table string, filter RowFilter) (int, error) {
+func importJSONLGzip(ctx context.Context, tx *sql.Tx, reader io.Reader, table string, filter RowFilter, importRow RowImportFunc) (int, error) {
 	gz, err := gzip.NewReader(reader)
 	if err != nil {
 		return 0, fmt.Errorf("open gzip for %s: %w", table, err)
@@ -341,7 +514,11 @@ func importJSONLGzip(ctx context.Context, tx *sql.Tx, reader io.Reader, table st
 				continue
 			}
 		}
-		if err := insertRow(ctx, tx, table, row); err != nil {
+		importFunc := importRow
+		if importFunc == nil {
+			importFunc = insertRow
+		}
+		if err := importFunc(ctx, tx, table, row); err != nil {
 			return rows, err
 		}
 		rows++
@@ -356,6 +533,16 @@ func reportImportProgress(progress func(ImportProgress), event ImportProgress) {
 	if progress != nil {
 		progress(event)
 	}
+}
+
+func deleteImportTable(ctx context.Context, tx *sql.Tx, table string, deleteTable DeleteFunc) error {
+	if deleteTable != nil {
+		return deleteTable(ctx, tx, table)
+	}
+	if _, err := tx.ExecContext(ctx, "delete from "+store.QuoteIdent(table)); err != nil {
+		return fmt.Errorf("clear table %s: %w", table, err)
+	}
+	return nil
 }
 
 func insertRow(ctx context.Context, tx *sql.Tx, table string, row map[string]any) error {
@@ -391,8 +578,11 @@ type shardWriter struct {
 	nextShard     int
 	rowsInShard   int
 	files         []string
+	fileManifests []FileManifest
+	currentRel    string
 	file          *os.File
 	counter       *countingWriter
+	hasher        hash.Hash
 	gz            *gzip.Writer
 }
 
@@ -415,8 +605,10 @@ func (w *shardWriter) open() error {
 	w.nextShard++
 	w.rowsInShard = 0
 	w.files = append(w.files, rel)
+	w.currentRel = rel
 	w.file = file
-	w.counter = &countingWriter{w: file}
+	w.hasher = sha256.New()
+	w.counter = &countingWriter{w: io.MultiWriter(file, w.hasher)}
 	w.gz = gzip.NewWriter(w.counter)
 	return nil
 }
@@ -459,6 +651,17 @@ func (w *shardWriter) close() error {
 	if closeErr != nil {
 		return fmt.Errorf("close shard: %w", closeErr)
 	}
+	if w.currentRel != "" && w.counter != nil && w.hasher != nil {
+		w.fileManifests = append(w.fileManifests, FileManifest{
+			Path:   w.currentRel,
+			Rows:   w.rowsInShard,
+			Size:   w.counter.n,
+			SHA256: hex.EncodeToString(w.hasher.Sum(nil)),
+		})
+	}
+	w.currentRel = ""
+	w.counter = nil
+	w.hasher = nil
 	return nil
 }
 
@@ -480,4 +683,120 @@ func exportValue(value any) any {
 	default:
 		return v
 	}
+}
+
+func planTableIncrement(previous, current TableManifest) TableImportPlan {
+	if !sameStrings(previous.Columns, current.Columns) {
+		return TableImportPlan{Table: current, Mode: TableImportReplace, Files: tableFileManifests(current), Reason: "columns changed"}
+	}
+	previousFiles := tableFileManifests(previous)
+	currentFiles := tableFileManifests(current)
+	if len(previousFiles) == 0 && len(currentFiles) == 0 {
+		return TableImportPlan{Table: current, Mode: TableImportSkip, Reason: "unchanged"}
+	}
+	if !allFilesHaveFingerprints(previousFiles) || !allFilesHaveFingerprints(currentFiles) {
+		return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "missing file fingerprints"}
+	}
+	if sameFileManifests(previousFiles, currentFiles) {
+		return TableImportPlan{Table: current, Mode: TableImportSkip, Reason: "unchanged"}
+	}
+	if len(currentFiles) < len(previousFiles) {
+		return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "files removed"}
+	}
+	for i := 0; i < len(previousFiles)-1; i++ {
+		if !sameFileManifest(previousFiles[i], currentFiles[i]) {
+			return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "non-tail file changed"}
+		}
+	}
+	changed := make([]FileManifest, 0, len(currentFiles)-len(previousFiles)+1)
+	if len(previousFiles) > 0 {
+		oldTail := previousFiles[len(previousFiles)-1]
+		newTail := currentFiles[len(previousFiles)-1]
+		if oldTail.Path != newTail.Path {
+			return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "tail path changed"}
+		}
+		if !sameFileManifest(oldTail, newTail) {
+			if newTail.Rows < oldTail.Rows {
+				return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "tail rows removed"}
+			}
+			changed = append(changed, newTail)
+		}
+	}
+	for i := len(previousFiles); i < len(currentFiles); i++ {
+		changed = append(changed, currentFiles[i])
+	}
+	if len(changed) == 0 {
+		return TableImportPlan{Table: current, Mode: TableImportSkip, Reason: "unchanged"}
+	}
+	return TableImportPlan{Table: current, Mode: TableImportFiles, Files: changed, Reason: "tail files changed"}
+}
+
+func tableFileManifests(table TableManifest) []FileManifest {
+	if len(table.FileManifests) > 0 {
+		out := make([]FileManifest, len(table.FileManifests))
+		copy(out, table.FileManifests)
+		return out
+	}
+	files := table.Files
+	if len(files) == 0 && strings.TrimSpace(table.File) != "" {
+		files = []string{table.File}
+	}
+	out := make([]FileManifest, 0, len(files))
+	for _, file := range files {
+		out = append(out, FileManifest{Path: file})
+	}
+	return out
+}
+
+func allFilesHaveFingerprints(files []FileManifest) bool {
+	for _, file := range files {
+		if file.Path == "" || file.SHA256 == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func sameFileManifests(a, b []FileManifest) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !sameFileManifest(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameFileManifest(a, b FileManifest) bool {
+	return a.Path == b.Path && a.Rows == b.Rows && a.Size == b.Size && a.SHA256 == b.SHA256
+}
+
+func fileManifestPaths(files []FileManifest) []string {
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		paths = append(paths, file.Path)
+	}
+	return paths
+}
+
+func fileManifestRows(files []FileManifest) int {
+	rows := 0
+	for _, file := range files {
+		rows += file.Rows
+	}
+	return rows
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

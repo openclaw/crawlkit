@@ -28,8 +28,9 @@ parsers, and product-specific ranking in the apps.
   schema-version checks, transactions, safe identifier quoting, and generic
   query helpers.
 - Snapshot packing: manifest format, JSONL/Gzip shards, table filters,
-  import progress, sidecar registration, backward-compatible manifest reads,
-  and import callbacks.
+  per-file fingerprints, import progress, incremental import planning,
+  sidecar registration, backward-compatible manifest reads, and import
+  callbacks.
 - Git mirror mechanics: clone/init, pull, origin management, path-scoped
   commits, push retry behavior, and portable SQLite checkout cleanup.
 - Sync freshness semantics: cursor/freshness records, stale checks, manifest

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vincentkoc/crawlkit/store"
+	"github.com/openclaw/crawlkit/store"
 )
 
 func TestExportImportTablesWithFilter(t *testing.T) {
@@ -94,6 +94,158 @@ func TestExportRotatesShards(t *testing.T) {
 	}
 	if len(manifest.Tables[0].Files) < 2 {
 		t.Fatalf("expected multiple shards, got %+v", manifest.Tables[0].Files)
+	}
+	if len(manifest.Tables[0].FileManifests) != len(manifest.Tables[0].Files) {
+		t.Fatalf("file manifests = %+v, files = %+v", manifest.Tables[0].FileManifests, manifest.Tables[0].Files)
+	}
+	for _, file := range manifest.Tables[0].FileManifests {
+		if file.Path == "" || file.Rows == 0 || file.Size == 0 || len(file.SHA256) != 64 {
+			t.Fatalf("bad file manifest = %+v", file)
+		}
+	}
+}
+
+func TestPlanIncrementalImportDetectsTailFiles(t *testing.T) {
+	previous := Manifest{
+		Version: 1,
+		Tables: []TableManifest{{
+			Name:    "things",
+			Columns: []string{"id", "body"},
+			Rows:    2,
+			Files:   []string{"tables/things/000000.jsonl.gz"},
+			FileManifests: []FileManifest{{
+				Path:   "tables/things/000000.jsonl.gz",
+				Rows:   2,
+				Size:   100,
+				SHA256: "old",
+			}},
+		}},
+	}
+	current := Manifest{
+		Version: 1,
+		Tables: []TableManifest{{
+			Name:    "things",
+			Columns: []string{"id", "body"},
+			Rows:    3,
+			Files:   []string{"tables/things/000000.jsonl.gz"},
+			FileManifests: []FileManifest{{
+				Path:   "tables/things/000000.jsonl.gz",
+				Rows:   3,
+				Size:   120,
+				SHA256: "new",
+			}},
+		}},
+	}
+	plan := PlanIncrementalImport(previous, current)
+	if plan.Full || len(plan.Tables) != 1 {
+		t.Fatalf("plan = %+v", plan)
+	}
+	table := plan.Tables[0]
+	if table.Mode != TableImportFiles || len(table.Files) != 1 || table.Files[0].SHA256 != "new" {
+		t.Fatalf("table plan = %+v", table)
+	}
+}
+
+func TestPlanIncrementalImportReplacesUnsafeChanges(t *testing.T) {
+	previous := Manifest{
+		Version: 1,
+		Tables: []TableManifest{{
+			Name:    "things",
+			Columns: []string{"id", "body"},
+			Rows:    2,
+			Files:   []string{"tables/things/000000.jsonl.gz"},
+			FileManifests: []FileManifest{{
+				Path:   "tables/things/000000.jsonl.gz",
+				Rows:   2,
+				Size:   100,
+				SHA256: "old",
+			}},
+		}},
+	}
+	current := Manifest{
+		Version: 1,
+		Tables: []TableManifest{{
+			Name:    "things",
+			Columns: []string{"id", "body"},
+			Rows:    1,
+			Files:   []string{"tables/things/000000.jsonl.gz"},
+			FileManifests: []FileManifest{{
+				Path:   "tables/things/000000.jsonl.gz",
+				Rows:   1,
+				Size:   100,
+				SHA256: "new",
+			}},
+		}},
+	}
+	plan := PlanIncrementalImport(previous, current)
+	if plan.Full || len(plan.Tables) != 1 || plan.Tables[0].Mode != TableImportReplace {
+		t.Fatalf("plan = %+v", plan)
+	}
+}
+
+func TestImportIncrementalImportsOnlyPlannedFiles(t *testing.T) {
+	ctx := context.Background()
+	src, err := store.Open(ctx, store.Options{
+		Path:   filepath.Join(t.TempDir(), "src.db"),
+		Schema: `create table things(id text primary key, body text not null);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	mustExec(t, src.DB(), `insert into things(id, body) values('one', 'same')`)
+	mustExec(t, src.DB(), `insert into things(id, body) values('two', 'old')`)
+	root := t.TempDir()
+	previous, err := Export(ctx, ExportOptions{
+		DB:      src.DB(),
+		RootDir: root,
+		Tables:  []string{"things"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dst, err := store.Open(ctx, store.Options{
+		Path:   filepath.Join(t.TempDir(), "dst.db"),
+		Schema: `create table things(id text primary key, body text not null);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	if _, err := Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root}); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, dst.DB(), `insert into things(id, body) values('local', 'keep')`)
+
+	mustExec(t, src.DB(), `update things set body = 'new' where id = 'two'`)
+	mustExec(t, src.DB(), `insert into things(id, body) values('three', 'added')`)
+	current, err := Export(ctx, ExportOptions{
+		DB:      src.DB(),
+		RootDir: root,
+		Tables:  []string{"things"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, plan, err := ImportIncremental(ctx, IncrementalImportOptions{
+		DB:       dst.DB(),
+		RootDir:  root,
+		Previous: previous,
+		Current:  current,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Tables) != 1 || plan.Tables[0].Mode != TableImportFiles {
+		t.Fatalf("plan = %+v", plan)
+	}
+	var got string
+	if err := dst.DB().QueryRowContext(ctx, `select group_concat(id || ':' || body, ',') from (select id, body from things order by id)`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "local:keep,one:same,three:added,two:new" {
+		t.Fatalf("things = %q", got)
 	}
 }
 

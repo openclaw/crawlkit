@@ -41,7 +41,7 @@ GOWORK=off go test -count=1 ./...
 For release readiness, also verify the public module tag:
 
 ```bash
-GOPROXY=https://proxy.golang.org GONOSUMDB= go list -m github.com/vincentkoc/crawlkit@v0.4.0
+GOPROXY=https://proxy.golang.org GONOSUMDB= go list -m github.com/openclaw/crawlkit@v0.5.0
 ```
 
 ## Downstream Compatibility
