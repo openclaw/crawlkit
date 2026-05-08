@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.5.1 - 2026-05-08
+
+- Add reusable `backup` helpers for age identities, encrypted JSONL/Gzip shards,
+  manifests, recipient tracking, shard hash verification, and stale shard
+  cleanup.
+
 - Add reusable `embed` providers for OpenAI, OpenAI-compatible endpoints,
   Ollama, and llama.cpp, including probe diagnostics and rate-limit errors.
 - Add reusable `vector` helpers for float32 blobs, dimension validation,

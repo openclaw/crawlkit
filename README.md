@@ -23,6 +23,7 @@ See `docs/boundary.md` for the crawlkit-versus-app ownership boundary.
 - `config`: standard TOML config paths, runtime dirs, and token diagnostics.
 - `store`: SQLite open/read-only/transaction/query helpers.
 - `snapshot`: `manifest.json` plus JSONL/Gzip table snapshot export, file fingerprints, full import, and planned incremental shard import.
+- `backup`: age-encrypted JSONL/Gzip shards, backup manifests, recipient/identity helpers, and shard restore verification.
 - `mirror`: clone/init/pull/commit/push helpers for private snapshot repos.
 - `state`: generic crawler cursor and freshness records.
 - `embed`: reusable OpenAI-compatible, Ollama, and llama.cpp embedding providers plus local probe diagnostics.
