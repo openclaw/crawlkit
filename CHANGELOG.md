@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.5.2 - 2026-05-11
+
 - Add opt-in platform-native config/runtime paths to `config.App`, with
   XDG/macOS defaults and migration-safe legacy path fallback.
 
