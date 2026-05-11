@@ -20,7 +20,8 @@ See `docs/boundary.md` for the crawlkit-versus-app ownership boundary.
 
 ## Packages
 
-- `config`: standard TOML config paths, runtime dirs, and token diagnostics.
+- `config`: standard TOML config paths, opt-in platform-native runtime dirs,
+  migration-safe legacy path fallback, and token diagnostics.
 - `store`: SQLite open/read-only/transaction/query helpers.
 - `snapshot`: `manifest.json` plus JSONL/Gzip table snapshot export, file fingerprints, full import, and planned incremental shard import.
 - `backup`: age-encrypted JSONL/Gzip shards, backup manifests, recipient/identity helpers, and shard restore verification.

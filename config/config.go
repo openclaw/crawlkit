@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
+	"github.com/adrg/xdg"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -15,6 +17,7 @@ type App struct {
 	ConfigEnv     string
 	BaseDir       string
 	LegacyBaseDir string
+	PlatformDirs  bool
 }
 
 type Paths struct {
@@ -40,6 +43,8 @@ type TokenDiagnostic struct {
 	Source  string `json:"source,omitempty"`
 }
 
+var xdgMu sync.Mutex
+
 func (a App) Normalize() (App, error) {
 	a.Name = strings.TrimSpace(a.Name)
 	if a.Name == "" {
@@ -48,7 +53,7 @@ func (a App) Normalize() (App, error) {
 	if a.ConfigEnv == "" {
 		a.ConfigEnv = strings.ToUpper(strings.ReplaceAll(a.Name, "-", "_")) + "_CONFIG"
 	}
-	if a.BaseDir == "" {
+	if a.BaseDir == "" && !a.PlatformDirs {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return App{}, err
@@ -63,6 +68,17 @@ func (a App) DefaultPaths() (Paths, error) {
 	if err != nil {
 		return Paths{}, err
 	}
+	paths := app.defaultPaths()
+	if app.PlatformDirs && strings.TrimSpace(app.BaseDir) == "" {
+		paths = app.withExistingLegacyPaths(paths)
+	}
+	return paths, nil
+}
+
+func (app App) defaultPaths() Paths {
+	if app.PlatformDirs && strings.TrimSpace(app.BaseDir) == "" {
+		return platformPaths(app.Name)
+	}
 	base := ExpandHome(app.BaseDir)
 	return Paths{
 		BaseDir:    base,
@@ -71,7 +87,7 @@ func (a App) DefaultPaths() (Paths, error) {
 		CacheDir:   filepath.Join(base, "cache"),
 		LogDir:     filepath.Join(base, "logs"),
 		ShareDir:   filepath.Join(base, "share"),
-	}, nil
+	}
 }
 
 func (a App) LegacyPaths() (Paths, bool, error) {
@@ -104,9 +120,13 @@ func (a App) ResolveConfigPath(flagPath string) (string, error) {
 	if envPath := strings.TrimSpace(os.Getenv(app.ConfigEnv)); envPath != "" {
 		return ExpandHome(envPath), nil
 	}
-	paths, err := app.DefaultPaths()
-	if err != nil {
-		return "", err
+	paths := app.defaultPaths()
+	if app.PlatformDirs && strings.TrimSpace(app.BaseDir) == "" {
+		if legacy, ok, err := app.LegacyPaths(); err != nil {
+			return "", err
+		} else if ok && pathExists(legacy.ConfigPath) && !pathExists(paths.ConfigPath) {
+			return legacy.ConfigPath, nil
+		}
 	}
 	return paths.ConfigPath, nil
 }
@@ -157,6 +177,53 @@ func EnsureRuntimeDirs(cfg RuntimeConfig) error {
 		}
 	}
 	return nil
+}
+
+func platformPaths(name string) Paths {
+	xdgMu.Lock()
+	defer xdgMu.Unlock()
+
+	xdg.Reload()
+	dataDir := filepath.Join(xdg.DataHome, name)
+	configDir := filepath.Join(xdg.ConfigHome, name)
+	cacheDir := filepath.Join(xdg.CacheHome, name)
+	stateDir := filepath.Join(xdg.StateHome, name)
+	return Paths{
+		BaseDir:    dataDir,
+		ConfigPath: filepath.Join(configDir, "config.toml"),
+		DBPath:     filepath.Join(dataDir, name+".db"),
+		CacheDir:   cacheDir,
+		LogDir:     filepath.Join(stateDir, "logs"),
+		ShareDir:   filepath.Join(dataDir, "share"),
+	}
+}
+
+func (a App) withExistingLegacyPaths(paths Paths) Paths {
+	legacy, ok, err := a.LegacyPaths()
+	if err != nil || !ok {
+		return paths
+	}
+	if pathExists(legacy.ConfigPath) && !pathExists(paths.ConfigPath) {
+		paths.ConfigPath = legacy.ConfigPath
+	}
+	if pathExists(legacy.DBPath) && !pathExists(paths.DBPath) {
+		paths.DBPath = legacy.DBPath
+	}
+	if pathExists(legacy.CacheDir) && !pathExists(paths.CacheDir) {
+		paths.CacheDir = legacy.CacheDir
+	}
+	if pathExists(legacy.LogDir) && !pathExists(paths.LogDir) {
+		paths.LogDir = legacy.LogDir
+	}
+	if pathExists(legacy.ShareDir) && !pathExists(paths.ShareDir) {
+		paths.ShareDir = legacy.ShareDir
+	}
+	return paths
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func LoadTOML(path string, dst any) error {

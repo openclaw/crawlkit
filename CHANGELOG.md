@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add opt-in platform-native config/runtime paths to `config.App`, with
+  XDG/macOS defaults and migration-safe legacy path fallback.
+
 ## v0.5.1 - 2026-05-08
 
 - Add reusable `backup` helpers for age identities, encrypted JSONL/Gzip shards,

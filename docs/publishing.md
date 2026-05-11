@@ -8,10 +8,10 @@ Go modules are published from git tags. There is no separate registry upload.
 2. Run the crawlkit gate:
 
 ```bash
-go mod tidy
+GOWORK=off go mod tidy
 git diff --exit-code -- go.mod go.sum
-go vet ./...
-go test ./...
+GOWORK=off go vet ./...
+GOWORK=off go test -count=1 ./...
 ```
 
 3. Update docs and changelogs in `crawlkit` plus every downstream app branch
@@ -21,23 +21,23 @@ go test ./...
 6. Tag the next semver release from `main`:
 
 ```bash
-git tag -s v0.5.0
+git tag -s v0.5.2
 git push origin main
-git push origin v0.5.0
+git push origin v0.5.2
 ```
 
 7. Prime and verify module proxy visibility:
 
 ```bash
-GOPROXY=https://proxy.golang.org go list -m github.com/openclaw/crawlkit@v0.5.0
-go list -m github.com/openclaw/crawlkit@v0.5.0
+GOPROXY=https://proxy.golang.org GONOSUMDB= go list -m github.com/openclaw/crawlkit@v0.5.2
+GOPROXY=https://proxy.golang.org go list -m github.com/openclaw/crawlkit@v0.5.2
 ```
 
 8. Bump downstream apps to the new tag and commit their `go.mod`/`go.sum` updates:
 
 ```bash
-go get github.com/openclaw/crawlkit@v0.5.0
-go mod tidy
+go get github.com/openclaw/crawlkit@v0.5.2
+GOWORK=off go mod tidy
 ```
 
 `pkg.go.dev` indexes public modules automatically after the tag is reachable.

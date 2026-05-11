@@ -22,8 +22,9 @@ parsers, and product-specific ranking in the apps.
 
 `crawlkit` should own these surfaces:
 
-- Config paths, TOML loading defaults, runtime directories, and token
-  diagnostics that are the same across apps.
+- Config paths, TOML loading defaults, opt-in platform-native runtime
+  directories, migration-safe legacy path fallback, and token diagnostics that
+  are the same across apps.
 - SQLite connection hygiene: read-only opens, busy timeouts, WAL pragmas,
   schema-version checks, transactions, safe identifier quoting, and generic
   query helpers.
