@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.6.0 - 2026-05-17
+
+- Add `releasecheck` helpers for cached GitHub release checks and safe stderr
+  update notices in downstream crawl app CLIs.
 
 ## v0.5.3 - 2026-05-17
 

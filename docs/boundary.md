@@ -43,6 +43,10 @@ parsers, and product-specific ranking in the apps.
   rebuild/optimize helpers, deferred refresh orchestration, and progress logs.
 - Terminal archive browsing primitives: pane layout, sorting, focus, mouse
   actions, menus, detail rendering primitives, and local/remote status chrome.
+- Provider-neutral release checks for crawl app binaries: latest GitHub release
+  fetches, local check caching, scripted-output suppression, and text notice
+  formatting. Apps still own their command names, version variables, and install
+  hints.
 - Safe read-only desktop-cache snapshot helpers. The provider-specific parsing
   of those snapshots stays in the apps.
 

@@ -29,6 +29,8 @@ See `docs/boundary.md` for the crawlkit-versus-app ownership boundary.
 - `state`: generic crawler cursor and freshness records.
 - `embed`: reusable OpenAI-compatible, Ollama, and llama.cpp embedding providers plus local probe diagnostics.
 - `vector`: float32 vector encoding, dimension validation, cosine scoring, top-k helpers, and reciprocal-rank fusion.
+- `releasecheck`: GitHub release checks, 24-hour cache handling, scripted-output
+  suppression, and stderr update notice formatting for crawl app CLIs.
 - `output`: text/json/log output helpers.
 - `control`: crawl app metadata, command manifests, status payloads, and
   database inventory for launchers and automation.
