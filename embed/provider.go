@@ -36,6 +36,8 @@ type Config struct {
 	APIKeyEnv      string
 	RequestTimeout string
 	MaxInputChars  int
+	Dimensions     int
+	UserAgent      string
 }
 
 type Provider interface {
@@ -46,11 +48,13 @@ type EmbeddingBatch struct {
 	Model      string
 	Dimensions int
 	Vectors    [][]float32
+	Vectors64  [][]float64
 }
 
 type HTTPError struct {
 	StatusCode int
 	Body       string
+	Header     http.Header
 }
 
 func (e *HTTPError) Error() string {
@@ -76,6 +80,8 @@ type Option func(*providerOptions)
 type providerOptions struct {
 	httpClient      *http.Client
 	timeoutOverride time.Duration
+	apiKeyOverride  *string
+	userAgent       string
 }
 
 type providerSettings struct {
@@ -84,6 +90,8 @@ type providerSettings struct {
 	BaseURL       string
 	APIKey        string
 	MaxInputChars int
+	Dimensions    int
+	UserAgent     string
 	Timeout       time.Duration
 	HTTPClient    *http.Client
 }
@@ -97,6 +105,19 @@ func WithHTTPClient(client *http.Client) Option {
 func WithRequestTimeout(timeout time.Duration) Option {
 	return func(opts *providerOptions) {
 		opts.timeoutOverride = timeout
+	}
+}
+
+func WithAPIKey(apiKey string) Option {
+	return func(opts *providerOptions) {
+		value := strings.TrimSpace(apiKey)
+		opts.apiKeyOverride = &value
+	}
+}
+
+func WithUserAgent(userAgent string) Option {
+	return func(opts *providerOptions) {
+		opts.userAgent = strings.TrimSpace(userAgent)
 	}
 }
 
@@ -194,9 +215,15 @@ func resolveProviderConfig(cfg Config, validateAPIKey bool, opts ...Option) (pro
 	default:
 		return providerSettings{}, fmt.Errorf("unsupported embedding provider %q", name)
 	}
-	apiKey, err := resolveAPIKey(name, cfg.APIKeyEnv, validateAPIKey)
-	if err != nil {
-		return providerSettings{}, err
+	apiKey := ""
+	if options.apiKeyOverride != nil {
+		apiKey = *options.apiKeyOverride
+	} else {
+		var err error
+		apiKey, err = resolveAPIKey(name, cfg.APIKeyEnv, validateAPIKey)
+		if err != nil {
+			return providerSettings{}, err
+		}
 	}
 	client := options.httpClient
 	if client == nil {
@@ -211,6 +238,8 @@ func resolveProviderConfig(cfg Config, validateAPIKey bool, opts ...Option) (pro
 		BaseURL:       baseURL,
 		APIKey:        apiKey,
 		MaxInputChars: maxInputChars,
+		Dimensions:    cfg.Dimensions,
+		UserAgent:     firstNonEmpty(options.userAgent, cfg.UserAgent),
 		Timeout:       timeout,
 		HTTPClient:    client,
 	}, nil
@@ -258,6 +287,16 @@ func defaultModel(provider string) string {
 	default:
 		return DefaultOpenAIModel
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func shouldProbe(settings providerSettings) bool {
@@ -314,4 +353,43 @@ func inferDimensions(vectors [][]float32) (int, error) {
 		}
 	}
 	return dimensions, nil
+}
+
+func inferDimensions64(vectors [][]float64) (int, error) {
+	dimensions := 0
+	for _, vector := range vectors {
+		if len(vector) == 0 {
+			return 0, errors.New("embedding response contained an empty vector")
+		}
+		if dimensions == 0 {
+			dimensions = len(vector)
+			continue
+		}
+		if len(vector) != dimensions {
+			return 0, fmt.Errorf("embedding response dimensions mismatch: got %d want %d", len(vector), dimensions)
+		}
+	}
+	return dimensions, nil
+}
+
+func float32VectorsTo64(vectors [][]float32) [][]float64 {
+	out := make([][]float64, len(vectors))
+	for i, vector := range vectors {
+		out[i] = make([]float64, len(vector))
+		for j, value := range vector {
+			out[i][j] = float64(value)
+		}
+	}
+	return out
+}
+
+func float64VectorsTo32(vectors [][]float64) [][]float32 {
+	out := make([][]float32, len(vectors))
+	for i, vector := range vectors {
+		out[i] = make([]float32, len(vector))
+		for j, value := range vector {
+			out[i][j] = float32(value)
+		}
+	}
+	return out
 }

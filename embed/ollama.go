@@ -14,6 +14,7 @@ type ollamaProvider struct {
 	baseURL       string
 	model         string
 	maxInputChars int
+	userAgent     string
 }
 
 type ollamaEmbedRequest struct {
@@ -32,6 +33,7 @@ func newOllamaProvider(settings providerSettings) Provider {
 		baseURL:       settings.BaseURL,
 		model:         settings.Model,
 		maxInputChars: settings.MaxInputChars,
+		userAgent:     settings.UserAgent,
 	}
 }
 
@@ -44,7 +46,7 @@ func (p *ollamaProvider) Embed(ctx context.Context, inputs []string) (EmbeddingB
 		Input: trimInputs(inputs, p.maxInputChars),
 	}
 	var response ollamaEmbedResponse
-	if err := postJSON(ctx, p.client, p.baseURL+"/api/embed", "", payload, &response); err != nil {
+	if err := postJSON(ctx, p.client, p.baseURL+"/api/embed", "", p.userAgent, payload, &response); err != nil {
 		return EmbeddingBatch{}, err
 	}
 	if len(response.Embeddings) != len(inputs) {
@@ -58,10 +60,10 @@ func (p *ollamaProvider) Embed(ctx context.Context, inputs []string) (EmbeddingB
 	if model == "" {
 		model = p.model
 	}
-	return EmbeddingBatch{Model: model, Dimensions: dimensions, Vectors: response.Embeddings}, nil
+	return EmbeddingBatch{Model: model, Dimensions: dimensions, Vectors: response.Embeddings, Vectors64: float32VectorsTo64(response.Embeddings)}, nil
 }
 
-func postJSON(ctx context.Context, client *http.Client, endpoint, apiKey string, payload any, target any) error {
+func postJSON(ctx context.Context, client *http.Client, endpoint, apiKey, userAgent string, payload any, target any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal embedding request: %w", err)
@@ -72,6 +74,9 @@ func postJSON(ctx context.Context, client *http.Client, endpoint, apiKey string,
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	if userAgent != "" {
+		req.Header.Set("User-Agent", userAgent)
+	}
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
@@ -82,7 +87,7 @@ func postJSON(ctx context.Context, client *http.Client, endpoint, apiKey string,
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return &HTTPError{StatusCode: resp.StatusCode, Body: string(msg)}
+		return &HTTPError{StatusCode: resp.StatusCode, Body: string(msg), Header: resp.Header.Clone()}
 	}
 	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
 		return fmt.Errorf("decode embedding response: %w", err)

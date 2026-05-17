@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add OpenAI-compatible embedding dimensions, raw API-key injection, user-agent
+  forwarding, response headers on HTTP errors, and float64 vectors for
+  downstream stores that need exact JSON embedding values.
+
 ## v0.5.2 - 2026-05-11
 
 - Add opt-in platform-native config/runtime paths to `config.App`, with

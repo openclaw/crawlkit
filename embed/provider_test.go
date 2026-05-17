@@ -3,6 +3,7 @@ package embed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -158,6 +159,64 @@ func TestOpenAICompatibleProviderEmbedsAndUsesAuth(t *testing.T) {
 	require.Equal(t, "local-model", batch.Model)
 	require.Equal(t, 2, batch.Dimensions)
 	require.Equal(t, [][]float32{{1, 2}, {3, 4}}, batch.Vectors)
+	require.Equal(t, [][]float64{{1, 2}, {3, 4}}, batch.Vectors64)
+}
+
+func TestOpenAICompatibleProviderSupportsDimensionsAndRawAPIKey(t *testing.T) {
+	var gotAuth string
+	var gotUserAgent string
+	var gotDimensions int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotUserAgent = r.Header.Get("User-Agent")
+		var req openAIEmbeddingRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		gotDimensions = req.Dimensions
+		_ = json.NewEncoder(w).Encode(openAIEmbeddingResponse{
+			Model: "model",
+			Data:  []openAIEmbeddingItem{{Embedding: []float64{0.1, 0.2}}},
+		})
+	}))
+	defer server.Close()
+
+	provider, err := NewProvider(Config{
+		Provider:   ProviderOpenAI,
+		Model:      "model",
+		BaseURL:    server.URL,
+		Dimensions: 1024,
+	}, WithAPIKey("raw-key"), WithUserAgent("gitcrawl"))
+	require.NoError(t, err)
+	batch, err := provider.Embed(context.Background(), []string{"hello"})
+	require.NoError(t, err)
+
+	require.Equal(t, "Bearer raw-key", gotAuth)
+	require.Equal(t, "gitcrawl", gotUserAgent)
+	require.Equal(t, 1024, gotDimensions)
+	require.Equal(t, 2, batch.Dimensions)
+	require.Equal(t, [][]float64{{0.1, 0.2}}, batch.Vectors64)
+	require.Equal(t, [][]float32{{0.1, 0.2}}, batch.Vectors)
+}
+
+func TestOpenAICompatibleHTTPErrorIncludesHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "2")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"limited"}}`))
+	}))
+	defer server.Close()
+
+	provider, err := NewProvider(Config{Provider: ProviderOpenAI, BaseURL: server.URL}, WithAPIKey("raw-key"))
+	require.NoError(t, err)
+	_, err = provider.Embed(context.Background(), []string{"hello"})
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	require.Equal(t, http.StatusTooManyRequests, httpErr.StatusCode)
+	require.Equal(t, "2", httpErr.Header.Get("Retry-After"))
+	require.Contains(t, httpErr.Body, "limited")
 }
 
 func TestProviderFactoryDefaultsAndValidation(t *testing.T) {
@@ -325,7 +384,7 @@ func TestEmbeddingProvidersHandleEmptyInputsAndIndexErrors(t *testing.T) {
 	}{
 		{name: "count", body: `{"data":[]}`, inputs: []string{"one"}, want: "returned 0 vectors for 1 inputs"},
 		{name: "range", body: `{"data":[{"index":2,"embedding":[1]}]}`, inputs: []string{"one"}, want: "index 2 out of range"},
-		{name: "duplicate", body: `{"data":[{"index":0,"embedding":[1]},{"index":0,"embedding":[2]}]}`, inputs: []string{"one", "two"}, want: "duplicated index 0"},
+		{name: "duplicate", body: `{"data":[{"index":0,"embedding":[1]},{"index":0,"embedding":[2]}]}`, inputs: []string{"one", "two"}, want: "duplicate index 0"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -401,6 +460,8 @@ func TestProviderValidationEdges(t *testing.T) {
 	require.Equal(t, []string{"abc"}, trimInputs([]string{"abc"}, 0))
 	_, err = inferDimensions([][]float32{{}})
 	require.ErrorContains(t, err, "empty vector")
+	_, err = inferDimensions64([][]float64{{1}, {1, 2}})
+	require.ErrorContains(t, err, "dimensions mismatch")
 }
 
 func TestOllamaProviderResponseEdges(t *testing.T) {
