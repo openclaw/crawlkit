@@ -15,8 +15,10 @@ parsers, and product-specific ranking in the apps.
 | --- | --- | --- | --- |
 | `gitcrawl` | `main` | config paths, SQLite openers, command/control metadata, status inventory, and the reference TUI/control contract | GitHub API sync, `gh` shim behavior, embeddings, clustering, inference, portable-store schema pruning, and the richer cluster TUI |
 | `discrawl` | `main` | config/status/control, snapshot packing/import, git mirror mechanics, sync-state adapters, output helpers, and shared chat TUI | Discord bot API, desktop wiretap parsing, DM privacy filters, Discord schema, FTS/ranking, embeddings, and analytics |
-| `slacrawl` | `feat/use-crawlkit` | config/status/control, snapshot packing/import, git mirror mechanics, state helpers, output helpers, and shared chat TUI | Slack API/Desktop parsing, token scopes, Slack schema, Slack text normalization, channel/thread semantics, and analytics |
-| `notcrawl` | `feat/use-crawlkit` | config/status/control, snapshot packing/import, git mirror mechanics, output helpers, and shared document TUI | Notion API/Desktop parsing, Markdown rendering, page/comment/database schema, Notion FTS body construction, and data-source compatibility |
+| `slacrawl` | `main` | control metadata, with config/status/control, snapshot packing/import, git mirror mechanics, state helpers, output helpers, and shared chat TUI still converging | Slack API/Desktop parsing, token scopes, Slack schema, Slack text normalization, channel/thread semantics, and analytics |
+| `wacrawl` | `main` | backup encryption helpers and control metadata | WhatsApp Desktop parsing, archive schema, read-time sync policy, media copying, and app-specific backup commands |
+| `telecrawl` | `main` | backup encryption helpers and control metadata | Telegram Desktop bridge, Telethon/opentele2 orchestration, archive schema, media metadata, and app-specific backup commands |
+| `notcrawl` | `main` | config/status/control, snapshot packing/import, git mirror mechanics, output helpers, and shared document TUI | Notion API/Desktop parsing, Markdown rendering, page/comment/database schema, Notion FTS body construction, and data-source compatibility |
 
 ## owns
 

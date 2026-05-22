@@ -155,7 +155,7 @@ func TestPullCurrentUsesExistingOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "two\n" {
+	if strings.ReplaceAll(string(data), "\r\n", "\n") != "two\n" {
 		t.Fatalf("manifest = %q, want updated content", data)
 	}
 }

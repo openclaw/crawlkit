@@ -1,14 +1,15 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
-	"github.com/adrg/xdg"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -183,11 +184,11 @@ func platformPaths(name string) Paths {
 	xdgMu.Lock()
 	defer xdgMu.Unlock()
 
-	xdg.Reload()
-	dataDir := filepath.Join(xdg.DataHome, name)
-	configDir := filepath.Join(xdg.ConfigHome, name)
-	cacheDir := filepath.Join(xdg.CacheHome, name)
-	stateDir := filepath.Join(xdg.StateHome, name)
+	configHome, dataHome, cacheHome, stateHome := platformHomes()
+	dataDir := filepath.Join(dataHome, name)
+	configDir := filepath.Join(configHome, name)
+	cacheDir := filepath.Join(cacheHome, name)
+	stateDir := filepath.Join(stateHome, name)
 	return Paths{
 		BaseDir:    dataDir,
 		ConfigPath: filepath.Join(configDir, "config.toml"),
@@ -196,6 +197,38 @@ func platformPaths(name string) Paths {
 		LogDir:     filepath.Join(stateDir, "logs"),
 		ShareDir:   filepath.Join(dataDir, "share"),
 	}
+}
+
+func platformHomes() (configHome, dataHome, cacheHome, stateHome string) {
+	home, _ := os.UserHomeDir()
+	switch runtime.GOOS {
+	case "darwin":
+		appSupport := filepath.Join(home, "Library", "Application Support")
+		configHome = absoluteEnv("XDG_CONFIG_HOME", appSupport)
+		dataHome = absoluteEnv("XDG_DATA_HOME", appSupport)
+		cacheHome = absoluteEnv("XDG_CACHE_HOME", filepath.Join(home, "Library", "Caches"))
+		stateHome = absoluteEnv("XDG_STATE_HOME", appSupport)
+	case "windows":
+		localAppData := absoluteEnv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+		configHome = absoluteEnv("XDG_CONFIG_HOME", localAppData)
+		dataHome = absoluteEnv("XDG_DATA_HOME", localAppData)
+		cacheHome = absoluteEnv("XDG_CACHE_HOME", filepath.Join(localAppData, "cache"))
+		stateHome = absoluteEnv("XDG_STATE_HOME", localAppData)
+	default:
+		configHome = absoluteEnv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+		dataHome = absoluteEnv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+		cacheHome = absoluteEnv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+		stateHome = absoluteEnv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
+	}
+	return configHome, dataHome, cacheHome, stateHome
+}
+
+func absoluteEnv(name, fallback string) string {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" || !filepath.IsAbs(value) {
+		return fallback
+	}
+	return value
 }
 
 func (a App) withExistingLegacyPaths(paths Paths) Paths {
@@ -231,6 +264,7 @@ func LoadTOML(path string, dst any) error {
 	if err != nil {
 		return err
 	}
+	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 	if err := toml.Unmarshal(data, dst); err != nil {
 		return fmt.Errorf("parse toml %s: %w", path, err)
 	}

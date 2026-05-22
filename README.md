@@ -12,6 +12,7 @@ safe desktop-cache snapshot utilities.
 
 ```bash
 go get github.com/openclaw/crawlkit@latest
+go install github.com/openclaw/crawlkit/cmd/crawlctl@latest
 ```
 
 Go packages are published by tagging this repository. There is no separate
@@ -34,14 +35,38 @@ See `docs/boundary.md` for the crawlkit-versus-app ownership boundary.
 - `output`: text/json/log output helpers.
 - `control`: crawl app metadata, command manifests, status payloads, and
   database inventory for launchers and automation.
+- `scheduler`: crawl app discovery, job config, single-process run locking,
+  JSONL run history, log paths, and launchd/systemd/Windows/cron schedule
+  rendering for controller CLIs.
 - `tui`: shared terminal archive explorer with gitcrawl-style responsive panes, entity/member/detail lanes, compact sortable headers, mouse selection, floating right-click actions, sorting/filtering, and local/remote source status.
 - `cache`: safe read-only local cache snapshot helpers.
 
+## crawlctl
+
+`crawlctl` is the shared controller for keeping local crawl archives warm.
+It discovers installed crawl apps through `metadata --json`, falls back to
+temporary legacy adapters for older apps, runs configured jobs with a lock, and
+records one JSONL run record per command.
+
+```bash
+crawlctl init --repo openclaw/openclaw
+crawlctl run
+crawlctl status
+crawlctl logs gitcrawl --tail 80
+crawlctl install --dry-run
+```
+
+Native install backends:
+
+- macOS: `launchd`
+- Linux: `systemd --user`
+- Windows: Task Scheduler
+- portable fallback: cron line rendering
+
 ## Downstream apps
 
-- `gitcrawl` and `discrawl` consume `crawlkit` on `main`.
-- `slacrawl` and `notcrawl` consume `crawlkit` on their `feat/use-crawlkit`
-  integration branches until those app rewires are merged.
+- `gitcrawl`, `discrawl`, `notcrawl`, `wacrawl`, `telecrawl`, and `slacrawl`
+  consume `crawlkit` on `main`.
 - The apps keep provider schemas, auth, desktop/API parsing, privacy filters,
   and user-facing CLI contracts. `crawlkit` owns only the reusable mechanics.
 
