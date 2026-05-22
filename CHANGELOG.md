@@ -1,8 +1,6 @@
 # Changelog
 
-## v0.9.1 - Unreleased
-
-## v0.9.0 - 2026-05-22
+## v0.7.0 - 2026-05-22
 
 - Add `crawlctl`, a cross-platform controller for discovering crawl apps, running configured refresh jobs, recording JSONL run history, tailing logs, and installing OS-native schedules through launchd, systemd, Windows Task Scheduler, or cron output.
 - Add the `scheduler` package for crawl app discovery, legacy app adapters, job expansion, single-process run locking, native schedule rendering, and run-history helpers.
