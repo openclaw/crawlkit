@@ -72,6 +72,7 @@ type Status struct {
 	Counts        []Count    `json:"counts,omitempty"`
 	Freshness     *Freshness `json:"freshness,omitempty"`
 	Share         *Share     `json:"share,omitempty"`
+	Remote        *Remote    `json:"remote,omitempty"`
 	Databases     []Database `json:"databases,omitempty"`
 	Warnings      []string   `json:"warnings,omitempty"`
 	Errors        []string   `json:"errors,omitempty"`
@@ -97,12 +98,24 @@ type Share struct {
 	NeedsUpdate bool   `json:"needs_update,omitempty"`
 }
 
+type Remote struct {
+	Enabled      bool   `json:"enabled"`
+	Mode         string `json:"mode,omitempty"`
+	Endpoint     string `json:"endpoint,omitempty"`
+	Archive      string `json:"archive,omitempty"`
+	LastIngestAt string `json:"last_ingest_at,omitempty"`
+	LastSyncAt   string `json:"last_sync_at,omitempty"`
+	NeedsUpdate  bool   `json:"needs_update,omitempty"`
+}
+
 type Database struct {
 	ID         string  `json:"id"`
 	Label      string  `json:"label"`
 	Kind       string  `json:"kind"`
 	Role       string  `json:"role"`
 	Path       string  `json:"path"`
+	Endpoint   string  `json:"endpoint,omitempty"`
+	Archive    string  `json:"archive,omitempty"`
 	IsPrimary  bool    `json:"is_primary"`
 	Bytes      int64   `json:"bytes"`
 	ModifiedAt string  `json:"modified_at,omitempty"`
@@ -149,6 +162,26 @@ func SQLiteDatabase(id, label, role, path string, primary bool, counts []Count) 
 	if info, err := os.Stat(db.Path); err == nil {
 		db.Bytes = info.Size()
 		db.ModifiedAt = info.ModTime().UTC().Format(time.RFC3339)
+	}
+	return db
+}
+
+func RemoteDatabase(id, label, role, kind, endpoint, archive string, primary bool, counts []Count) Database {
+	db := Database{
+		ID:        strings.TrimSpace(id),
+		Label:     strings.TrimSpace(label),
+		Kind:      strings.TrimSpace(kind),
+		Role:      strings.TrimSpace(role),
+		Endpoint:  strings.TrimRight(strings.TrimSpace(endpoint), "/"),
+		Archive:   strings.TrimSpace(archive),
+		IsPrimary: primary,
+		Counts:    append([]Count(nil), counts...),
+	}
+	if db.Kind == "" {
+		db.Kind = "remote"
+	}
+	if db.Role == "" {
+		db.Role = "archive"
 	}
 	return db
 }
