@@ -203,6 +203,20 @@ cli login
   -> signed bearer token stored locally
 ```
 
+For non-browser bootstrap and CI/operator lanes, the CLI can also exchange an
+existing GitHub token:
+
+```text
+cli login --github-token-env GITHUB_TOKEN
+  -> POST /v1/auth/github/token
+  -> Worker verifies GitHub user/org/team membership
+  -> signed bearer token stored locally
+```
+
+The Worker must not store the supplied GitHub token. It only uses the token to
+query GitHub, verifies the same org/team policy as OAuth, and returns an
+OpenClaw remote session token.
+
 Required GitHub OAuth scopes:
 
 - `read:user`
@@ -218,7 +232,7 @@ CRAWL_REMOTE_GITHUB_CLIENT_ID
 CRAWL_REMOTE_GITHUB_CLIENT_SECRET
 CRAWL_REMOTE_DEFAULT_ORG=openclaw
 CRAWL_REMOTE_GITHUB_ALLOWED_ORGS=openclaw
-CRAWL_REMOTE_GITHUB_ALLOWED_TEAMS=openclaw/maintainers
+CRAWL_REMOTE_GITHUB_ALLOWED_TEAMS=openclaw/maintainer
 CRAWL_REMOTE_ADMIN_TOKEN
 CRAWL_REMOTE_ACCESS_TEAM_DOMAIN
 CRAWL_REMOTE_ACCESS_AUD
@@ -1100,13 +1114,14 @@ Implemented branches:
 - `openclaw/crawlkit` branch `spec/cloudflare-remote`
   - Added provider-neutral `remote` package.
   - Added GitHub login poll-secret helpers for Worker OAuth flows.
+  - Added GitHub-token login exchange helpers for non-browser org/team auth.
   - Added `control.Remote` and remote database inventory fields.
   - Added this spec and synced the living copy to `~/.spec`.
 - `openclaw/gitcrawl` branch `feature/cloudflare-remote-archives`
   - Added `[remote]` config, env overrides, remote token resolution, `init --remote`,
-    GitHub-backed `remote login`, `remote status`, `remote archives`, `whoami`,
-    cloud-mode `status`, owner/repo search, and gh-shaped `search issues|prs`
-    routing.
+    GitHub-backed `remote login` with OAuth or `--github-token-env`,
+    `remote status`, `remote archives`, `whoami`, cloud-mode `status`,
+    owner/repo search, and gh-shaped `search issues|prs` routing.
   - `remote login` stores the Worker-issued bearer token in the OS keyring.
   - Added `gitcrawl cloud publish` to push local repository/thread rows to the
     Worker ingest endpoint.
@@ -1116,9 +1131,9 @@ Implemented branches:
     local SQLite.
 - `openclaw/discrawl` branch `feature/cloudflare-remote-archives`
   - Added `[remote]` config, `subscribe-cloud`, `remote status`,
-    GitHub-backed `remote login`, `remote archives`, `remote whoami`,
-    top-level `whoami`, cloud-mode `status`, cloud-mode `search`, and filtered
-    cloud-mode `messages`.
+    GitHub-backed `remote login` with OAuth or `--github-token-env`,
+    `remote archives`, `remote whoami`, top-level `whoami`, cloud-mode
+    `status`, cloud-mode `search`, and filtered cloud-mode `messages`.
   - `remote login` stores the Worker-issued bearer token in the OS keyring.
   - Added `discrawl cloud publish` to push non-DM guild/channel/member/message
     rows to the Worker ingest endpoint.
@@ -1129,8 +1144,9 @@ Implemented branches:
 - `openclaw/crawl-remote` Worker repo
   - Added Wrangler/D1 service scaffold, migration, typed route handlers, and
     Vitest coverage.
-  - Added GitHub OAuth start/callback/poll flow, allowed org/team checks,
-    signed bearer sessions, and admin-token bootstrap auth.
+  - Added GitHub OAuth start/callback/poll flow, GitHub-token bootstrap,
+    allowed org/team checks, signed bearer sessions, and admin-token bootstrap
+    auth.
   - Added role-gated archive status/list/query/batch-read/ingest routes.
   - Added named D1 queries for `gitcrawl.threads.search`,
     `discrawl.messages.search`, and `discrawl.messages.list`.
@@ -1154,6 +1170,16 @@ Validation completed:
 - Deployed Worker smoke: `/health`, `/v1/whoami`, and `/v1/archives` succeed
   against `https://crawl-remote.services-91b.workers.dev` with admin-token
   auth.
+- Deployed GitHub org/team auth:
+  - `POST /v1/auth/github/token` verifies the current GitHub identity as
+    `openclaw` org plus `openclaw/maintainer` team, returns a Worker session
+    token, and that token succeeds against `/v1/whoami`.
+  - `gitcrawl remote login --github-token-env GH_TOKEN` stores the returned
+    remote session token in the OS keyring, `gitcrawl whoami` reads it back
+    from the deployed Worker, and the temp config run creates no SQLite DB.
+  - `discrawl remote login --github-token-env GH_TOKEN` stores the returned
+    remote session token in the OS keyring, `discrawl whoami` reads it back
+    from the deployed Worker, and the temp config run creates no SQLite DB.
 - Deployed Worker/D1 end-to-end:
   - `gitcrawl cloud publish` pushed a temp SQLite archive to the deployed
     Worker, then cloud search read the row back from remote D1.
@@ -1170,7 +1196,7 @@ Validation completed:
 Dependency state:
 
 - `gitcrawl` and `discrawl` temporarily depend on crawlkit pseudo-version
-  `v0.7.1-0.20260527173115-df4eca58a4c9`.
+  `v0.7.1-0.20260527174716-74916a98ee45`.
 - Release should tag crawlkit first, then bump both apps from the pseudo-version
   to the released tag before final app releases.
 
@@ -1184,9 +1210,10 @@ Remaining release work:
 
 - Decide when to make `openclaw/crawl-remote` public; it was created private
   for the first infra scaffold push.
-- Configure the real GitHub OAuth app client id/secret for callback
+- Optional browser-login polish: configure the real GitHub OAuth app
+  client id/secret for callback
   `https://crawl-remote.services-91b.workers.dev/v1/auth/github/callback`.
-- Run live OAuth/org/team login against the deployed Worker once those secrets
-  are present.
+  The deployed remote path already has live GitHub org/team auth through
+  `--github-token-env`.
 - Tag `crawlkit`, then bump `gitcrawl` and `discrawl` from the pseudo-version
   to the release tag.
