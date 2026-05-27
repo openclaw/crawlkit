@@ -1087,3 +1087,56 @@ The strategic move is to make `crawlkit` own the transport and archive
 contracts now, while leaving app semantics in the apps. That keeps today's Git
 syncs stable and gives OpenClaw a clean path from "state repos with files" to
 "live hosted archives with optional distributed cache."
+
+## Implementation checkpoint - 2026-05-27
+
+The first implementation pass landed the client-side/read-only pieces in the
+three existing repos. This does not include the standalone Worker service yet;
+that remains the next repo/stage so crawlkit does not absorb provider-specific
+Cloudflare auth, D1 schema migration, or Worker routing ownership.
+
+Implemented branches:
+
+- `openclaw/crawlkit` branch `spec/cloudflare-remote`
+  - Added provider-neutral `remote` package.
+  - Added `control.Remote` and remote database inventory fields.
+  - Added this spec and synced the living copy to `~/.spec`.
+- `openclaw/gitcrawl` branch `feature/cloudflare-remote-archives`
+  - Added `[remote]` config, env overrides, remote token resolution, `init --remote`,
+    `remote status`, `remote archives`, `whoami`, cloud-mode `status`, owner/repo
+    search, and gh-shaped `search issues|prs` routing.
+  - Cloud mode rejects local runtime opens for local-only commands rather than
+    creating or mutating SQLite.
+  - `doctor` reports remote endpoint/archive/token/status health without opening
+    local SQLite.
+- `openclaw/discrawl` branch `feature/cloudflare-remote-archives`
+  - Added `[remote]` config, `subscribe-cloud`, `remote status`,
+    `remote archives`, `remote whoami`, top-level `whoami`, and cloud-mode
+    `status`.
+  - Existing Git `publish` / `subscribe` / `update` share commands remain the
+    Git-backed path.
+  - Cloud-mode status maps Worker archive status into crawlkit control status
+    without opening the local store.
+
+Validation completed:
+
+- `crawlkit`: `GOWORK=off go mod tidy`, clean `go.mod`/`go.sum`,
+  `GOWORK=off go vet ./...`, and `GOWORK=off go test -count=1 ./...`.
+- `gitcrawl`: `GOWORK=off go test -count=1 ./...`, plus autoreview after
+  remote gh-search and doctor fixes.
+- `discrawl`: `GOWORK=off go test -count=1 ./...`, plus autoreview.
+- Wrangler local D1 smoke: `wrangler 4.87.0`, temp `wrangler.toml`, local D1
+  create/insert/select for `remote_archives`, including archive ids with `/`.
+
+Dependency state:
+
+- `gitcrawl` and `discrawl` temporarily depend on crawlkit pseudo-version
+  `v0.7.1-0.20260527123833-22b471a17caa`.
+- Release should tag crawlkit first, then bump both apps from the pseudo-version
+  to the released tag before final app releases.
+
+Compression note:
+
+- No gzip/binary snapshot compression was added to the read path. Keep
+  compression in publisher ingest or R2 snapshot layers so D1 named queries over
+  indexed rows and vector metadata stay normal SQL.
