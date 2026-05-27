@@ -269,6 +269,10 @@ type LoginPollRequest struct {
 	PollSecret string `json:"pollSecret"`
 }
 
+type GitHubTokenLoginRequest struct {
+	Token string `json:"token"`
+}
+
 type LoginPollResult struct {
 	Status string `json:"status"`
 	Token  string `json:"token,omitempty"`
@@ -351,6 +355,12 @@ func (c *Client) StartGitHubLogin(ctx context.Context, pollSecretHash string) (L
 func (c *Client) PollGitHubLogin(ctx context.Context, loginID, pollSecret string) (LoginPollResult, error) {
 	var out LoginPollResult
 	err := c.do(ctx, http.MethodPost, "/v1/auth/github/poll", LoginPollRequest{LoginID: loginID, PollSecret: pollSecret}, &out, false)
+	return out, err
+}
+
+func (c *Client) LoginWithGitHubToken(ctx context.Context, token string) (LoginPollResult, error) {
+	var out LoginPollResult
+	err := c.do(ctx, http.MethodPost, "/v1/auth/github/token", GitHubTokenLoginRequest{Token: strings.TrimSpace(token)}, &out, false)
 	return out, err
 }
 

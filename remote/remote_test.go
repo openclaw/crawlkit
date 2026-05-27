@@ -154,6 +154,42 @@ func TestLoginPollSecretHash(t *testing.T) {
 	}
 }
 
+func TestLoginWithGitHubToken(t *testing.T) {
+	var sawToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/auth/github/token" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		var req GitHubTokenLoginRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		sawToken = req.Token
+		_ = json.NewEncoder(w).Encode(LoginPollResult{
+			Status: "complete",
+			Token:  "session-token",
+			Org:    "openclaw",
+			Login:  "alice",
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{Endpoint: server.URL})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	result, err := client.LoginWithGitHubToken(context.Background(), " github-token ")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if sawToken != "github-token" {
+		t.Fatalf("github token = %q", sawToken)
+	}
+	if result.Status != "complete" || result.Token != "session-token" || result.Login != "alice" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestStaticTokenRejectsBlank(t *testing.T) {
 	_, err := StaticToken(" ").Token(context.Background())
 	if !errors.Is(err, ErrMissingToken) {
