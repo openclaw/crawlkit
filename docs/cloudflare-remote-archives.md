@@ -1,6 +1,6 @@
 # Cloudflare remote archives
 
-Status: draft plan, not implemented.
+Status: implementation spec with local Worker/D1 prototype.
 
 This spec covers an additive remote archive option for `crawlkit`,
 `openclaw/gitcrawl`, and `openclaw/discrawl`.
@@ -1090,10 +1090,10 @@ syncs stable and gives OpenClaw a clean path from "state repos with files" to
 
 ## Implementation checkpoint - 2026-05-27
 
-The first implementation pass landed the client-side/read-only pieces in the
-three existing repos. This does not include the standalone Worker service yet;
-that remains the next repo/stage so crawlkit does not absorb provider-specific
-Cloudflare auth, D1 schema migration, or Worker routing ownership.
+The current implementation pass now covers the shared client, both app
+publisher/read paths, and a standalone Cloudflare Worker/D1 service prototype.
+The design still keeps Cloudflare auth, D1 schema migration, Worker routing,
+and app-specific table policy out of `crawlkit`.
 
 Implemented branches:
 
@@ -1105,28 +1105,50 @@ Implemented branches:
   - Added `[remote]` config, env overrides, remote token resolution, `init --remote`,
     `remote status`, `remote archives`, `whoami`, cloud-mode `status`, owner/repo
     search, and gh-shaped `search issues|prs` routing.
+  - Added `gitcrawl cloud publish` to push local repository/thread rows to the
+    Worker ingest endpoint.
   - Cloud mode rejects local runtime opens for local-only commands rather than
     creating or mutating SQLite.
   - `doctor` reports remote endpoint/archive/token/status health without opening
     local SQLite.
 - `openclaw/discrawl` branch `feature/cloudflare-remote-archives`
   - Added `[remote]` config, `subscribe-cloud`, `remote status`,
-    `remote archives`, `remote whoami`, top-level `whoami`, and cloud-mode
-    `status`.
+    `remote archives`, `remote whoami`, top-level `whoami`, cloud-mode
+    `status`, cloud-mode `search`, and filtered cloud-mode `messages`.
+  - Added `discrawl cloud publish` to push non-DM guild/channel/member/message
+    rows to the Worker ingest endpoint.
   - Existing Git `publish` / `subscribe` / `update` share commands remain the
     Git-backed path.
   - Cloud-mode status maps Worker archive status into crawlkit control status
     without opening the local store.
+- local `openclaw/crawl-remote` Worker repo
+  - Added Wrangler/D1 service scaffold, migration, typed route handlers, and
+    Vitest coverage.
+  - Added GitHub OAuth start/callback/poll flow, allowed org/team checks,
+    signed bearer sessions, and admin-token bootstrap auth.
+  - Added role-gated archive status/list/query/batch-read/ingest routes.
+  - Added named D1 queries for `gitcrawl.threads.search`,
+    `discrawl.messages.search`, and `discrawl.messages.list`.
+  - Added ingest table allowlists for gitcrawl and discrawl, including
+    `@me`/DM row rejection for discrawl.
 
 Validation completed:
 
 - `crawlkit`: `GOWORK=off go mod tidy`, clean `go.mod`/`go.sum`,
   `GOWORK=off go vet ./...`, and `GOWORK=off go test -count=1 ./...`.
 - `gitcrawl`: `GOWORK=off go test -count=1 ./...`, plus autoreview after
-  remote gh-search and doctor fixes.
-- `discrawl`: `GOWORK=off go test -count=1 ./...`, plus autoreview.
-- Wrangler local D1 smoke: `wrangler 4.87.0`, temp `wrangler.toml`, local D1
-  create/insert/select for `remote_archives`, including archive ids with `/`.
+  remote gh-search and doctor fixes. Additional focused coverage verifies
+  `gitcrawl cloud publish` ingest shape.
+- `discrawl`: `GOWORK=off go test -count=1 ./...`, plus autoreview. Additional
+  focused coverage verifies cloud status/search/messages without local SQLite
+  and `discrawl cloud publish` non-DM ingest shape.
+- Worker: `npm run typecheck`, `npm test`, and local Wrangler D1 migrations.
+- Local Worker/D1 end-to-end:
+  - `gitcrawl cloud publish` pushed a temp SQLite archive to
+    `http://127.0.0.1:8787`, then cloud search read the row back from D1.
+  - `discrawl cloud publish` pushed a temp non-DM SQLite archive to
+    `http://127.0.0.1:8787`, then a reader config with no SQLite database ran
+    cloud `search` and `messages` against D1. The reader DB stayed absent.
 
 Dependency state:
 
@@ -1140,3 +1162,12 @@ Compression note:
 - No gzip/binary snapshot compression was added to the read path. Keep
   compression in publisher ingest or R2 snapshot layers so D1 named queries over
   indexed rows and vector metadata stay normal SQL.
+
+Remaining release work:
+
+- Create/push the `openclaw/crawl-remote` GitHub repo or move the local Worker
+  scaffold into the chosen service repo.
+- Configure real Cloudflare D1 database ids and GitHub OAuth app secrets.
+- Run OAuth/org/team login against a deployed staging Worker.
+- Tag `crawlkit`, then bump `gitcrawl` and `discrawl` from the pseudo-version
+  to the release tag.
