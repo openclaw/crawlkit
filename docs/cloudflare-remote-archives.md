@@ -1099,12 +1099,15 @@ Implemented branches:
 
 - `openclaw/crawlkit` branch `spec/cloudflare-remote`
   - Added provider-neutral `remote` package.
+  - Added GitHub login poll-secret helpers for Worker OAuth flows.
   - Added `control.Remote` and remote database inventory fields.
   - Added this spec and synced the living copy to `~/.spec`.
 - `openclaw/gitcrawl` branch `feature/cloudflare-remote-archives`
   - Added `[remote]` config, env overrides, remote token resolution, `init --remote`,
-    `remote status`, `remote archives`, `whoami`, cloud-mode `status`, owner/repo
-    search, and gh-shaped `search issues|prs` routing.
+    GitHub-backed `remote login`, `remote status`, `remote archives`, `whoami`,
+    cloud-mode `status`, owner/repo search, and gh-shaped `search issues|prs`
+    routing.
+  - `remote login` stores the Worker-issued bearer token in the OS keyring.
   - Added `gitcrawl cloud publish` to push local repository/thread rows to the
     Worker ingest endpoint.
   - Cloud mode rejects local runtime opens for local-only commands rather than
@@ -1113,8 +1116,10 @@ Implemented branches:
     local SQLite.
 - `openclaw/discrawl` branch `feature/cloudflare-remote-archives`
   - Added `[remote]` config, `subscribe-cloud`, `remote status`,
-    `remote archives`, `remote whoami`, top-level `whoami`, cloud-mode
-    `status`, cloud-mode `search`, and filtered cloud-mode `messages`.
+    GitHub-backed `remote login`, `remote archives`, `remote whoami`,
+    top-level `whoami`, cloud-mode `status`, cloud-mode `search`, and filtered
+    cloud-mode `messages`.
+  - `remote login` stores the Worker-issued bearer token in the OS keyring.
   - Added `discrawl cloud publish` to push non-DM guild/channel/member/message
     rows to the Worker ingest endpoint.
   - Existing Git `publish` / `subscribe` / `update` share commands remain the
@@ -1131,6 +1136,9 @@ Implemented branches:
     `discrawl.messages.search`, and `discrawl.messages.list`.
   - Added ingest table allowlists for gitcrawl and discrawl, including
     `@me`/DM row rejection for discrawl.
+  - Created remote D1 database `crawl-remote`
+    (`42baacd3-c917-400f-a12f-e0fada21e11f`) and deployed the Worker to
+    `https://crawl-remote.services-91b.workers.dev`.
 
 Validation completed:
 
@@ -1143,6 +1151,15 @@ Validation completed:
   focused coverage verifies cloud status/search/messages without local SQLite
   and `discrawl cloud publish` non-DM ingest shape.
 - Worker: `npm run typecheck`, `npm test`, and local Wrangler D1 migrations.
+- Deployed Worker smoke: `/health`, `/v1/whoami`, and `/v1/archives` succeed
+  against `https://crawl-remote.services-91b.workers.dev` with admin-token
+  auth.
+- Deployed Worker/D1 end-to-end:
+  - `gitcrawl cloud publish` pushed a temp SQLite archive to the deployed
+    Worker, then cloud search read the row back from remote D1.
+  - `discrawl cloud publish` pushed a temp non-DM SQLite archive to the
+    deployed Worker, then a reader config with no SQLite database ran cloud
+    `search` and `messages` against remote D1. The reader DB stayed absent.
 - Local Worker/D1 end-to-end:
   - `gitcrawl cloud publish` pushed a temp SQLite archive to
     `http://127.0.0.1:8787`, then cloud search read the row back from D1.
@@ -1153,7 +1170,7 @@ Validation completed:
 Dependency state:
 
 - `gitcrawl` and `discrawl` temporarily depend on crawlkit pseudo-version
-  `v0.7.1-0.20260527123833-22b471a17caa`.
+  `v0.7.1-0.20260527173115-df4eca58a4c9`.
 - Release should tag crawlkit first, then bump both apps from the pseudo-version
   to the released tag before final app releases.
 
@@ -1167,7 +1184,9 @@ Remaining release work:
 
 - Decide when to make `openclaw/crawl-remote` public; it was created private
   for the first infra scaffold push.
-- Configure real Cloudflare D1 database ids and GitHub OAuth app secrets.
-- Run OAuth/org/team login against a deployed staging Worker.
+- Configure the real GitHub OAuth app client id/secret for callback
+  `https://crawl-remote.services-91b.workers.dev/v1/auth/github/callback`.
+- Run live OAuth/org/team login against the deployed Worker once those secrets
+  are present.
 - Tag `crawlkit`, then bump `gitcrawl` and `discrawl` from the pseudo-version
   to the release tag.
