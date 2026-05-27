@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.7.1 - Unreleased
+## v0.8.0 - 2026-05-27
 
 - Add provider-neutral `remote` client/config/status contracts for
   Worker-fronted cloud archives, including authenticated query, batch-read,
