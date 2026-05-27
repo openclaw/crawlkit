@@ -138,6 +138,22 @@ func TestChainTokenProviderSkipsNilAndUsesFirstToken(t *testing.T) {
 	}
 }
 
+func TestLoginPollSecretHash(t *testing.T) {
+	secret, err := NewLoginPollSecret()
+	if err != nil {
+		t.Fatalf("new secret: %v", err)
+	}
+	if secret == "" {
+		t.Fatal("secret is empty")
+	}
+	if got := LoginPollSecretHash(" poll-secret "); got != LoginPollSecretHash("poll-secret") {
+		t.Fatalf("hash should trim surrounding spaces")
+	}
+	if got := LoginPollSecretHash("poll-secret"); got != "0e3e16e9ef6f0c4887962402b8af7242b241128b711567a0baff5902dd3540b8" {
+		t.Fatalf("hash = %q", got)
+	}
+}
+
 func TestStaticTokenRejectsBlank(t *testing.T) {
 	_, err := StaticToken(" ").Token(context.Background())
 	if !errors.Is(err, ErrMissingToken) {

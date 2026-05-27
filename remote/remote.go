@@ -3,6 +3,9 @@ package remote
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -273,6 +276,19 @@ type LoginPollResult struct {
 	Org    string `json:"org,omitempty"`
 	Login  string `json:"login,omitempty"`
 	Error  string `json:"error,omitempty"`
+}
+
+func NewLoginPollSecret() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("create login poll secret: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(bytes), nil
+}
+
+func LoginPollSecretHash(secret string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(secret)))
+	return fmt.Sprintf("%x", sum[:])
 }
 
 func (c *Client) Whoami(ctx context.Context) (Identity, error) {
