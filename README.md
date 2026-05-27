@@ -32,6 +32,7 @@ See `docs/boundary.md` for the crawlkit-versus-app ownership boundary.
 - `vector`: float32 vector encoding, dimension validation, cosine scoring, top-k helpers, and reciprocal-rank fusion.
 - `releasecheck`: GitHub release checks, 24-hour cache handling, scripted-output
   suppression, and stderr update notice formatting for crawl app CLIs.
+- `remote`: provider-neutral HTTP client, config, query, ingest, auth, and status contracts for Worker-fronted remote archives such as Cloudflare D1.
 - `output`: text/json/log output helpers.
 - `control`: crawl app metadata, command manifests, status payloads, and
   database inventory for launchers and automation.

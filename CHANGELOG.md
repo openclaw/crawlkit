@@ -2,6 +2,13 @@
 
 ## v0.7.1 - Unreleased
 
+- Add provider-neutral `remote` client/config/status contracts for
+  Worker-fronted cloud archives, including authenticated query, batch-read,
+  ingest, archive listing, and GitHub login helper calls.
+- Add remote archive fields to `control.Status` and database inventories so
+  downstream apps can report D1/Worker storage without pretending it is a local
+  SQLite path.
+
 ## v0.7.0 - 2026-05-22
 
 - Add `crawlctl`, a cross-platform controller for discovering crawl apps, running configured refresh jobs, recording JSONL run history, tailing logs, and installing OS-native schedules through launchd, systemd, Windows Task Scheduler, or cron output.
