@@ -1121,7 +1121,7 @@ Implemented branches:
     Git-backed path.
   - Cloud-mode status maps Worker archive status into crawlkit control status
     without opening the local store.
-- local `openclaw/crawl-remote` Worker repo
+- `openclaw/crawl-remote` Worker repo
   - Added Wrangler/D1 service scaffold, migration, typed route handlers, and
     Vitest coverage.
   - Added GitHub OAuth start/callback/poll flow, allowed org/team checks,
@@ -1165,8 +1165,8 @@ Compression note:
 
 Remaining release work:
 
-- Create/push the `openclaw/crawl-remote` GitHub repo or move the local Worker
-  scaffold into the chosen service repo.
+- Decide when to make `openclaw/crawl-remote` public; it was created private
+  for the first infra scaffold push.
 - Configure real Cloudflare D1 database ids and GitHub OAuth app secrets.
 - Run OAuth/org/team login against a deployed staging Worker.
 - Tag `crawlkit`, then bump `gitcrawl` and `discrawl` from the pseudo-version
