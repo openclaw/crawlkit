@@ -1,6 +1,6 @@
-![crawlkit banner](docs/assets/readme-banner.jpg)
-
 # 🧱 crawlkit
+
+![crawlkit banner](docs/assets/readme-banner.jpg)
 
 Shared Go infrastructure for local-first crawler archives.
 
