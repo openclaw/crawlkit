@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add explicit `remote` protocol contract metadata and a public
+  `Client.Contract` helper so Worker-fronted archive services can prove their
+  supported routes, auth roles, query names, and ingest tables without coupling
+  Cloudflare deployment state to the Go module.
+
 ## v0.8.0 - 2026-05-27
 
 - Add provider-neutral `remote` client/config/status contracts for

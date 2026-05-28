@@ -153,10 +153,11 @@ Cloudflare D1 bindings
         +-- remote metadata DB
 ```
 
-The Worker should be a separate service, likely `openclaw/crawlcloud` or
-`openclaw/crawl-remote`, rather than hidden inside either app. It will need
-TypeScript, Wrangler, D1 migrations, Vitest tests, and deployment config. The
-Go apps consume it through `crawlkit`.
+The Worker should remain a separate service, `openclaw/crawl-remote`, rather
+than hidden inside either app or bundled into the Go module. `crawlkit/remote`
+owns the v1 client and protocol contract; `crawl-remote` owns TypeScript,
+Wrangler, D1 migrations, Vitest tests, secrets, and deployment cadence. The Go
+apps consume it through `crawlkit`.
 
 ## Why not direct D1 API from the CLI
 
@@ -418,6 +419,7 @@ Create a Cloudflare Worker service with:
 Suggested routes:
 
 ```text
+GET  /v1/contract
 POST /v1/auth/github/start
 GET  /v1/auth/github/callback
 POST /v1/auth/github/poll

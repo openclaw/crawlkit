@@ -49,6 +49,9 @@ parsers, and product-specific ranking in the apps.
   fetches, local check caching, scripted-output suppression, and text notice
   formatting. Apps still own their command names, version variables, and install
   hints.
+- Provider-neutral remote archive client contracts: protocol version, route
+  metadata, auth role names, token providers, request/response structs, and
+  HTTP client behavior for Worker-fronted archive services.
 - Safe read-only desktop-cache snapshot helpers. The provider-specific parsing
   of those snapshots stays in the apps.
 
@@ -71,6 +74,9 @@ parsers, and product-specific ranking in the apps.
 - App CLI command contracts. Shared helpers can format JSON/text/log output,
   but the apps decide command names, flags, backward-compatible aliases, and
   deprecation behavior.
+- Hosted Worker deployments, Wrangler config, D1 migrations, service secrets,
+  GitHub org/team policy, and app-specific remote query/table allowlists. Those
+  belong in the service repo and downstream apps, not the Go module.
 
 ## current app seams
 
