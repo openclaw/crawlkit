@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add a `remote.Client.UploadSQLite` helper, SQLite object metadata in remote
+  status payloads, and contract metadata for publisher-side raw SQLite archive
+  uploads.
+
+## v0.9.0 - 2026-05-28
+
 - Add explicit `remote` protocol contract metadata and a public
   `Client.Contract` helper so Worker-fronted archive services can prove their
   supported routes, auth roles, query names, and ingest tables without coupling
