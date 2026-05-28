@@ -126,6 +126,46 @@ func TestClientFromConfigUsesEnvToken(t *testing.T) {
 	}
 }
 
+func TestBaseContractValidates(t *testing.T) {
+	contract := BaseContract()
+	if err := contract.Validate(); err != nil {
+		t.Fatalf("contract validate: %v", err)
+	}
+	if contract.ProtocolVersion != ProtocolVersion {
+		t.Fatalf("protocol version = %q", contract.ProtocolVersion)
+	}
+	if !hasRoute(contract, http.MethodGet, ContractPath, AuthPublic) {
+		t.Fatalf("contract route missing")
+	}
+}
+
+func TestClientContractIsPublic(t *testing.T) {
+	var sawAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != ContractPath {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		sawAuth = r.Header.Get("authorization")
+		_ = json.NewEncoder(w).Encode(testServiceContract())
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{Endpoint: server.URL})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	contract, err := client.Contract(context.Background())
+	if err != nil {
+		t.Fatalf("contract: %v", err)
+	}
+	if sawAuth != "" {
+		t.Fatalf("contract should not send authorization header, got %q", sawAuth)
+	}
+	if err := contract.Validate(); err != nil {
+		t.Fatalf("validate response: %v", err)
+	}
+}
+
 func TestChainTokenProviderSkipsNilAndUsesFirstToken(t *testing.T) {
 	t.Setenv("CRAWL_REMOTE_CHAIN_TOKEN", "chain-token")
 	provider := ChainTokenProvider{nil, EnvTokenProvider{Name: "CRAWL_REMOTE_CHAIN_TOKEN"}, StaticToken("fallback")}
@@ -195,6 +235,30 @@ func TestStaticTokenRejectsBlank(t *testing.T) {
 	if !errors.Is(err, ErrMissingToken) {
 		t.Fatalf("err = %v", err)
 	}
+}
+
+func hasRoute(contract Contract, method, path, auth string) bool {
+	for _, route := range contract.Routes {
+		if route.Method == method && route.Path == path && route.Auth == auth {
+			return true
+		}
+	}
+	return false
+}
+
+func testServiceContract() Contract {
+	contract := BaseContract()
+	contract.Apps = []AppSpec{{
+		App: "examplecrawl",
+		Queries: []QuerySpec{
+			{Name: "example.items.search", Args: []string{"query"}},
+		},
+		IngestTables: []IngestTableSpec{
+			{Name: "items", Columns: []string{"id", "title", "updated_at"}},
+		},
+		Capabilities: []string{"example.items.search"},
+	}}
+	return contract
 }
 
 func TestMain(m *testing.M) {
