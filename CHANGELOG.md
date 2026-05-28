@@ -5,6 +5,8 @@
 - Add a `remote.Client.UploadSQLite` helper, SQLite object metadata in remote
   status payloads, and contract metadata for publisher-side raw SQLite archive
   uploads.
+- Add gzip-compressed SQLite bundle manifests, chunk builders, and upload
+  helpers for R2-backed remote archive bootstrap/fallback data.
 
 ## v0.9.0 - 2026-05-28
 

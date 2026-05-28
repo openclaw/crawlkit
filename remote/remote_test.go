@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -144,6 +146,133 @@ func TestClientUploadSQLiteSendsRawBodyAndMetadata(t *testing.T) {
 		t.Fatalf("metadata sha/schema = %q/%q", sawSHA, sawSchema)
 	}
 	if result.Object == nil || result.Object.Size != int64(len("SQLite bytes")) {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestBuildGzipSQLiteBundleSplitsAndDescribesParts(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "archive.db")
+	payload := strings.Repeat("SQLite format 3\n", 100)
+	if err := os.WriteFile(source, []byte(payload), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	bundle, err := BuildGzipSQLiteBundle(context.Background(), SQLiteBundleBuildOptions{
+		App:        "gitcrawl",
+		Archive:    "gitcrawl/openclaw__openclaw",
+		SourcePath: source,
+		WorkDir:    dir,
+		ChunkSize:  64,
+		Counts:     map[string]int64{"threads": 3},
+	})
+	if err != nil {
+		t.Fatalf("build bundle: %v", err)
+	}
+	defer bundle.Cleanup()
+	if bundle.Manifest.Format != SQLiteGzipChunkedBundleFormat {
+		t.Fatalf("format = %q", bundle.Manifest.Format)
+	}
+	if bundle.Manifest.Compression.Algorithm != SQLiteGzipCompression {
+		t.Fatalf("compression = %#v", bundle.Manifest.Compression)
+	}
+	if bundle.Manifest.Object.Size != int64(len(payload)) || bundle.Manifest.Object.SHA256 == "" {
+		t.Fatalf("object = %#v", bundle.Manifest.Object)
+	}
+	if bundle.Manifest.CompressedObject.Size <= 0 || bundle.Manifest.CompressedObject.SHA256 == "" {
+		t.Fatalf("compressed object = %#v", bundle.Manifest.CompressedObject)
+	}
+	if len(bundle.Parts) < 1 || len(bundle.Manifest.Parts) != len(bundle.Parts) {
+		t.Fatalf("parts = %#v manifest=%#v", bundle.Parts, bundle.Manifest.Parts)
+	}
+	var compressed strings.Builder
+	for _, part := range bundle.Parts {
+		bytes, err := os.ReadFile(part.Path)
+		if err != nil {
+			t.Fatalf("read part: %v", err)
+		}
+		compressed.Write(bytes)
+		if !strings.Contains(part.Key, "current.db.gz.part-") {
+			t.Fatalf("part key = %q", part.Key)
+		}
+	}
+	reader, err := gzip.NewReader(strings.NewReader(compressed.String()))
+	if err != nil {
+		t.Fatalf("gzip reader: %v", err)
+	}
+	decompressed, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("decompress: %v", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatalf("close gzip: %v", err)
+	}
+	if string(decompressed) != payload {
+		t.Fatalf("decompressed payload mismatch")
+	}
+}
+
+func TestClientUploadSQLiteBundleFilesUploadsPartsThenManifest(t *testing.T) {
+	dir := t.TempDir()
+	partPath := filepath.Join(dir, "part")
+	if err := os.WriteFile(partPath, []byte("compressed"), 0o600); err != nil {
+		t.Fatalf("write part: %v", err)
+	}
+	var uploads []string
+	var sawManifest bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		uploads = append(uploads, r.Header.Get("x-crawl-sqlite-upload"))
+		switch r.Header.Get("x-crawl-sqlite-upload") {
+		case "bundle-part":
+			if r.Header.Get("x-crawl-bundle-part-index") != "0" || r.Header.Get("content-type") != "application/gzip" {
+				t.Fatalf("part headers index=%q content-type=%q", r.Header.Get("x-crawl-bundle-part-index"), r.Header.Get("content-type"))
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read part body: %v", err)
+			}
+			if string(body) != "compressed" {
+				t.Fatalf("part body = %q", body)
+			}
+			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
+		case "bundle-manifest":
+			sawManifest = true
+			var manifest SQLiteBundleManifest
+			if err := json.NewDecoder(r.Body).Decode(&manifest); err != nil {
+				t.Fatalf("decode manifest: %v", err)
+			}
+			if manifest.Format != SQLiteGzipChunkedBundleFormat {
+				t.Fatalf("manifest = %#v", manifest)
+			}
+			_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{
+				App:      "gitcrawl",
+				Archive:  "gitcrawl/openclaw__openclaw",
+				Complete: true,
+				Bundle:   &SQLiteBundle{Key: SQLiteBundleManifestKey("gitcrawl", "gitcrawl/openclaw__openclaw"), Manifest: &manifest},
+			})
+		default:
+			t.Fatalf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+		}
+	}))
+	defer server.Close()
+	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret"), UserAgent: "test-agent"})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	result, err := client.UploadSQLiteBundleFiles(context.Background(), "gitcrawl", "gitcrawl/openclaw__openclaw", SQLiteBundleManifest{
+		Format:  SQLiteGzipChunkedBundleFormat,
+		App:     "gitcrawl",
+		Archive: "gitcrawl/openclaw__openclaw",
+	}, []SQLiteBundlePartFile{{
+		SQLiteBundlePart: SQLiteBundlePart{Index: 0, Size: int64(len("compressed")), SHA256: "part-sha"},
+		Path:             partPath,
+	}})
+	if err != nil {
+		t.Fatalf("upload bundle files: %v", err)
+	}
+	if !sawManifest || len(uploads) != 2 || uploads[0] != "bundle-part" || uploads[1] != "bundle-manifest" {
+		t.Fatalf("uploads = %#v sawManifest=%v", uploads, sawManifest)
+	}
+	if result.Bundle == nil || result.Bundle.Manifest == nil {
 		t.Fatalf("result = %#v", result)
 	}
 }

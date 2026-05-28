@@ -199,6 +199,7 @@ type Status struct {
 	Counts       []control.Count `json:"counts,omitempty"`
 	Capabilities []string        `json:"capabilities,omitempty"`
 	SQLiteObject *SQLiteObject   `json:"sqlite_object,omitempty"`
+	SQLiteBundle *SQLiteBundle   `json:"sqlite_bundle,omitempty"`
 	Warnings     []string        `json:"warnings,omitempty"`
 }
 
@@ -279,6 +280,22 @@ type SQLiteObject struct {
 	UploadedAt  string `json:"uploaded_at,omitempty"`
 	ContentType string `json:"content_type,omitempty"`
 	SHA256      string `json:"sha256,omitempty"`
+}
+
+type SQLiteBundleUploadResult struct {
+	App      string        `json:"app,omitempty"`
+	Archive  string        `json:"archive,omitempty"`
+	Complete bool          `json:"complete,omitempty"`
+	Bundle   *SQLiteBundle `json:"bundle,omitempty"`
+}
+
+type SQLiteBundle struct {
+	Key         string                `json:"key,omitempty"`
+	Size        int64                 `json:"size,omitempty"`
+	ETag        string                `json:"etag,omitempty"`
+	UploadedAt  string                `json:"uploaded_at,omitempty"`
+	ContentType string                `json:"content_type,omitempty"`
+	Manifest    *SQLiteBundleManifest `json:"manifest,omitempty"`
 }
 
 type LoginStartRequest struct {
@@ -386,6 +403,61 @@ func (c *Client) UploadSQLite(ctx context.Context, app, archive string, upload S
 	setHeader(headers, "x-crawl-content-sha256", upload.ContentSHA256)
 	var out SQLiteUploadResult
 	err := c.doRaw(ctx, http.MethodPut, archivePath(app, archive, "sqlite"), upload.Body, upload.Size, headers, &out, true)
+	return out, err
+}
+
+func (c *Client) UploadSQLiteBundlePart(ctx context.Context, app, archive string, part SQLiteBundlePartUpload) (SQLiteUploadResult, error) {
+	if part.Body == nil {
+		return SQLiteUploadResult{}, errors.New("sqlite bundle part body is required")
+	}
+	headers := http.Header{}
+	headers.Set("content-type", "application/gzip")
+	headers.Set("x-crawl-sqlite-upload", "bundle-part")
+	headers.Set("x-crawl-bundle-part-index", fmt.Sprintf("%d", part.Index))
+	setHeader(headers, "x-crawl-content-sha256", part.SHA256)
+	setHeader(headers, "x-crawl-compression", part.Compression)
+	var out SQLiteUploadResult
+	err := c.doRaw(ctx, http.MethodPut, archivePath(app, archive, "sqlite"), part.Body, part.Size, headers, &out, true)
+	return out, err
+}
+
+func (c *Client) UploadSQLiteBundleFiles(ctx context.Context, app, archive string, manifest SQLiteBundleManifest, parts []SQLiteBundlePartFile) (SQLiteBundleUploadResult, error) {
+	for _, part := range parts {
+		file, err := os.Open(part.Path)
+		if err != nil {
+			return SQLiteBundleUploadResult{}, fmt.Errorf("open sqlite bundle part %d: %w", part.Index, err)
+		}
+		_, uploadErr := c.UploadSQLiteBundlePart(ctx, app, archive, SQLiteBundlePartUpload{
+			Index:       part.Index,
+			Body:        file,
+			Size:        part.Size,
+			SHA256:      part.SHA256,
+			Compression: SQLiteGzipCompression,
+		})
+		_ = file.Close()
+		if uploadErr != nil {
+			return SQLiteBundleUploadResult{}, uploadErr
+		}
+	}
+	return c.UploadSQLiteBundleManifest(ctx, app, archive, manifest)
+}
+
+func (c *Client) UploadSQLiteBundleManifest(ctx context.Context, app, archive string, manifest SQLiteBundleManifest) (SQLiteBundleUploadResult, error) {
+	if strings.TrimSpace(manifest.App) == "" {
+		manifest.App = strings.TrimSpace(app)
+	}
+	if strings.TrimSpace(manifest.Archive) == "" {
+		manifest.Archive = strings.TrimSpace(archive)
+	}
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(manifest); err != nil {
+		return SQLiteBundleUploadResult{}, fmt.Errorf("encode sqlite bundle manifest: %w", err)
+	}
+	headers := http.Header{}
+	headers.Set("content-type", "application/json")
+	headers.Set("x-crawl-sqlite-upload", "bundle-manifest")
+	var out SQLiteBundleUploadResult
+	err := c.doRaw(ctx, http.MethodPut, archivePath(app, archive, "sqlite"), &buf, int64(buf.Len()), headers, &out, true)
 	return out, err
 }
 

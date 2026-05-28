@@ -84,6 +84,7 @@ func BaseContract() Contract {
 		Apps: []AppSpec{},
 		Notes: []string{
 			"Worker and D1 deployment live outside crawlkit; crawlkit owns the provider-neutral client and contract.",
+			"SQLite upload routes may accept raw SQLite objects or gzip chunk bundle parts/manifests.",
 			"Routes and JSON fields are additive within a protocol version.",
 		},
 	}
