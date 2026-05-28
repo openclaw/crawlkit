@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -79,6 +80,70 @@ func TestClientQuerySendsBearerAndEscapedArchive(t *testing.T) {
 		t.Fatalf("path did not escape archive slash: %q", sawPath)
 	}
 	if len(result.Rows) != 1 || result.Columns[0] != "number" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestClientUploadSQLiteSendsRawBodyAndMetadata(t *testing.T) {
+	var sawAuth string
+	var sawPath string
+	var sawContentType string
+	var sawLength int64
+	var sawSHA string
+	var sawSchema string
+	var body string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("authorization")
+		sawPath = r.URL.EscapedPath()
+		sawContentType = r.Header.Get("content-type")
+		sawLength = r.ContentLength
+		sawSHA = r.Header.Get("x-crawl-content-sha256")
+		sawSchema = r.Header.Get("x-crawl-schema-name")
+		bytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		body = string(bytes)
+		_ = json.NewEncoder(w).Encode(SQLiteUploadResult{
+			App:      "gitcrawl",
+			Archive:  "gitcrawl/openclaw__openclaw",
+			Complete: true,
+			Object:   &SQLiteObject{Key: "gitcrawl/gitcrawl%2Fopenclaw__openclaw/sqlite/current.db", Size: int64(len(bytes)), SHA256: sawSHA},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret"), UserAgent: "test-agent"})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	result, err := client.UploadSQLite(context.Background(), "gitcrawl", "gitcrawl/openclaw__openclaw", SQLiteUploadRequest{
+		Body:          strings.NewReader("SQLite bytes"),
+		Size:          int64(len("SQLite bytes")),
+		ContentSHA256: "abc123",
+		SchemaName:    "gitcrawl-cloud-v1",
+		SchemaVersion: 1,
+		SchemaHash:    "gitcrawl-cloud-v1",
+	})
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	if sawAuth != "Bearer secret" {
+		t.Fatalf("auth = %q", sawAuth)
+	}
+	if !strings.Contains(sawPath, "gitcrawl%2Fopenclaw__openclaw") || !strings.HasSuffix(sawPath, "/sqlite") {
+		t.Fatalf("path = %q", sawPath)
+	}
+	if sawContentType != "application/vnd.sqlite3" {
+		t.Fatalf("content-type = %q", sawContentType)
+	}
+	if sawLength != int64(len("SQLite bytes")) || body != "SQLite bytes" {
+		t.Fatalf("body len/body = %d/%q", sawLength, body)
+	}
+	if sawSHA != "abc123" || sawSchema != "gitcrawl-cloud-v1" {
+		t.Fatalf("metadata sha/schema = %q/%q", sawSHA, sawSchema)
+	}
+	if result.Object == nil || result.Object.Size != int64(len("SQLite bytes")) {
 		t.Fatalf("result = %#v", result)
 	}
 }

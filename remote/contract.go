@@ -74,6 +74,7 @@ func BaseContract() Contract {
 			{Method: http.MethodPost, Path: "/v1/apps/:app/archives/:archive/query", Auth: AuthReader},
 			{Method: http.MethodPost, Path: "/v1/apps/:app/archives/:archive/batch-read", Auth: AuthReader},
 			{Method: http.MethodPost, Path: "/v1/apps/:app/archives/:archive/ingest", Auth: AuthPublisher},
+			{Method: http.MethodPut, Path: "/v1/apps/:app/archives/:archive/sqlite", Auth: AuthPublisher},
 		},
 		Auth: []AuthSpec{
 			{Name: AuthPublic, Description: "no bearer token required"},

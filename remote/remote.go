@@ -198,6 +198,7 @@ type Status struct {
 	LastIngestAt string          `json:"last_ingest_at,omitempty"`
 	Counts       []control.Count `json:"counts,omitempty"`
 	Capabilities []string        `json:"capabilities,omitempty"`
+	SQLiteObject *SQLiteObject   `json:"sqlite_object,omitempty"`
 	Warnings     []string        `json:"warnings,omitempty"`
 }
 
@@ -252,6 +253,32 @@ type IngestResult struct {
 	RowsAccepted int64  `json:"rows_accepted,omitempty"`
 	Cursor       string `json:"cursor,omitempty"`
 	Complete     bool   `json:"complete,omitempty"`
+}
+
+type SQLiteUploadRequest struct {
+	Body          io.Reader
+	Size          int64
+	ContentSHA256 string
+	SchemaName    string
+	SchemaVersion int
+	SchemaHash    string
+	SourceSyncAt  string
+}
+
+type SQLiteUploadResult struct {
+	App      string        `json:"app,omitempty"`
+	Archive  string        `json:"archive,omitempty"`
+	Complete bool          `json:"complete,omitempty"`
+	Object   *SQLiteObject `json:"object,omitempty"`
+}
+
+type SQLiteObject struct {
+	Key         string `json:"key,omitempty"`
+	Size        int64  `json:"size,omitempty"`
+	ETag        string `json:"etag,omitempty"`
+	UploadedAt  string `json:"uploaded_at,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
+	SHA256      string `json:"sha256,omitempty"`
 }
 
 type LoginStartRequest struct {
@@ -346,6 +373,22 @@ func (c *Client) Ingest(ctx context.Context, app, archive string, req IngestRequ
 	return out, err
 }
 
+func (c *Client) UploadSQLite(ctx context.Context, app, archive string, upload SQLiteUploadRequest) (SQLiteUploadResult, error) {
+	if upload.Body == nil {
+		return SQLiteUploadResult{}, errors.New("sqlite upload body is required")
+	}
+	headers := http.Header{}
+	headers.Set("content-type", "application/vnd.sqlite3")
+	setHeader(headers, "x-crawl-schema-name", upload.SchemaName)
+	setHeader(headers, "x-crawl-schema-version", intHeader(upload.SchemaVersion))
+	setHeader(headers, "x-crawl-schema-hash", upload.SchemaHash)
+	setHeader(headers, "x-crawl-source-sync-at", upload.SourceSyncAt)
+	setHeader(headers, "x-crawl-content-sha256", upload.ContentSHA256)
+	var out SQLiteUploadResult
+	err := c.doRaw(ctx, http.MethodPut, archivePath(app, archive, "sqlite"), upload.Body, upload.Size, headers, &out, true)
+	return out, err
+}
+
 func (c *Client) StartGitHubLogin(ctx context.Context, pollSecretHash string) (LoginStartResult, error) {
 	var out LoginStartResult
 	err := c.do(ctx, http.MethodPost, "/v1/auth/github/start", LoginStartRequest{PollSecretHash: pollSecretHash}, &out, false)
@@ -395,9 +438,29 @@ func (c *Client) do(ctx context.Context, method, route string, input, output any
 	if err != nil {
 		return err
 	}
+	return c.doRequest(ctx, req, input != nil, output, auth)
+}
+
+func (c *Client) doRaw(ctx context.Context, method, route string, body io.Reader, size int64, headers http.Header, output any, auth bool) error {
+	req, err := http.NewRequestWithContext(ctx, method, c.url(route), body)
+	if err != nil {
+		return err
+	}
+	if size >= 0 {
+		req.ContentLength = size
+	}
+	for name, values := range headers {
+		for _, value := range values {
+			req.Header.Add(name, value)
+		}
+	}
+	return c.doRequest(ctx, req, true, output, auth)
+}
+
+func (c *Client) doRequest(ctx context.Context, req *http.Request, hasBody bool, output any, auth bool) error {
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("user-agent", c.userAgent)
-	if input != nil {
+	if hasBody && req.Header.Get("content-type") == "" {
 		req.Header.Set("content-type", "application/json")
 	}
 	if auth {
@@ -426,6 +489,20 @@ func (c *Client) do(ctx context.Context, method, route string, input, output any
 		return fmt.Errorf("decode remote response: %w", err)
 	}
 	return nil
+}
+
+func setHeader(headers http.Header, name, value string) {
+	value = strings.TrimSpace(value)
+	if value != "" {
+		headers.Set(name, value)
+	}
+}
+
+func intHeader(value int) string {
+	if value <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d", value)
 }
 
 func (c *Client) url(route string) string {
