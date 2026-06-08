@@ -22,8 +22,8 @@ func TestTrackerLogsCIStablePercentLines(t *testing.T) {
 		Attrs:    []any{"source", "api"},
 		Now:      func() time.Time { return now },
 	})
-	tracker.Set(1)
-	tracker.Set(2, "phase", "messages")
+	tracker.Add(1)
+	tracker.Add(1, "phase", "messages")
 	tracker.Finish(nil)
 
 	logs := out.String()

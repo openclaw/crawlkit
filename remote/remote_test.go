@@ -86,6 +86,113 @@ func TestClientQuerySendsBearerAndEscapedArchive(t *testing.T) {
 	}
 }
 
+func TestClientArchiveOperations(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.EscapedPath())
+		if r.URL.Path != "/v1/auth/github/start" && r.URL.Path != "/v1/auth/github/poll" && r.Header.Get("authorization") != "Bearer secret" {
+			t.Fatalf("auth = %q", r.Header.Get("authorization"))
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/archives":
+			_ = json.NewEncoder(w).Encode(map[string]any{"archives": []Archive{{ID: "arch-1", App: "gitcrawl"}}})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status"):
+			_ = json.NewEncoder(w).Encode(Status{App: "gitcrawl", Archive: "gitcrawl/openclaw", Mode: ModeCloud})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/batch-read"):
+			var body struct {
+				Requests []QueryRequest `json:"requests"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode batch-read: %v", err)
+			}
+			if len(body.Requests) != 1 || body.Requests[0].App != "gitcrawl" || body.Requests[0].Archive != "gitcrawl/openclaw" {
+				t.Fatalf("batch request = %#v", body.Requests)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"results": []QueryResult{{Columns: []string{"id"}, Rows: [][]any{{"1"}}}}})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/ingest"):
+			var req IngestRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode ingest: %v", err)
+			}
+			if req.Manifest.App != "gitcrawl" || req.Manifest.Archive != "gitcrawl/openclaw" {
+				t.Fatalf("ingest manifest = %#v", req.Manifest)
+			}
+			_ = json.NewEncoder(w).Encode(IngestResult{RunID: "run-1", Table: req.Table, RowsAccepted: int64(len(req.Rows)), Complete: req.Final})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/github/start":
+			var req LoginStartRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode login start: %v", err)
+			}
+			if req.PollSecretHash != "hash" {
+				t.Fatalf("poll secret hash = %q", req.PollSecretHash)
+			}
+			_ = json.NewEncoder(w).Encode(LoginStartResult{LoginID: "login-1", URL: "https://login.example"})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/github/poll":
+			var req LoginPollRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode login poll: %v", err)
+			}
+			if req.LoginID != "login-1" || req.PollSecret != "secret" {
+				t.Fatalf("login poll request = %#v", req)
+			}
+			_ = json.NewEncoder(w).Encode(LoginPollResult{Status: "complete", Token: "session-token"})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret"), UserAgent: "test-agent"})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	archives, err := client.Archives(context.Background())
+	if err != nil {
+		t.Fatalf("archives: %v", err)
+	}
+	if len(archives) != 1 || archives[0].ID != "arch-1" {
+		t.Fatalf("archives = %#v", archives)
+	}
+	status, err := client.Status(context.Background(), "gitcrawl", "gitcrawl/openclaw")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if status.Mode != ModeCloud {
+		t.Fatalf("status = %#v", status)
+	}
+	results, err := client.BatchRead(context.Background(), "gitcrawl", "gitcrawl/openclaw", []QueryRequest{{Name: "threads"}})
+	if err != nil {
+		t.Fatalf("batch read: %v", err)
+	}
+	if len(results) != 1 || results[0].Columns[0] != "id" {
+		t.Fatalf("batch results = %#v", results)
+	}
+	ingest, err := client.Ingest(context.Background(), "gitcrawl", "gitcrawl/openclaw", IngestRequest{Table: "threads", Rows: [][]any{{"1"}}, Final: true})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if !ingest.Complete || ingest.RowsAccepted != 1 {
+		t.Fatalf("ingest result = %#v", ingest)
+	}
+	start, err := client.StartGitHubLogin(context.Background(), "hash")
+	if err != nil {
+		t.Fatalf("start login: %v", err)
+	}
+	if start.LoginID != "login-1" {
+		t.Fatalf("start = %#v", start)
+	}
+	poll, err := client.PollGitHubLogin(context.Background(), "login-1", "secret")
+	if err != nil {
+		t.Fatalf("poll login: %v", err)
+	}
+	if poll.Status != "complete" || poll.Token != "session-token" {
+		t.Fatalf("poll = %#v", poll)
+	}
+	if len(requests) != 6 {
+		t.Fatalf("requests = %#v", requests)
+	}
+}
+
 func TestClientUploadSQLiteSendsRawBodyAndMetadata(t *testing.T) {
 	var sawAuth string
 	var sawPath string

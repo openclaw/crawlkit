@@ -301,6 +301,38 @@ func TestRuntimeConfigRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRuntimeDefaultsFillAndCreateDirs(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	base := filepath.Join(home, "runtime")
+	defaults, err := (App{Name: "thingcrawl", BaseDir: base}).DefaultRuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := RuntimeConfig{
+		DBPath: filepath.Join(base, "custom.db"),
+	}
+	ApplyRuntimeDefaults(&cfg, defaults)
+	if cfg.Version != 1 {
+		t.Fatalf("version = %d", cfg.Version)
+	}
+	if cfg.DBPath != filepath.Join(base, "custom.db") {
+		t.Fatalf("db path = %q", cfg.DBPath)
+	}
+	if cfg.CacheDir != filepath.Join(base, "cache") || cfg.LogDir != filepath.Join(base, "logs") || cfg.ShareDir != filepath.Join(base, "share") {
+		t.Fatalf("runtime dirs = %#v", cfg)
+	}
+	if err := EnsureRuntimeDirs(cfg); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{filepath.Dir(cfg.DBPath), cfg.CacheDir, cfg.LogDir, cfg.ShareDir} {
+		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+			t.Fatalf("runtime dir %s: info=%v err=%v", path, info, err)
+		}
+	}
+}
+
 func TestTokenDiagnosticDoesNotExposeValue(t *testing.T) {
 	t.Setenv("SECRET_TOKEN", "super-secret")
 	got := TokenDiagnosticForEnv("SECRET_TOKEN")
