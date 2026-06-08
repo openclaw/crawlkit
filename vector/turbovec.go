@@ -38,6 +38,9 @@ func turboVecSearch[T any](ctx context.Context, query []float32, candidates []Se
 	if len(query) == 0 {
 		return nil, errors.New("query vector is empty")
 	}
+	if len(query)%8 != 0 {
+		return nil, fmt.Errorf("turbovec dimensions must be a positive multiple of 8, got %d", len(query))
+	}
 	if len(candidates) == 0 {
 		return nil, nil
 	}

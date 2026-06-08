@@ -4,7 +4,7 @@
 
 - Add shared `vector.Search` backends, including the existing exact cosine
   scorer and an optional Python `turbovec` bridge for downstream semantic
-  search.
+  search over dimensions divisible by 8.
 - Add a `remote.Client.UploadSQLite` helper, SQLite object metadata in remote
   status payloads, and contract metadata for publisher-side raw SQLite archive
   uploads.

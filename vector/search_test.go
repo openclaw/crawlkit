@@ -35,9 +35,9 @@ func TestSearchExactErrorsOnInvalidCandidateByDefault(t *testing.T) {
 
 func TestSearchTurboVecBridge(t *testing.T) {
 	t.Setenv("CRAWLKIT_TEST_TURBOVEC_HELPER", "1")
-	results, err := Search(t.Context(), []float32{1, 0}, []SearchCandidate[string]{
-		{Item: "first", Vector: []float32{1, 0}},
-		{Item: "second", Vector: []float32{0.8, 0.2}},
+	results, err := Search(t.Context(), []float32{1, 0, 0, 0, 0, 0, 0, 0}, []SearchCandidate[string]{
+		{Item: "first", Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
+		{Item: "second", Vector: []float32{0.8, 0.2, 0, 0, 0, 0, 0, 0}},
 	}, SearchOptions[string]{
 		Backend: BackendTurboVec,
 		Limit:   2,
@@ -52,6 +52,28 @@ func TestSearchTurboVecBridge(t *testing.T) {
 	}, results)
 }
 
+func TestSearchTurboVecRealPython(t *testing.T) {
+	if os.Getenv("CRAWLKIT_TURBOVEC_INTEGRATION") != "1" {
+		t.Skip("set CRAWLKIT_TURBOVEC_INTEGRATION=1 with turbovec installed")
+	}
+	results, err := Search(t.Context(), []float32{1, 0, 0, 0, 0, 0, 0, 0}, []SearchCandidate[string]{
+		{Item: "first", Vector: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
+		{Item: "second", Vector: []float32{0.8, 0.2, 0, 0, 0, 0, 0, 0}},
+		{Item: "third", Vector: []float32{0, 1, 0, 0, 0, 0, 0, 0}},
+	}, SearchOptions[string]{Backend: BackendTurboVec, Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	require.Equal(t, "first", results[0].Item)
+	require.Equal(t, "second", results[1].Item)
+}
+
+func TestSearchTurboVecRejectsUnsupportedDimensions(t *testing.T) {
+	_, err := Search(t.Context(), []float32{1, 0}, []SearchCandidate[string]{
+		{Item: "first", Vector: []float32{1, 0}},
+	}, SearchOptions[string]{Backend: BackendTurboVec})
+	require.ErrorContains(t, err, "positive multiple of 8")
+}
+
 func TestTurboVecHelperProcess(t *testing.T) {
 	if os.Getenv("CRAWLKIT_TEST_TURBOVEC_HELPER") != "1" {
 		return
@@ -62,7 +84,7 @@ func TestTurboVecHelperProcess(t *testing.T) {
 	if err := json.NewDecoder(os.Stdin).Decode(&request); err != nil {
 		panic(err)
 	}
-	if request.Dimensions != 2 || request.BitWidth != 4 || request.Limit != 2 || len(request.Vectors) != 2 {
+	if request.Dimensions != 8 || request.BitWidth != 4 || request.Limit != 2 || len(request.Vectors) != 2 {
 		panic("unexpected turbovec request")
 	}
 	response := turboVecResponse{Results: []turboVecResult{
