@@ -21,6 +21,9 @@ func TestOpenAppliesSchemaPragmasAndPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
+	if st.Path() != path {
+		t.Fatalf("path = %q, want %q", st.Path(), path)
+	}
 
 	var journalMode string
 	if err := st.DB().QueryRowContext(ctx, `pragma journal_mode`).Scan(&journalMode); err != nil {

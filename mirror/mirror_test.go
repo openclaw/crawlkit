@@ -55,7 +55,7 @@ func TestEnsureRepoUpdatesExistingOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts.Remote = "https://example.invalid/new.git"
-	if err := EnsureRepo(ctx, opts); err != nil {
+	if err := EnsureRemote(ctx, opts); err != nil {
 		t.Fatal(err)
 	}
 	out, err := output(ctx, repo, "git", "remote", "get-url", "origin")
@@ -64,6 +64,34 @@ func TestEnsureRepoUpdatesExistingOrigin(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != opts.Remote {
 		t.Fatalf("origin = %q, want %q", strings.TrimSpace(out), opts.Remote)
+	}
+}
+
+func TestPushWritesCurrentBranchToOrigin(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	repo := filepath.Join(dir, "share")
+	if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{RepoPath: repo, Remote: remote, Branch: "main"}
+	if err := EnsureRemote(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "manifest.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, opts, "archive: push"); err != nil {
+		t.Fatal(err)
+	} else if !committed {
+		t.Fatal("expected commit")
+	}
+	if err := Push(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := output(ctx, remote, "git", "rev-parse", "--verify", "refs/heads/main"); err != nil {
+		t.Fatal(err)
 	}
 }
 

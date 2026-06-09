@@ -19,6 +19,13 @@ func TestWriteReadEncryptedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	recipientFromIdentity, err := RecipientFromIdentity(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recipientFromIdentity != recipient {
+		t.Fatalf("recipient from identity = %q, want %q", recipientFromIdentity, recipient)
+	}
 	cfg := Config{Repo: filepath.Join(dir, "repo"), Identity: identity, Recipients: []string{recipient}}
 	if err := os.MkdirAll(cfg.Repo, 0o700); err != nil {
 		t.Fatal(err)
@@ -31,6 +38,13 @@ func TestWriteReadEncryptedSnapshot(t *testing.T) {
 	}
 	if manifest.Counts["messages"] != 1 || len(manifest.Shards) != 1 {
 		t.Fatalf("unexpected manifest: %+v", manifest)
+	}
+	stored, err := ReadManifest(cfg.Repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Counts["messages"] != 1 || len(stored.Shards) != 1 {
+		t.Fatalf("unexpected stored manifest: %+v", stored)
 	}
 	decoded, err := ReadSnapshot(cfg, manifest)
 	if err != nil {

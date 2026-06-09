@@ -1406,10 +1406,6 @@ func (m *model) closeMenu() {
 	m.menuRect = rect{}
 }
 
-func (m *model) runMenuAction(action menuAction) tea.Cmd {
-	return m.runMenuItem(menuItem{action: action})
-}
-
 func (m *model) runMenuItem(item menuItem) tea.Cmd {
 	switch item.action {
 	case actionClose:
@@ -2744,24 +2740,6 @@ func (m model) pageSize() int {
 	return maxInt(1, rowsViewportHeight(m.layout().rows.h))
 }
 
-func (m model) visibleRows() []int {
-	end := minInt(len(m.filtered), m.offset+m.pageSize())
-	out := make([]int, 0, end-m.offset)
-	for i := m.offset; i < end; i++ {
-		out = append(out, i)
-	}
-	return out
-}
-
-func (m model) visibleGroups() []int {
-	end := minInt(len(m.groups), m.offset+m.pageSize())
-	out := make([]int, 0, maxInt(0, end-m.offset))
-	for i := m.offset; i < end; i++ {
-		out = append(out, i)
-	}
-	return out
-}
-
 func (m model) layout() archiveLayout {
 	width := maxInt(m.width, 80)
 	height := m.height
@@ -3118,13 +3096,6 @@ func itemSignature(items []Item) string {
 	return strings.Join(parts, "\x1f")
 }
 
-func (m model) positionLabel() string {
-	if len(m.filtered) == 0 {
-		return "0/0"
-	}
-	return fmt.Sprintf("%d/%d", m.selected+1, len(m.filtered))
-}
-
 func (m model) groupPositionLabel() string {
 	if len(m.groups) == 0 {
 		return "0/0"
@@ -3266,10 +3237,6 @@ func groupModeToggleLabel(layout LayoutPreset, mode groupMode) string {
 		}
 	}
 	return "Group by " + groupModeLabel(layout, next)
-}
-
-func paneTitle(pane, focus paneFocus, suffix string) string {
-	return paneTitleForWidth(pane, focus, suffix, 0)
 }
 
 func paneTitleForWidth(pane, focus paneFocus, suffix string, width int) string {
@@ -3798,29 +3765,6 @@ func (item Item) searchText() string {
 	return strings.Join(parts, " ")
 }
 
-func contextLines(item Item, width int) []string {
-	lines := []string{
-		fieldLine("title", truncateCells(item.Title, maxInt(1, width-6))),
-		fieldLine("subtitle", item.Subtitle),
-	}
-	for _, line := range []string{
-		fieldLine("source", item.Source),
-		fieldLine("kind", item.Kind),
-		fieldLine("id", item.ID),
-		fieldLine("scope", item.Scope),
-		fieldLine("container", item.Container),
-		fieldLine("author", item.Author),
-	} {
-		if line != "" {
-			lines = append(lines, line)
-		}
-	}
-	if len(item.Tags) > 0 {
-		lines = append(lines, "tags="+strings.Join(item.Tags, " "))
-	}
-	return compactNonEmpty(lines)
-}
-
 func (m model) detailLines(item Item) []string {
 	return m.detailLinesForWidth(item, 1000)
 }
@@ -3834,10 +3778,6 @@ func (m model) detailLinesForWidth(item Item, width int) []string {
 		return documentDetailLinesForWidth(item, width, m.compactDetail)
 	}
 	return genericDetailLinesForWidth(item, width)
-}
-
-func genericDetailLines(item Item) []string {
-	return genericDetailLinesForWidth(item, 1000)
 }
 
 func genericDetailLinesForWidth(item Item, width int) []string {
@@ -4072,30 +4012,6 @@ func appendLimitedDetailLines(out, lines []string, limit int) []string {
 	omitted := len(lines) - limit
 	out = append(out, lines[:limit]...)
 	return append(out, dim(fmt.Sprintf("... %d more line(s). Press d for full detail.", omitted)))
-}
-
-func indentWrappedLines(value string, indent, width int) []string {
-	prefix := strings.Repeat(" ", maxInt(0, indent))
-	raw := wrapLines(value, width)
-	out := make([]string, 0, len(raw))
-	for _, line := range raw {
-		out = append(out, prefix+line)
-	}
-	return out
-}
-
-func indentMarkdownLines(value string, indent, width int) []string {
-	prefix := strings.Repeat(" ", maxInt(0, indent))
-	raw := markdownLines(value, maxInt(8, width-indent))
-	out := make([]string, 0, len(raw))
-	for _, line := range raw {
-		if line == "" {
-			out = append(out, "")
-			continue
-		}
-		out = append(out, prefix+line)
-	}
-	return out
 }
 
 func prefixedMarkdownLines(value, prefix string, width int) []string {
@@ -5124,16 +5040,6 @@ func trimTrailingBlankLines(lines []string) []string {
 	return lines
 }
 
-func mutedStyle(width int) lipgloss.Style {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(archiveMutedFG)).
-		Width(width)
-}
-
-func accentStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(archiveSubtleAccentFG))
-}
-
 func tagStyle(width int) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(archiveSubtleAccentFG)).
@@ -5212,13 +5118,6 @@ func selectedMenuLineStyle(width int, palette actionMenuPalette) lipgloss.Style 
 		Background(lipgloss.Color(palette.selectedBG)).
 		Foreground(lipgloss.Color(palette.selectedFG)).
 		Bold(true)
-}
-
-func separator(width int) string {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(archiveBorderColor)).
-		Width(width).
-		Render(strings.Repeat("-", minInt(width, 120)))
 }
 
 func overlayBlock(base, block string, x, y, width int) string {

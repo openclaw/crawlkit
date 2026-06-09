@@ -164,6 +164,10 @@ func TestShouldNotifySkipsScriptedOutput(t *testing.T) {
 	}
 }
 
+func TestStderrIsTerminalReturnsBool(t *testing.T) {
+	_ = StderrIsTerminal()
+}
+
 func TestVersionLess(t *testing.T) {
 	tests := []struct {
 		current string

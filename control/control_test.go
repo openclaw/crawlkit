@@ -19,6 +19,29 @@ func TestManifestDefaultsSchemaAndBinary(t *testing.T) {
 	}
 }
 
+func TestStatusAndRemoteDatabaseDefaults(t *testing.T) {
+	status := NewStatus(" gitcrawl ", " ready ")
+	if status.SchemaVersion != SchemaVersion || status.AppID != "gitcrawl" || status.State != "unknown" || status.Summary != "ready" {
+		t.Fatalf("status = %#v", status)
+	}
+	if status.GeneratedAt == "" {
+		t.Fatal("generated_at should be set")
+	}
+
+	counts := []Count{NewCount("threads", "Threads", 3)}
+	db := RemoteDatabase(" cloud ", " Cloud archive ", "", "", " https://remote.example/ ", " gitcrawl/openclaw ", true, counts)
+	if db.ID != "cloud" || db.Label != "Cloud archive" || db.Kind != "remote" || db.Role != "archive" {
+		t.Fatalf("remote database defaults = %#v", db)
+	}
+	if db.Endpoint != "https://remote.example" || db.Archive != "gitcrawl/openclaw" || !db.IsPrimary {
+		t.Fatalf("remote database routing = %#v", db)
+	}
+	counts[0].Value = 99
+	if db.Counts[0].Value != 3 {
+		t.Fatalf("counts should be copied: %#v", db.Counts)
+	}
+}
+
 func TestSQLiteDatabaseStatsPathReadOnly(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "archive.db")
