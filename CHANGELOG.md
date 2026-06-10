@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.12.0 - 2026-06-10
+
 - Add shared `vector.Search` backends, including the existing exact cosine
   scorer and an optional Python `turbovec` bridge for downstream semantic
   search over dimensions divisible by 8 up to 8,192. Thanks @vincentkoc.
