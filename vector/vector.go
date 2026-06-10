@@ -52,22 +52,6 @@ func DecodeFloat32(blob []byte) ([]float32, error) {
 	return out, nil
 }
 
-func Float64To32(values []float64) []float32 {
-	out := make([]float32, len(values))
-	for i, value := range values {
-		out[i] = float32(value)
-	}
-	return out
-}
-
-func Float64BatchTo32(vectors [][]float64) [][]float32 {
-	out := make([][]float32, len(vectors))
-	for i, values := range vectors {
-		out[i] = Float64To32(values)
-	}
-	return out
-}
-
 func ValidateDimensions(values []float32, dimensions int) error {
 	if dimensions <= 0 {
 		return errors.New("dimensions must be positive")
