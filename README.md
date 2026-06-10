@@ -32,7 +32,7 @@ See `docs/boundary.md` for the crawlkit-versus-app ownership boundary and
 - `mirror`: clone/init/pull/commit/push helpers for private snapshot repos.
 - `state`: generic crawler cursor and freshness records.
 - `embed`: reusable OpenAI-compatible, Ollama, and llama.cpp embedding providers plus local probe diagnostics.
-- `vector`: float32 vector encoding, dimension validation, cosine scoring, top-k helpers, and reciprocal-rank fusion.
+- `vector`: float32 vector encoding, dimension validation, exact cosine search, optional turbovec-backed search for dimensions divisible by 8 up to 8,192, top-k helpers, and reciprocal-rank fusion.
 - `releasecheck`: GitHub release checks, 24-hour cache handling, scripted-output
   suppression, and stderr update notice formatting for crawl app CLIs.
 - `remote`: provider-neutral HTTP client, config, query, ingest, auth, status,

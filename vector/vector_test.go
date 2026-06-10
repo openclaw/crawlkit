@@ -1,6 +1,7 @@
 package vector
 
 import (
+	"errors"
 	"math"
 	"reflect"
 	"strings"
@@ -120,6 +121,13 @@ func (requireAPI) ErrorContains(t *testing.T, err error, needle string) {
 	}
 	if !strings.Contains(err.Error(), needle) {
 		t.Fatalf("expected error containing %q, got %q", needle, err.Error())
+	}
+}
+
+func (requireAPI) ErrorIs(t *testing.T, err, target error) {
+	t.Helper()
+	if !errors.Is(err, target) {
+		t.Fatalf("expected error %v to match %v", err, target)
 	}
 }
 

@@ -11,6 +11,13 @@ import (
 
 const DefaultRRFK = 60.0
 
+type SearchBackend = string
+
+const (
+	BackendExact    SearchBackend = "exact"
+	BackendTurboVec SearchBackend = "turbovec"
+)
+
 type Scored[T any] struct {
 	Item  T
 	Score float64
