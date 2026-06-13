@@ -142,6 +142,9 @@ func NewClient(opts Options) (*Client, error) {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, fmt.Errorf("invalid remote endpoint %q", endpoint)
 	}
+	if opts.TokenProvider != nil && parsed.Scheme != "https" && !isLocalHTTPHost(parsed.Hostname()) {
+		return nil, fmt.Errorf("remote endpoint %q cannot use bearer auth over %s", endpoint, parsed.Scheme)
+	}
 	client := opts.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
@@ -156,6 +159,11 @@ func NewClient(opts Options) (*Client, error) {
 		tokenProvider: opts.TokenProvider,
 		userAgent:     userAgent,
 	}, nil
+}
+
+func isLocalHTTPHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func NewClientFromConfig(cfg Config, opts Options) (*Client, error) {

@@ -3,6 +3,7 @@ package backup
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -53,9 +54,15 @@ func RecipientFromIdentity(path string) (string, error) {
 	return identity.Recipient().String(), nil
 }
 
-func encryptShard(plaintext []byte, recipientStrings []string) ([]byte, string, error) {
+func encryptShardContext(ctx context.Context, plaintext []byte, recipientStrings []string) ([]byte, string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
 	recipients, err := parseRecipients(recipientStrings)
 	if err != nil {
+		return nil, "", err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
 	var compressed bytes.Buffer
@@ -63,14 +70,23 @@ func encryptShard(plaintext []byte, recipientStrings []string) ([]byte, string, 
 	gz.ModTime = time.Unix(0, 0).UTC()
 	_, _ = gz.Write(plaintext)
 	_ = gz.Close()
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
 
 	var encrypted bytes.Buffer
 	w, err := age.Encrypt(&encrypted, recipients...)
 	if err != nil {
 		return nil, "", err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
 	_, _ = w.Write(compressed.Bytes())
 	if err := w.Close(); err != nil {
+		return nil, "", err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
 	return encrypted.Bytes(), sha256Hex(plaintext), nil

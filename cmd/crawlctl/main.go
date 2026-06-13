@@ -18,6 +18,8 @@ import (
 
 var version = "dev"
 
+const maxLogLineBytes = 10 * 1024 * 1024
+
 type app struct {
 	stdout io.Writer
 	stderr io.Writer
@@ -313,17 +315,17 @@ func (a *app) runLogs(args []string) error {
 			if i+1 >= len(args) {
 				return usageError{fmt.Errorf("--tail requires a line count")}
 			}
-			var parsed int
-			if _, err := fmt.Sscanf(args[i+1], "%d", &parsed); err != nil {
-				return usageError{fmt.Errorf("invalid --tail value %q", args[i+1])}
+			parsed, err := parseTail(args[i+1])
+			if err != nil {
+				return usageError{err}
 			}
 			tail = parsed
 			i++
 		default:
 			if strings.HasPrefix(args[i], "--tail=") {
-				var parsed int
-				if _, err := fmt.Sscanf(strings.TrimPrefix(args[i], "--tail="), "%d", &parsed); err != nil {
-					return usageError{fmt.Errorf("invalid --tail value %q", args[i])}
+				parsed, err := parseTail(strings.TrimPrefix(args[i], "--tail="))
+				if err != nil {
+					return usageError{err}
 				}
 				tail = parsed
 				continue
@@ -351,6 +353,17 @@ func (a *app) runLogs(args []string) error {
 		}
 	}
 	return fmt.Errorf("no logs found")
+}
+
+func parseTail(value string) (int, error) {
+	var parsed int
+	if _, err := fmt.Sscanf(value, "%d", &parsed); err != nil {
+		return 0, fmt.Errorf("invalid --tail value %q", value)
+	}
+	if parsed <= 0 {
+		return 0, errors.New("--tail must be greater than zero")
+	}
+	return parsed, nil
 }
 
 func (a *app) runInstall(args []string) error {
@@ -453,9 +466,10 @@ func printTail(w io.Writer, path string, limit int) error {
 	defer file.Close()
 	var lines []string
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxLogLineBytes)
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
-		if limit > 0 && len(lines) > limit {
+		if len(lines) > limit {
 			lines = lines[1:]
 		}
 	}

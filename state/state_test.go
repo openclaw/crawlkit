@@ -178,3 +178,30 @@ func TestCursorStoreSetGetAndStale(t *testing.T) {
 		t.Fatal("old cursor record reported fresh")
 	}
 }
+
+func TestStateSchemasCoexistInOneDatabase(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := EnsureSchema(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureScopedSchema(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureCursorSchema(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if err := New(db).Set(ctx, "share", "repo", "last_import", "value"); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewScoped(db).Set(ctx, "share:last_import_at", "cursor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewCursor(db).Set(ctx, "share", "manifest", "generated_at", "cursor"); err != nil {
+		t.Fatal(err)
+	}
+}

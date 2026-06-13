@@ -121,19 +121,22 @@ func CommitPaths(ctx context.Context, opts Options, message string, paths []stri
 	if err := run(ctx, opts.RepoPath, opts.Git, args...); err != nil {
 		return false, err
 	}
-	staged, err := staged(ctx, opts)
+	staged, err := staged(ctx, opts, pathspecs)
 	if err != nil {
 		return false, err
 	}
 	if !staged {
 		return false, nil
 	}
-	if err := run(ctx, opts.RepoPath, opts.Git,
+	commitArgs := []string{
 		"-c", "commit.gpgsign=false",
 		"-c", "user.name=crawlkit",
 		"-c", "user.email=crawlkit@example.invalid",
 		"commit", "-m", message,
-	); err != nil {
+		"--",
+	}
+	commitArgs = append(commitArgs, pathspecs...)
+	if err := run(ctx, opts.RepoPath, opts.Git, commitArgs...); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -242,9 +245,11 @@ func cleanPathspecs(paths []string) ([]string, error) {
 	return out, nil
 }
 
-func staged(ctx context.Context, opts Options) (bool, error) {
+func staged(ctx context.Context, opts Options, pathspecs []string) (bool, error) {
 	opts = normalize(opts)
-	out, err := output(ctx, opts.RepoPath, opts.Git, "diff", "--cached", "--quiet")
+	args := []string{"diff", "--cached", "--quiet", "--"}
+	args = append(args, pathspecs...)
+	out, err := output(ctx, opts.RepoPath, opts.Git, args...)
 	if err == nil {
 		return false, nil
 	}
@@ -252,7 +257,7 @@ func staged(ctx context.Context, opts Options) (bool, error) {
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
 		return true, nil
 	}
-	return false, fmt.Errorf("git diff --cached --quiet: %w\n%s", err, strings.TrimSpace(out))
+	return false, fmt.Errorf("git diff --cached --quiet -- %s: %w\n%s", strings.Join(pathspecs, " "), err, strings.TrimSpace(out))
 }
 
 func isSQLiteSidecar(path string) bool {

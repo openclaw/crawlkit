@@ -86,6 +86,16 @@ func TestClientQuerySendsBearerAndEscapedArchive(t *testing.T) {
 	}
 }
 
+func TestClientRejectsBearerTokenOverRemoteHTTP(t *testing.T) {
+	_, err := NewClient(Options{Endpoint: "http://remote.example", TokenProvider: StaticToken("secret")})
+	if err == nil {
+		t.Fatal("expected plaintext remote auth error")
+	}
+	if !strings.Contains(err.Error(), "bearer auth over http") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestClientArchiveOperations(t *testing.T) {
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -44,6 +44,25 @@ func TestPlanInstallBackends(t *testing.T) {
 	}
 }
 
+func TestPlanInstallRejectsInexactMinuteBackends(t *testing.T) {
+	paths := Paths{ConfigPath: "/tmp/crawlctl.toml", LogDir: "/tmp/logs"}
+	plan, err := PlanInstall(InstallOptions{Backend: "systemd", Every: "90s", Executable: "/bin/crawlctl", Paths: paths})
+	if err != nil {
+		t.Fatalf("systemd plan: %v", err)
+	}
+	if !strings.Contains(plan.Content, "OnUnitActiveSec=90s") {
+		t.Fatalf("systemd content = %s", plan.Content)
+	}
+	for _, backend := range []string{"windows", "cron"} {
+		if _, err := PlanInstall(InstallOptions{Backend: backend, Every: "90s", Executable: "/bin/crawlctl", Paths: paths}); err == nil {
+			t.Fatalf("expected %s to reject 90s", backend)
+		}
+	}
+	if _, err := PlanInstall(InstallOptions{Backend: "cron", Every: "90m", Executable: "/bin/crawlctl", Paths: paths}); err == nil {
+		t.Fatal("expected cron to reject 90m")
+	}
+}
+
 func TestPlanInstallLaunchdEscapesXML(t *testing.T) {
 	paths := Paths{ConfigPath: "/tmp/a&b/crawlctl.toml", LogDir: "/tmp/logs<private>"}
 	plan, err := PlanInstall(InstallOptions{Backend: "launchd", Every: "5m", Executable: "/bin/crawlctl", Paths: paths})
@@ -79,6 +98,29 @@ func TestRunRecordsHistory(t *testing.T) {
 	}
 	if len(history) != 1 {
 		t.Fatalf("history len = %d", len(history))
+	}
+}
+
+func TestRunRecoversInvalidStaleLock(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell command path differs on windows")
+	}
+	dir := t.TempDir()
+	paths := Paths{LogDir: filepath.Join(dir, "logs"), StateDir: filepath.Join(dir, "state"), LockPath: filepath.Join(dir, "state", "lock"), History: filepath.Join(dir, "state", "runs.jsonl")}
+	if err := os.MkdirAll(paths.StateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.LockPath, []byte("pid=0\nstarted_at=2026-01-01T00:00:00Z\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := DefaultConfig()
+	cfg.Jobs["ok"] = Job{Enabled: true, Command: []string{"sh", "-c", "echo ok"}}
+	records, err := Run(context.Background(), RunOptions{Config: cfg, Paths: paths})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(records) != 1 || records[0].Status != "success" {
+		t.Fatalf("records = %#v", records)
 	}
 }
 

@@ -134,6 +134,45 @@ func TestCommitPathsDoesNotStageUnrelatedFiles(t *testing.T) {
 	}
 }
 
+func TestCommitPathsDoesNotCommitPrestagedUnrelatedFiles(t *testing.T) {
+	ctx := context.Background()
+	repo := filepath.Join(t.TempDir(), "share")
+	opts := Options{RepoPath: repo, Branch: "main"}
+	if err := EnsureRepo(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "manifest.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "notes.txt"), []byte("local draft\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, repo, "git", "add", "notes.txt"); err != nil {
+		t.Fatal(err)
+	}
+	committed, err := CommitPaths(ctx, opts, "archive: manifest", []string{"manifest.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !committed {
+		t.Fatal("expected commit")
+	}
+	tree, err := output(ctx, repo, "git", "ls-tree", "--name-only", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(tree, "notes.txt") {
+		t.Fatalf("unrelated file was committed: %q", tree)
+	}
+	status, err := output(ctx, repo, "git", "status", "--porcelain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(status) != "A  notes.txt" {
+		t.Fatalf("status = %q, want staged notes.txt", strings.TrimSpace(status))
+	}
+}
+
 func TestPullCurrentUsesExistingOrigin(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

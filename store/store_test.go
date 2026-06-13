@@ -98,3 +98,41 @@ func TestReadOnlyRejectsWrites(t *testing.T) {
 		t.Fatal("expected readonly write to fail")
 	}
 }
+
+func TestOpenEscapesURIReservedPathCharacters(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "archive?tenant=a#frag.db")
+	st, err := Open(ctx, Options{
+		Path:   path,
+		Schema: `create table things(id text primary key, value text not null);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB().ExecContext(ctx, `insert into things(id, value) values('a', 'one')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("literal database path missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "archive")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected truncated database stat err = %v", err)
+	}
+
+	ro, err := OpenReadOnly(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ro.Close()
+	var value string
+	if err := ro.DB().QueryRowContext(ctx, `select value from things where id = 'a'`).Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	if value != "one" {
+		t.Fatalf("value = %q", value)
+	}
+}

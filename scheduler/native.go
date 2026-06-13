@@ -75,13 +75,19 @@ func PlanInstall(opts InstallOptions) (InstallPlan, error) {
 		home, _ := os.UserHomeDir()
 		return InstallPlan{Backend: backend, Path: filepath.Join(home, ".config", "systemd", "user", "crawlctl.service"), Content: service + "\n--- crawlctl.timer ---\n" + timer}, nil
 	case "windows":
+		if duration%time.Minute != 0 {
+			return InstallPlan{}, fmt.Errorf("windows scheduler interval must be whole minutes: %s", duration)
+		}
 		minutes := int(duration / time.Minute)
 		tr := quoteWindows(args)
 		return InstallPlan{Backend: backend, Command: []string{"schtasks", "/Create", "/TN", "CrawlCtl", "/SC", "MINUTE", "/MO", strconv.Itoa(minutes), "/TR", tr, "/F"}}, nil
 	case "cron":
+		if duration%time.Minute != 0 {
+			return InstallPlan{}, fmt.Errorf("cron interval must be whole minutes: %s", duration)
+		}
 		minutes := int(duration / time.Minute)
-		if minutes < 1 {
-			minutes = 1
+		if minutes < 1 || minutes > 59 {
+			return InstallPlan{}, fmt.Errorf("cron interval must be between 1m and 59m: %s", duration)
 		}
 		line := fmt.Sprintf("*/%d * * * * %s >> %s 2>&1 # crawlctl\n", minutes, shellQuoteArgs(args), shellQuote(filepath.Join(paths.LogDir, "crawlctl-cron.log")))
 		return InstallPlan{Backend: backend, Content: line}, nil
@@ -231,11 +237,7 @@ func xmlText(value string) string {
 }
 
 func durationSystemd(d time.Duration) string {
-	minutes := int(d / time.Minute)
-	if minutes <= 0 {
-		minutes = 1
-	}
-	return fmt.Sprintf("%dmin", minutes)
+	return fmt.Sprintf("%ds", int(d/time.Second))
 }
 
 func shellQuoteArgs(args []string) string {

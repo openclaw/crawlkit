@@ -8,16 +8,16 @@ import (
 )
 
 const ScopedSchema = `
-create table if not exists sync_state (
+create table if not exists sync_scoped_state (
   scope text primary key,
   cursor text not null,
   updated_at text not null
 );
-create index if not exists idx_sync_state_updated_at on sync_state(updated_at desc);
+create index if not exists idx_sync_scoped_state_updated_at on sync_scoped_state(updated_at desc);
 `
 
 const CursorSchema = `
-create table if not exists sync_state (
+create table if not exists sync_cursor_state (
   source text not null,
   entity_type text not null,
   entity_id text not null,
@@ -25,7 +25,7 @@ create table if not exists sync_state (
   synced_at text not null,
   primary key (source, entity_type, entity_id)
 );
-create index if not exists idx_sync_state_synced_at on sync_state(synced_at desc);
+create index if not exists idx_sync_cursor_state_synced_at on sync_cursor_state(synced_at desc);
 `
 
 type ScopedStore struct {
@@ -54,14 +54,14 @@ type CursorRecord struct {
 
 func EnsureScopedSchema(ctx context.Context, db execQuerier) error {
 	if _, err := db.ExecContext(ctx, ScopedSchema); err != nil {
-		return fmt.Errorf("ensure scoped sync_state schema: %w", err)
+		return fmt.Errorf("ensure scoped sync state schema: %w", err)
 	}
 	return nil
 }
 
 func EnsureCursorSchema(ctx context.Context, db execQuerier) error {
 	if _, err := db.ExecContext(ctx, CursorSchema); err != nil {
-		return fmt.Errorf("ensure cursor sync_state schema: %w", err)
+		return fmt.Errorf("ensure cursor sync state schema: %w", err)
 	}
 	return nil
 }
@@ -80,7 +80,7 @@ func NewScopedWithClock(db execQuerier, now func() time.Time) *ScopedStore {
 func (s *ScopedStore) Set(ctx context.Context, scope, cursor string) error {
 	updatedAt := s.now().UTC()
 	_, err := s.db.ExecContext(ctx, `
-insert into sync_state(scope, cursor, updated_at)
+insert into sync_scoped_state(scope, cursor, updated_at)
 values (?, ?, ?)
 on conflict(scope) do update set
   cursor = excluded.cursor,
@@ -97,7 +97,7 @@ func (s *ScopedStore) Get(ctx context.Context, scope string) (ScopedRecord, bool
 	var updatedAt string
 	err := s.db.QueryRowContext(ctx, `
 select scope, cursor, updated_at
-from sync_state
+from sync_scoped_state
 where scope = ?
 `, scope).Scan(&rec.Scope, &rec.Cursor, &updatedAt)
 	if err == sql.ErrNoRows {
@@ -142,7 +142,7 @@ func NewCursorWithClock(db execQuerier, now func() time.Time) *CursorStore {
 func (s *CursorStore) Set(ctx context.Context, source, entityType, entityID, cursor string) error {
 	syncedAt := s.now().UTC()
 	_, err := s.db.ExecContext(ctx, `
-insert into sync_state(source, entity_type, entity_id, cursor, synced_at)
+insert into sync_cursor_state(source, entity_type, entity_id, cursor, synced_at)
 values (?, ?, ?, ?, ?)
 on conflict(source, entity_type, entity_id) do update set
   cursor = excluded.cursor,
@@ -159,7 +159,7 @@ func (s *CursorStore) Get(ctx context.Context, source, entityType, entityID stri
 	var syncedAt string
 	err := s.db.QueryRowContext(ctx, `
 select source, entity_type, entity_id, cursor, synced_at
-from sync_state
+from sync_cursor_state
 where source = ? and entity_type = ? and entity_id = ?
 `, source, entityType, entityID).Scan(&rec.Source, &rec.EntityType, &rec.EntityID, &rec.Cursor, &syncedAt)
 	if err == sql.ErrNoRows {

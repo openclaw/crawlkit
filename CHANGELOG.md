@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Harden crawlkit maintenance surfaces found by `clawpatch`: safer `crawlctl`
+  log tailing, GOWORK-isolated validation, atomic backup/cache/store writes,
+  safer snapshot incremental imports, scoped state schemas, scheduler lock and
+  interval handling, release/version checks, remote bearer-token transport
+  validation, and path-scoped mirror commits.
+
 ## v0.12.0 - 2026-06-10
 
 - Add shared `vector.Search` backends, including the existing exact cosine

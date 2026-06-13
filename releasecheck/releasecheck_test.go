@@ -63,6 +63,57 @@ func TestCheckReportsNewReleaseAndCaches(t *testing.T) {
 	}
 }
 
+func TestCheckIgnoresFutureDatedCache(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"tag_name": "v0.4.0",
+			"html_url": "https://github.com/openclaw/gitcrawl/releases/tag/v0.4.0",
+		})
+	}))
+	defer server.Close()
+	oldAPI := GitHubAPI
+	GitHubAPI = server.URL
+	defer func() { GitHubAPI = oldAPI }()
+
+	now := time.Date(2026, 5, 17, 10, 0, 0, 0, time.UTC)
+	cacheDir := t.TempDir()
+	path := filepath.Join(cacheDir, "releasecheck", "gitcrawl.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(cacheFile{
+		CheckedAt:     now.Add(time.Hour),
+		LatestVersion: "v0.3.9",
+		LatestURL:     "https://example.invalid/stale",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Check(context.Background(), Options{
+		AppName:        "gitcrawl",
+		Owner:          "openclaw",
+		Repo:           "gitcrawl",
+		CurrentVersion: "v0.3.2",
+		CacheDir:       cacheDir,
+		Now:            func() time.Time { return now },
+		Client:         server.Client(),
+	})
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if result.FromCache || result.LatestVersion != "v0.4.0" {
+		t.Fatalf("result = %+v", result)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d", requests)
+	}
+}
+
 func TestCheckSkipsDevelopmentVersions(t *testing.T) {
 	for _, version := range []string{"dev", "ci", "0.0.0-dev", "v0.4.0-dirty"} {
 		t.Run(version, func(t *testing.T) {
@@ -177,6 +228,9 @@ func TestVersionLess(t *testing.T) {
 		{"v0.3.2", "v0.4.0", true},
 		{"0.9.0", "v0.9.0", false},
 		{"v1.10.0", "v1.9.9", false},
+		{"v1.0.0-rc.1", "v1.0.0", true},
+		{"v1.0.0", "v1.0.0-rc.1", false},
+		{"v1.0.0-rc.1", "v1.0.0-rc.2", true},
 		{"dev", "v1.0.0", false},
 	}
 	for _, tt := range tests {

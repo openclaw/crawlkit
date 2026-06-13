@@ -89,13 +89,16 @@ func Check(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	if !opts.Force {
-		if cached, ok := readCache(opts); ok && opts.Now().Sub(cached.CheckedAt) < opts.Interval {
-			result.CheckedAt = cached.CheckedAt
-			result.LatestVersion = normalizeVersion(cached.LatestVersion)
-			result.LatestURL = cached.LatestURL
-			result.FromCache = true
-			result.UpdateAvailable = versionLess(current, result.LatestVersion)
-			return result, nil
+		if cached, ok := readCache(opts); ok {
+			age := opts.Now().Sub(cached.CheckedAt)
+			if age >= 0 && age < opts.Interval {
+				result.CheckedAt = cached.CheckedAt
+				result.LatestVersion = normalizeVersion(cached.LatestVersion)
+				result.LatestURL = cached.LatestURL
+				result.FromCache = true
+				result.UpdateAvailable = versionLess(current, result.LatestVersion)
+				return result, nil
+			}
 		}
 	}
 
@@ -288,8 +291,8 @@ func cachePath(opts Options) string {
 }
 
 func versionLess(current, latest string) bool {
-	curParts, curOK := versionParts(current)
-	latParts, latOK := versionParts(latest)
+	curParts, curPre, curOK := versionParts(current)
+	latParts, latPre, latOK := versionParts(latest)
 	if !curOK || !latOK {
 		return false
 	}
@@ -301,16 +304,25 @@ func versionLess(current, latest string) bool {
 			return false
 		}
 	}
-	return false
+	if curPre == latPre {
+		return false
+	}
+	if curPre == "" {
+		return false
+	}
+	if latPre == "" {
+		return true
+	}
+	return prereleaseLess(curPre, latPre)
 }
 
-var versionRE = regexp.MustCompile(`(?i)^v?([0-9]+)(?:\.([0-9]+))?(?:\.([0-9]+))?`)
+var versionRE = regexp.MustCompile(`(?i)^v?([0-9]+)(?:\.([0-9]+))?(?:\.([0-9]+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$`)
 
-func versionParts(v string) ([3]int, bool) {
+func versionParts(v string) ([3]int, string, bool) {
 	var out [3]int
 	match := versionRE.FindStringSubmatch(strings.TrimSpace(v))
 	if match == nil {
-		return out, false
+		return out, "", false
 	}
 	for i := 1; i <= 3; i++ {
 		if match[i] == "" {
@@ -318,11 +330,35 @@ func versionParts(v string) ([3]int, bool) {
 		}
 		n, err := strconv.Atoi(match[i])
 		if err != nil {
-			return out, false
+			return out, "", false
 		}
 		out[i-1] = n
 	}
-	return out, true
+	return out, match[4], true
+}
+
+func prereleaseLess(current, latest string) bool {
+	curParts := strings.Split(current, ".")
+	latParts := strings.Split(latest, ".")
+	for i := 0; i < len(curParts) && i < len(latParts); i++ {
+		curNum, curErr := strconv.Atoi(curParts[i])
+		latNum, latErr := strconv.Atoi(latParts[i])
+		switch {
+		case curErr == nil && latErr == nil:
+			if curNum != latNum {
+				return curNum < latNum
+			}
+		case curErr == nil:
+			return true
+		case latErr == nil:
+			return false
+		default:
+			if curParts[i] != latParts[i] {
+				return curParts[i] < latParts[i]
+			}
+		}
+	}
+	return len(curParts) < len(latParts)
 }
 
 func normalizeVersion(v string) string {

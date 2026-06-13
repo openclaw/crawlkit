@@ -63,7 +63,19 @@ func (t *Tracker) Add(delta int64, attrs ...any) {
 	if t == nil || delta == 0 {
 		return
 	}
-	t.Set(t.current()+delta, attrs...)
+	now := t.now()
+	t.mu.Lock()
+	done := clampDone(t.done+delta, t.total)
+	t.done = done
+	shouldLog := t.shouldLogLocked(done, now)
+	if shouldLog {
+		t.lastDone = done
+		t.lastLog = now
+	}
+	t.mu.Unlock()
+	if shouldLog {
+		t.log("progress", now, done, attrs)
+	}
 }
 
 func (t *Tracker) Set(done int64, attrs ...any) {
@@ -72,25 +84,17 @@ func (t *Tracker) Set(done int64, attrs ...any) {
 	}
 	now := t.now()
 	t.mu.Lock()
-	if done < 0 {
-		done = 0
-	}
-	if t.total > 0 && done > t.total {
-		done = t.total
-	}
+	done = clampDone(done, t.total)
 	t.done = done
-	shouldLog := done == t.total ||
-		done == 0 ||
-		done-t.lastDone >= t.minDelta ||
-		now.Sub(t.lastLog) >= t.logEvery
-	if !shouldLog {
-		t.mu.Unlock()
-		return
+	shouldLog := t.shouldLogLocked(done, now)
+	if shouldLog {
+		t.lastDone = done
+		t.lastLog = now
 	}
-	t.lastDone = done
-	t.lastLog = now
 	t.mu.Unlock()
-	t.log("progress", now, done, attrs)
+	if shouldLog {
+		t.log("progress", now, done, attrs)
+	}
 }
 
 func (t *Tracker) Finish(err error, attrs ...any) {
@@ -114,6 +118,23 @@ func (t *Tracker) current() int64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.done
+}
+
+func (t *Tracker) shouldLogLocked(done int64, now time.Time) bool {
+	return done == t.total ||
+		done == 0 ||
+		done-t.lastDone >= t.minDelta ||
+		now.Sub(t.lastLog) >= t.logEvery
+}
+
+func clampDone(done, total int64) int64 {
+	if done < 0 {
+		return 0
+	}
+	if total > 0 && done > total {
+		return total
+	}
+	return done
 }
 
 func (t *Tracker) log(state string, now time.Time, done int64, attrs []any) {

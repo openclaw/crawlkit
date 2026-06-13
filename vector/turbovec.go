@@ -331,11 +331,7 @@ func resolvePythonPath(python string) (string, error) {
 		}
 		return resolved, nil
 	}
-	abs, err := filepath.Abs(python)
-	if err != nil {
-		return "", fmt.Errorf("resolve Python path %q: %w", python, err)
-	}
-	return abs, nil
+	return "", fmt.Errorf("Python path %q must be absolute or resolved from PATH", python)
 }
 
 func firstLine(value string) string {

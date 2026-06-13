@@ -200,7 +200,7 @@ func TestTurboVecDefaultCommandUsesSafePythonMode(t *testing.T) {
 	require.Equal(t, true, defaultCommand)
 }
 
-func TestTurboVecCommandResolvesRelativePythonBeforeWorkingDirChange(t *testing.T) {
+func TestTurboVecDefaultCommandRejectsRelativePythonPath(t *testing.T) {
 	dir := t.TempDir()
 	python := filepath.Join(dir, "python")
 	if err := os.WriteFile(python, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
@@ -216,15 +216,8 @@ func TestTurboVecCommandResolvesRelativePythonBeforeWorkingDirChange(t *testing.
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("chdir: %v", err)
 	}
-	command, defaultCommand, err := turboVecCommand(TurboVecOptions{Python: "./python"})
-	require.NoError(t, err)
-	wantPython, err := filepath.EvalSymlinks(python)
-	require.NoError(t, err)
-	gotPython, err := filepath.EvalSymlinks(command[0])
-	require.NoError(t, err)
-	require.Equal(t, wantPython, gotPython)
-	require.Equal(t, []string{"-E", "-c", turboVecBridgeScript}, command[1:])
-	require.Equal(t, true, defaultCommand)
+	_, _, err = turboVecCommand(TurboVecOptions{Python: "./python"})
+	require.ErrorContains(t, err, "must be absolute or resolved from PATH")
 }
 
 func TestTurboVecTieLessRequiresBoundedCandidateSet(t *testing.T) {
