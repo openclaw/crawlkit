@@ -272,10 +272,6 @@ func writeManifest(ctx context.Context, repo string, manifest Manifest) error {
 	return writeFileAtomicContext(ctx, filepath.Join(repo, "manifest.json"), data, 0o600)
 }
 
-func writeFileAtomic(target string, data []byte, perm os.FileMode) error {
-	return writeFileAtomicContext(context.Background(), target, data, perm)
-}
-
 func writeFileAtomicContext(ctx context.Context, target string, data []byte, perm os.FileMode) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -414,7 +410,7 @@ func removeStaleShards(ctx context.Context, repo string, shards []ShardEntry) er
 }
 
 func EncryptShard(plaintext []byte, recipients []string) ([]byte, string, error) {
-	return encryptShard(plaintext, recipients)
+	return encryptShardContext(context.Background(), plaintext, recipients)
 }
 
 func DecryptShard(ciphertext []byte, identityPath string) ([]byte, error) {

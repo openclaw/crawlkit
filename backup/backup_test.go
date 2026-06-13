@@ -128,6 +128,56 @@ func TestWriteShardVersionsChangedExistingManifestPath(t *testing.T) {
 	}
 }
 
+func TestPublicBackupHelpers(t *testing.T) {
+	dir := t.TempDir()
+	identity := filepath.Join(dir, "age.key")
+	recipient, err := EnsureIdentity(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Repo: filepath.Join(dir, "repo"), Identity: identity, Recipients: []string{recipient}}
+	plaintext, rows, err := EncodeJSONL([]row{{ID: "1", Body: "hello"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 || len(plaintext) == 0 {
+		t.Fatalf("encoded rows=%d bytes=%d", rows, len(plaintext))
+	}
+	ciphertext, hash, err := EncryptShard(plaintext, cfg.Recipients)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != SHA256Hex(plaintext) || len(ciphertext) == 0 {
+		t.Fatalf("hash=%q ciphertext=%d", hash, len(ciphertext))
+	}
+	entry, err := WriteShard(cfg, Manifest{}, "messages", "data/messages/2026/05.jsonl.gz.age", plaintext, rows, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Path == "" || entry.SHA256 != hash {
+		t.Fatalf("entry = %+v", entry)
+	}
+	if err := WriteManifest(cfg.Repo, Manifest{Format: FormatVersion, Encrypted: true, Shards: []ShardEntry{entry}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadManifest(cfg.Repo); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(cfg.Repo, "data", "messages", "stale.age")
+	if err := os.MkdirAll(filepath.Dir(stale), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveStaleShards(cfg.Repo, []ShardEntry{entry}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale shard stat err = %v", err)
+	}
+}
+
 func TestResolveShardPathRejectsEscapes(t *testing.T) {
 	for _, rel := range []string{"../x.age", "data/../x.age", "data/x.txt", "/data/x.age"} {
 		if _, err := ResolveShardPath(t.TempDir(), rel); err == nil {

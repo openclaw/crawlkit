@@ -54,10 +54,6 @@ func RecipientFromIdentity(path string) (string, error) {
 	return identity.Recipient().String(), nil
 }
 
-func encryptShard(plaintext []byte, recipientStrings []string) ([]byte, string, error) {
-	return encryptShardContext(context.Background(), plaintext, recipientStrings)
-}
-
 func encryptShardContext(ctx context.Context, plaintext []byte, recipientStrings []string) ([]byte, string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, "", err
