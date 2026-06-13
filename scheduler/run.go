@@ -13,7 +13,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -334,6 +336,12 @@ func acquireLock(path string) (func(), error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
+			if stale, staleErr := lockIsStale(path); staleErr == nil && stale {
+				if removeErr := os.Remove(path); removeErr != nil {
+					return nil, fmt.Errorf("remove stale crawlctl lock %s: %w", path, removeErr)
+				}
+				return acquireLock(path)
+			}
 			return nil, fmt.Errorf("crawlctl already running: %s", path)
 		}
 		return nil, err
@@ -341,6 +349,34 @@ func acquireLock(path string) (func(), error) {
 	_, _ = fmt.Fprintf(file, "pid=%d\nstarted_at=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))
 	_ = file.Close()
 	return func() { _ = os.Remove(path) }, nil
+}
+
+func lockIsStale(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || key != "pid" {
+			continue
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || pid <= 0 {
+			return true, nil
+		}
+		return !processExists(pid), nil
+	}
+	return true, nil
+}
+
+func processExists(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil || !errors.Is(err, os.ErrProcessDone)
 }
 
 func safeName(value string) string {

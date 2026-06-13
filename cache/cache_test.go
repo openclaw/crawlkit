@@ -50,3 +50,22 @@ func TestSnapshotFileSizeGuard(t *testing.T) {
 		t.Fatal("expected size guard error")
 	}
 }
+
+func TestSnapshotFileAllowsExactCopyLimit(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.db")
+	if err := os.WriteFile(source, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := SnapshotFile(SnapshotOptions{
+		SourcePath:   source,
+		CacheDir:     filepath.Join(dir, "cache"),
+		MaxFileBytes: 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.SizeBytes != 4 {
+		t.Fatalf("size = %d", snap.SizeBytes)
+	}
+}

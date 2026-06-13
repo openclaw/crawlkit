@@ -48,26 +48,52 @@ func SnapshotFile(opts SnapshotOptions) (Snapshot, error) {
 	if err := os.MkdirAll(opts.CacheDir, 0o755); err != nil {
 		return Snapshot{}, fmt.Errorf("create cache dir: %w", err)
 	}
+	createdAt := now().UTC()
 	name := opts.Name
 	if name == "" {
 		name = filepath.Base(opts.SourcePath)
 	}
-	target := filepath.Join(opts.CacheDir, now().UTC().Format("20060102T150405Z")+"-"+name)
+	target := filepath.Join(opts.CacheDir, createdAt.Format("20060102T150405Z")+"-"+name)
 	src, err := os.Open(opts.SourcePath)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("open source: %w", err)
 	}
 	defer src.Close()
-	dst, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	tmp, err := os.CreateTemp(opts.CacheDir, "."+filepath.Base(target)+".tmp-")
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("create snapshot: %w", err)
 	}
-	if _, err := io.Copy(dst, src); err != nil {
-		_ = dst.Close()
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return Snapshot{}, fmt.Errorf("chmod snapshot: %w", err)
+	}
+	var copied int64
+	if opts.MaxFileBytes > 0 {
+		limited := &io.LimitedReader{R: src, N: opts.MaxFileBytes + 1}
+		copied, err = io.Copy(tmp, limited)
+		if err == nil && copied > opts.MaxFileBytes {
+			err = fmt.Errorf("source file exceeds limit %d", opts.MaxFileBytes)
+		}
+	} else {
+		copied, err = io.Copy(tmp, src)
+	}
+	if err != nil {
+		_ = tmp.Close()
 		return Snapshot{}, fmt.Errorf("copy snapshot: %w", err)
 	}
-	if err := dst.Close(); err != nil {
+	if err := tmp.Close(); err != nil {
 		return Snapshot{}, fmt.Errorf("close snapshot: %w", err)
 	}
-	return Snapshot{SourcePath: opts.SourcePath, Path: target, SizeBytes: info.Size(), CreatedAt: now().UTC()}, nil
+	if err := os.Rename(tmpPath, target); err != nil {
+		return Snapshot{}, fmt.Errorf("commit snapshot: %w", err)
+	}
+	cleanup = false
+	return Snapshot{SourcePath: opts.SourcePath, Path: target, SizeBytes: copied, CreatedAt: createdAt}, nil
 }

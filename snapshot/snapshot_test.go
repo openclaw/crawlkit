@@ -105,19 +105,43 @@ func TestExportRotatesShards(t *testing.T) {
 	}
 }
 
+func TestExportRejectsUnsafeTablePath(t *testing.T) {
+	ctx := context.Background()
+	src, err := store.Open(ctx, store.Options{
+		Path:   filepath.Join(t.TempDir(), "src.db"),
+		Schema: `create table "../escape"(id text primary key);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	root := t.TempDir()
+	_, err = Export(ctx, ExportOptions{
+		DB:      src.DB(),
+		RootDir: root,
+		Tables:  []string{"../escape"},
+	})
+	if err == nil {
+		t.Fatal("expected unsafe table path error")
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "..", "escape")); !os.IsNotExist(statErr) {
+		t.Fatalf("unexpected escaped path stat err = %v", statErr)
+	}
+}
+
 func TestPlanIncrementalImportDetectsTailFiles(t *testing.T) {
 	previous := Manifest{
 		Version: 1,
 		Tables: []TableManifest{{
 			Name:    "things",
 			Columns: []string{"id", "body"},
-			Rows:    2,
+			Rows:    1,
 			Files:   []string{"tables/things/000000.jsonl.gz"},
 			FileManifests: []FileManifest{{
 				Path:   "tables/things/000000.jsonl.gz",
-				Rows:   2,
+				Rows:   1,
 				Size:   100,
-				SHA256: "old",
+				SHA256: "same",
 			}},
 		}},
 	}
@@ -126,12 +150,17 @@ func TestPlanIncrementalImportDetectsTailFiles(t *testing.T) {
 		Tables: []TableManifest{{
 			Name:    "things",
 			Columns: []string{"id", "body"},
-			Rows:    3,
-			Files:   []string{"tables/things/000000.jsonl.gz"},
+			Rows:    2,
+			Files:   []string{"tables/things/000000.jsonl.gz", "tables/things/000001.jsonl.gz"},
 			FileManifests: []FileManifest{{
 				Path:   "tables/things/000000.jsonl.gz",
-				Rows:   3,
-				Size:   120,
+				Rows:   1,
+				Size:   100,
+				SHA256: "same",
+			}, {
+				Path:   "tables/things/000001.jsonl.gz",
+				Rows:   1,
+				Size:   20,
 				SHA256: "new",
 			}},
 		}},
@@ -146,7 +175,7 @@ func TestPlanIncrementalImportDetectsTailFiles(t *testing.T) {
 	}
 }
 
-func TestPlanIncrementalImportReplacesUnsafeChanges(t *testing.T) {
+func TestPlanIncrementalImportReplacesUnsafeTailChanges(t *testing.T) {
 	previous := Manifest{
 		Version: 1,
 		Tables: []TableManifest{{
@@ -167,11 +196,11 @@ func TestPlanIncrementalImportReplacesUnsafeChanges(t *testing.T) {
 		Tables: []TableManifest{{
 			Name:    "things",
 			Columns: []string{"id", "body"},
-			Rows:    1,
+			Rows:    2,
 			Files:   []string{"tables/things/000000.jsonl.gz"},
 			FileManifests: []FileManifest{{
 				Path:   "tables/things/000000.jsonl.gz",
-				Rows:   1,
+				Rows:   2,
 				Size:   100,
 				SHA256: "new",
 			}},
@@ -194,12 +223,12 @@ func TestImportIncrementalImportsOnlyPlannedFiles(t *testing.T) {
 	}
 	defer src.Close()
 	mustExec(t, src.DB(), `insert into things(id, body) values('one', 'same')`)
-	mustExec(t, src.DB(), `insert into things(id, body) values('two', 'old')`)
 	root := t.TempDir()
 	previous, err := Export(ctx, ExportOptions{
-		DB:      src.DB(),
-		RootDir: root,
-		Tables:  []string{"things"},
+		DB:            src.DB(),
+		RootDir:       root,
+		Tables:        []string{"things"},
+		MaxShardBytes: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -218,12 +247,12 @@ func TestImportIncrementalImportsOnlyPlannedFiles(t *testing.T) {
 	}
 	mustExec(t, dst.DB(), `insert into things(id, body) values('local', 'keep')`)
 
-	mustExec(t, src.DB(), `update things set body = 'new' where id = 'two'`)
-	mustExec(t, src.DB(), `insert into things(id, body) values('three', 'added')`)
+	mustExec(t, src.DB(), `insert into things(id, body) values('two', 'added')`)
 	current, err := Export(ctx, ExportOptions{
-		DB:      src.DB(),
-		RootDir: root,
-		Tables:  []string{"things"},
+		DB:            src.DB(),
+		RootDir:       root,
+		Tables:        []string{"things"},
+		MaxShardBytes: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -244,7 +273,63 @@ func TestImportIncrementalImportsOnlyPlannedFiles(t *testing.T) {
 	if err := dst.DB().QueryRowContext(ctx, `select group_concat(id || ':' || body, ',') from (select id, body from things order by id)`).Scan(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got != "local:keep,one:same,three:added,two:new" {
+	if got != "local:keep,one:same,two:added" {
+		t.Fatalf("things = %q", got)
+	}
+}
+
+func TestImportIncrementalReplacesChangedTailShard(t *testing.T) {
+	ctx := context.Background()
+	src, err := store.Open(ctx, store.Options{
+		Path:   filepath.Join(t.TempDir(), "src.db"),
+		Schema: `create table things(id text primary key, body text not null);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	mustExec(t, src.DB(), `insert into things(id, body) values('one', 'same')`)
+	mustExec(t, src.DB(), `insert into things(id, body) values('two', 'old')`)
+	root := t.TempDir()
+	previous, err := Export(ctx, ExportOptions{DB: src.DB(), RootDir: root, Tables: []string{"things"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dst, err := store.Open(ctx, store.Options{
+		Path:   filepath.Join(t.TempDir(), "dst.db"),
+		Schema: `create table things(id text primary key, body text not null);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	if _, err := Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root}); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, src.DB(), `delete from things where id = 'two'`)
+	mustExec(t, src.DB(), `insert into things(id, body) values('three', 'added')`)
+	current, err := Export(ctx, ExportOptions{DB: src.DB(), RootDir: root, Tables: []string{"things"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, plan, err := ImportIncremental(ctx, IncrementalImportOptions{
+		DB:       dst.DB(),
+		RootDir:  root,
+		Previous: previous,
+		Current:  current,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Tables) != 1 || plan.Tables[0].Mode != TableImportReplace {
+		t.Fatalf("plan = %+v", plan)
+	}
+	var got string
+	if err := dst.DB().QueryRowContext(ctx, `select group_concat(id || ':' || body, ',') from (select id, body from things order by id)`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "one:same,three:added" {
 		t.Fatalf("things = %q", got)
 	}
 }

@@ -69,14 +69,17 @@ func (a App) DefaultPaths() (Paths, error) {
 	if err != nil {
 		return Paths{}, err
 	}
-	paths := app.defaultPaths()
+	paths, err := app.defaultPaths()
+	if err != nil {
+		return Paths{}, err
+	}
 	if app.PlatformDirs && strings.TrimSpace(app.BaseDir) == "" {
 		paths = app.withExistingLegacyPaths(paths)
 	}
 	return paths, nil
 }
 
-func (app App) defaultPaths() Paths {
+func (app App) defaultPaths() (Paths, error) {
 	if app.PlatformDirs && strings.TrimSpace(app.BaseDir) == "" {
 		return platformPaths(app.Name)
 	}
@@ -88,7 +91,7 @@ func (app App) defaultPaths() Paths {
 		CacheDir:   filepath.Join(base, "cache"),
 		LogDir:     filepath.Join(base, "logs"),
 		ShareDir:   filepath.Join(base, "share"),
-	}
+	}, nil
 }
 
 func (a App) LegacyPaths() (Paths, bool, error) {
@@ -121,7 +124,10 @@ func (a App) ResolveConfigPath(flagPath string) (string, error) {
 	if envPath := strings.TrimSpace(os.Getenv(app.ConfigEnv)); envPath != "" {
 		return ExpandHome(envPath), nil
 	}
-	paths := app.defaultPaths()
+	paths, err := app.defaultPaths()
+	if err != nil {
+		return "", err
+	}
 	if app.PlatformDirs && strings.TrimSpace(app.BaseDir) == "" {
 		if legacy, ok, err := app.LegacyPaths(); err != nil {
 			return "", err
@@ -180,11 +186,14 @@ func EnsureRuntimeDirs(cfg RuntimeConfig) error {
 	return nil
 }
 
-func platformPaths(name string) Paths {
+func platformPaths(name string) (Paths, error) {
 	xdgMu.Lock()
 	defer xdgMu.Unlock()
 
-	configHome, dataHome, cacheHome, stateHome := platformHomes()
+	configHome, dataHome, cacheHome, stateHome, err := platformHomes()
+	if err != nil {
+		return Paths{}, err
+	}
 	dataDir := filepath.Join(dataHome, name)
 	configDir := filepath.Join(configHome, name)
 	cacheDir := filepath.Join(cacheHome, name)
@@ -196,11 +205,17 @@ func platformPaths(name string) Paths {
 		CacheDir:   cacheDir,
 		LogDir:     filepath.Join(stateDir, "logs"),
 		ShareDir:   filepath.Join(dataDir, "share"),
-	}
+	}, nil
 }
 
-func platformHomes() (configHome, dataHome, cacheHome, stateHome string) {
-	home, _ := os.UserHomeDir()
+func platformHomes() (configHome, dataHome, cacheHome, stateHome string, err error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("resolve user home for platform dirs: %w", err)
+	}
+	if !filepath.IsAbs(home) {
+		return "", "", "", "", fmt.Errorf("resolve user home for platform dirs: %q is not absolute", home)
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		appSupport := filepath.Join(home, "Library", "Application Support")
@@ -220,7 +235,7 @@ func platformHomes() (configHome, dataHome, cacheHome, stateHome string) {
 		cacheHome = absoluteEnv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 		stateHome = absoluteEnv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	}
-	return configHome, dataHome, cacheHome, stateHome
+	return configHome, dataHome, cacheHome, stateHome, nil
 }
 
 func absoluteEnv(name, fallback string) string {

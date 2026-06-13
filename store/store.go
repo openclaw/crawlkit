@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -147,13 +148,15 @@ func (s *Store) EnsureSchemaVersion(ctx context.Context, version int) error {
 	if current == version {
 		return nil
 	}
-	if _, err := s.db.ExecContext(ctx, `delete from schema_migrations`); err != nil {
-		return fmt.Errorf("clear schema version: %w", err)
-	}
-	if _, err := s.db.ExecContext(ctx, `insert into schema_migrations(version) values(?)`, version); err != nil {
-		return fmt.Errorf("write schema version: %w", err)
-	}
-	return nil
+	return s.WithTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `delete from schema_migrations`); err != nil {
+			return fmt.Errorf("clear schema version: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `insert into schema_migrations(version) values(?)`, version); err != nil {
+			return fmt.Errorf("write schema version: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
@@ -230,7 +233,8 @@ func dsn(path, pragmas string) string {
 		}
 		return path + sep + pragmas
 	}
-	return "file:" + path + "?" + pragmas
+	u := url.URL{Scheme: "file", Path: path}
+	return u.String() + "?" + pragmas
 }
 
 func ensureDBFile(path string) error {

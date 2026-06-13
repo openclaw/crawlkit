@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -61,6 +62,23 @@ func TestTrackerFinishReportsFailure(t *testing.T) {
 		if !strings.Contains(logs, want) {
 			t.Fatalf("missing %q in logs:\n%s", want, logs)
 		}
+	}
+}
+
+func TestTrackerAddIsAtomic(t *testing.T) {
+	var out bytes.Buffer
+	tracker := New(testLogger(&out), Options{Name: "sync", Total: 100, MinDelta: 1000})
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tracker.Add(1)
+		}()
+	}
+	wg.Wait()
+	if got := tracker.current(); got != 100 {
+		t.Fatalf("done = %d, want 100", got)
 	}
 }
 

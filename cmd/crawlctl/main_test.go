@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -71,8 +72,35 @@ every = "7m"
 	if err := a.runInstall([]string{"--backend", "systemd", "--dry-run"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "OnUnitActiveSec=7min") {
+	if !strings.Contains(stdout.String(), "OnUnitActiveSec=420s") {
 		t.Fatalf("install output = %s", stdout.String())
+	}
+}
+
+func TestRunLogsRejectsInvalidTail(t *testing.T) {
+	var stdout bytes.Buffer
+	a := app{stdout: &stdout, stderr: ioDiscard{}}
+	err := a.runLogs([]string{"--tail=-1"})
+	var usage usageError
+	if !errors.As(err, &usage) {
+		t.Fatalf("err = %v, want usageError", err)
+	}
+}
+
+func TestPrintTailHandlesLongLines(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "crawlctl.log")
+	longLine := strings.Repeat("x", 128*1024)
+	if err := os.WriteFile(logPath, []byte("first\n"+longLine+"\nlast\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := printTail(&stdout, logPath, 2); err != nil {
+		t.Fatal(err)
+	}
+	want := longLine + "\nlast\n"
+	if stdout.String() != want {
+		t.Fatalf("stdout len = %d, want %d", len(stdout.String()), len(want))
 	}
 }
 

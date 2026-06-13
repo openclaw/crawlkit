@@ -392,6 +392,10 @@ func WriteManifest(rootDir string, manifest Manifest) error {
 }
 
 func exportTable(ctx context.Context, db *sql.DB, rootDir, table string, maxShardBytes int64, filter RowFilter) (TableManifest, error) {
+	relDir, err := tableShardDir(table)
+	if err != nil {
+		return TableManifest{}, err
+	}
 	rows, err := db.QueryContext(ctx, "select * from "+store.QuoteIdent(table))
 	if err != nil {
 		return TableManifest{}, fmt.Errorf("query table %s: %w", table, err)
@@ -403,10 +407,10 @@ func exportTable(ctx context.Context, db *sql.DB, rootDir, table string, maxShar
 	}
 	writer := &shardWriter{
 		rootDir:       rootDir,
-		relDir:        filepath.ToSlash(filepath.Join("tables", table)),
+		relDir:        relDir,
 		maxShardBytes: maxShardBytes,
 	}
-	if err := os.MkdirAll(filepath.Join(rootDir, "tables", table), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(rootDir, filepath.FromSlash(relDir)), 0o755); err != nil {
 		return TableManifest{}, fmt.Errorf("create table dir %s: %w", table, err)
 	}
 	defer writer.close()
@@ -716,10 +720,7 @@ func planTableIncrement(previous, current TableManifest) TableImportPlan {
 			return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "tail path changed"}
 		}
 		if !sameFileManifest(oldTail, newTail) {
-			if newTail.Rows < oldTail.Rows {
-				return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "tail rows removed"}
-			}
-			changed = append(changed, newTail)
+			return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "tail file changed"}
 		}
 	}
 	for i := len(previousFiles); i < len(currentFiles); i++ {
@@ -729,6 +730,17 @@ func planTableIncrement(previous, current TableManifest) TableImportPlan {
 		return TableImportPlan{Table: current, Mode: TableImportSkip, Reason: "unchanged"}
 	}
 	return TableImportPlan{Table: current, Mode: TableImportFiles, Files: changed, Reason: "tail files changed"}
+}
+
+func tableShardDir(table string) (string, error) {
+	table = strings.TrimSpace(table)
+	if table == "" {
+		return "", fmt.Errorf("table name is required")
+	}
+	if filepath.IsAbs(table) || strings.ContainsAny(table, `/\`) || table == "." || table == ".." || strings.Contains(table, "\x00") {
+		return "", fmt.Errorf("table name %q is not safe for snapshot paths", table)
+	}
+	return filepath.ToSlash(filepath.Join("tables", table)), nil
 }
 
 func tableFileManifests(table TableManifest) []FileManifest {

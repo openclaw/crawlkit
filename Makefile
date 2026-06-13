@@ -1,14 +1,13 @@
 .PHONY: test vet tidy check
 
 test:
-	go test ./...
+	GOWORK=off go test ./...
 
 vet:
-	go vet ./...
+	GOWORK=off go vet ./...
 
 tidy:
-	go mod tidy
+	GOWORK=off go mod tidy
 
 check: tidy vet test
 	git diff --exit-code -- go.mod go.sum
-
