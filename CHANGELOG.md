@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.12.1 - 2026-06-17
 
 - Harden crawlkit maintenance surfaces found by `clawpatch`: safer `crawlctl`
   log tailing, GOWORK-isolated validation, atomic backup/cache/store writes,
