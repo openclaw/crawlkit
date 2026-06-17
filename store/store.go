@@ -233,6 +233,12 @@ func dsn(path, pragmas string) string {
 		}
 		return path + sep + pragmas
 	}
+	if runtime.GOOS == "windows" {
+		path = filepath.ToSlash(path)
+		if filepath.VolumeName(path) != "" && !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+	}
 	u := url.URL{Scheme: "file", Path: path}
 	return u.String() + "?" + pragmas
 }

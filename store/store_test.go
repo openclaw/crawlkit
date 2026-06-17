@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -134,5 +135,15 @@ func TestOpenEscapesURIReservedPathCharacters(t *testing.T) {
 	}
 	if value != "one" {
 		t.Fatalf("value = %q", value)
+	}
+}
+
+func TestDSNUsesAbsoluteWindowsFileURI(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-specific file URI")
+	}
+	got := dsn(`C:\Users\runner\archive.db`, "_pragma=foreign_keys(1)")
+	if !strings.HasPrefix(got, "file:///C:/Users/runner/archive.db?") {
+		t.Fatalf("dsn = %q", got)
 	}
 }

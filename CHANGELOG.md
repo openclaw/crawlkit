@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.12.2 - 2026-06-17
+
+- Fix SQLite file URI generation for absolute Windows paths while preserving
+  reserved-character escaping, and add Windows CI coverage.
+
 ## v0.12.1 - 2026-06-17
 
 - Harden crawlkit maintenance surfaces found by `clawpatch`: safer `crawlctl`

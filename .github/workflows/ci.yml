@@ -28,3 +28,15 @@ jobs:
             exit 1
           fi
       - run: GOWORK=off go test ./...
+
+  windows-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test ./...
+        env:
+          GOWORK: "off"
