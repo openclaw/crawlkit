@@ -103,7 +103,11 @@ func TestReadOnlyRejectsWrites(t *testing.T) {
 func TestOpenEscapesURIReservedPathCharacters(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "archive?tenant=a#frag.db")
+	name := "archive?tenant=a#frag.db"
+	if runtime.GOOS == "windows" {
+		name = "archive#frag.db"
+	}
+	path := filepath.Join(dir, name)
 	st, err := Open(ctx, Options{
 		Path:   path,
 		Schema: `create table things(id text primary key, value text not null);`,

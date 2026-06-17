@@ -194,9 +194,10 @@ func TestRunTurboVecLimitsAndErrors(t *testing.T) {
 }
 
 func TestTurboVecDefaultCommandUsesSafePythonMode(t *testing.T) {
-	command, defaultCommand, err := turboVecCommand(TurboVecOptions{Python: "/usr/bin/python3"})
+	python := filepath.Join(t.TempDir(), "python3")
+	command, defaultCommand, err := turboVecCommand(TurboVecOptions{Python: python})
 	require.NoError(t, err)
-	require.Equal(t, []string{"/usr/bin/python3", "-E", "-c", turboVecBridgeScript}, command)
+	require.Equal(t, []string{python, "-E", "-c", turboVecBridgeScript}, command)
 	require.Equal(t, true, defaultCommand)
 }
 
