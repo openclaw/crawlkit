@@ -263,6 +263,13 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 	if committed, err := Commit(ctx, localOpts, "archive: local"); err != nil || !committed {
 		t.Fatalf("local commit = %v, %v", committed, err)
 	}
+	if tag, err := CreateImmutableTag(ctx, localOpts, "snapshot/local"); err != nil || tag != "snapshot/local" {
+		t.Fatalf("local tag = %q, %v", tag, err)
+	}
+	oldLocal, err := ResolveCommit(ctx, localOpts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
 	peerOpts := Options{RepoPath: peer, Branch: "main"}
 	if err := os.WriteFile(filepath.Join(peer, "remote.txt"), []byte("remote\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -275,6 +282,20 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 	}
 	if err := SyncForWrite(ctx, localOpts); err != nil {
 		t.Fatal(err)
+	}
+	newLocal, err := ResolveCommit(ctx, localOpts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newLocal == oldLocal {
+		t.Fatal("local commit was not rebased")
+	}
+	tagged, err := ResolveCommit(ctx, localOpts, "snapshot/local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tagged != newLocal {
+		t.Fatalf("local tag = %s, want rebased HEAD %s", tagged, newLocal)
 	}
 	for _, name := range []string{"local.txt", "remote.txt"} {
 		if _, err := os.Stat(filepath.Join(repo, name)); err != nil {

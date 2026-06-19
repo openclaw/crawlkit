@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -152,12 +153,73 @@ func syncBranchForWrite(ctx context.Context, opts Options) error {
 	if err := run(ctx, opts.RepoPath, opts.Git, "checkout", opts.Branch); err != nil {
 		return err
 	}
-	return run(ctx, opts.RepoPath, opts.Git,
+	tags, oldHead, err := localOnlyHeadTags(ctx, opts, remoteRef, localRef)
+	if err != nil {
+		return err
+	}
+	if err := run(ctx, opts.RepoPath, opts.Git,
 		"-c", "commit.gpgsign=false",
 		"-c", "user.name=crawlkit",
 		"-c", "user.email=crawlkit@example.invalid",
 		"rebase", "origin/"+opts.Branch,
-	)
+	); err != nil {
+		return err
+	}
+	if len(tags) == 0 {
+		return nil
+	}
+	newHead, err := ResolveCommit(ctx, opts, "HEAD")
+	if err != nil {
+		return err
+	}
+	for _, tag := range tags {
+		if err := run(ctx, opts.RepoPath, opts.Git, "update-ref", "refs/tags/"+tag, newHead, oldHead); err != nil {
+			return fmt.Errorf("retarget local snapshot tag %q after rebase: %w", tag, err)
+		}
+	}
+	return nil
+}
+
+func localOnlyHeadTags(ctx context.Context, opts Options, remoteRef, localRef string) ([]string, string, error) {
+	aheadRaw, err := output(ctx, opts.RepoPath, opts.Git, "rev-list", "--count", remoteRef+".."+localRef)
+	if err != nil {
+		return nil, "", fmt.Errorf("count local archive commits: %w", err)
+	}
+	ahead, err := strconv.Atoi(strings.TrimSpace(aheadRaw))
+	if err != nil {
+		return nil, "", fmt.Errorf("parse local archive commit count %q: %w", strings.TrimSpace(aheadRaw), err)
+	}
+	if ahead == 0 {
+		return nil, "", nil
+	}
+	oldHead, err := ResolveCommit(ctx, opts, "HEAD")
+	if err != nil {
+		return nil, "", err
+	}
+	tagsRaw, err := output(ctx, opts.RepoPath, opts.Git, "tag", "--points-at", oldHead)
+	if err != nil {
+		return nil, "", fmt.Errorf("list local snapshot tags: %w", err)
+	}
+	var tags []string
+	for _, tag := range strings.Fields(tagsRaw) {
+		fullRef := "refs/tags/" + tag
+		objectType, err := output(ctx, opts.RepoPath, opts.Git, "cat-file", "-t", fullRef)
+		if err != nil {
+			return nil, "", fmt.Errorf("inspect snapshot tag %q: %w", tag, err)
+		}
+		if strings.TrimSpace(objectType) != "commit" {
+			return nil, "", fmt.Errorf("annotated local tag %q prevents archive rebase", tag)
+		}
+		remoteTag, err := output(ctx, opts.RepoPath, opts.Git, "ls-remote", "--tags", "origin", fullRef)
+		if err != nil {
+			return nil, "", fmt.Errorf("check remote snapshot tag %q: %w", tag, err)
+		}
+		if strings.TrimSpace(remoteTag) != "" {
+			return nil, "", fmt.Errorf("published snapshot tag %q prevents archive rebase", tag)
+		}
+		tags = append(tags, tag)
+	}
+	return tags, oldHead, nil
 }
 
 func Commit(ctx context.Context, opts Options, message string) (bool, error) {
