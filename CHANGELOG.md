@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Update Go to 1.26.4 for current standard-library security fixes and add race and vulnerability CI gates.
+- Preserve unpublished local mirror branches during pulls, clone the requested remote branch, and support caller-selected private repository directory modes.
 - Allow managed sidecar trees to prune selected generated files while preserving unrelated files.
 - Add non-mutating archive tag validation and rebase-based write synchronization for durable multi-machine backup retries.
 - Add reusable Git snapshot history/tag/ref restoration, SQLite bundle snapshots, managed snapshot sidecars, mapped sync-state adapters, FTS5 helpers, and the shared contact-export contract; refresh stable dependencies.

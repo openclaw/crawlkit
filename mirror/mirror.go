@@ -15,6 +15,8 @@ type Options struct {
 	Remote   string
 	Branch   string
 	Git      string
+	// DirMode enforces repository-root permissions on POSIX filesystems when nonzero.
+	DirMode os.FileMode
 }
 
 func EnsureRepo(ctx context.Context, opts Options) error {
@@ -23,28 +25,47 @@ func EnsureRepo(ctx context.Context, opts Options) error {
 		return errors.New("repo path is required")
 	}
 	if _, err := os.Stat(filepath.Join(opts.RepoPath, ".git")); err == nil {
+		if opts.DirMode != 0 {
+			if err := os.Chmod(opts.RepoPath, opts.DirMode); err != nil {
+				return fmt.Errorf("secure repo path: %w", err)
+			}
+		}
 		if opts.Remote != "" {
 			return setOrigin(ctx, opts)
 		}
 		return nil
 	}
 	if opts.Remote != "" {
-		if err := os.MkdirAll(filepath.Dir(opts.RepoPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(opts.RepoPath), creationDirMode(opts)); err != nil {
 			return fmt.Errorf("create repo parent: %w", err)
 		}
 		if err := run(ctx, "", opts.Git, "clone", opts.Remote, opts.RepoPath); err != nil {
 			return err
 		}
+		if opts.DirMode != 0 {
+			if err := os.Chmod(opts.RepoPath, opts.DirMode); err != nil {
+				return fmt.Errorf("set repo permissions: %w", err)
+			}
+		}
 		if opts.Branch != "" {
+			remoteRef := "refs/remotes/origin/" + opts.Branch
+			if _, err := output(ctx, opts.RepoPath, opts.Git, "rev-parse", "--verify", remoteRef); err == nil {
+				return run(ctx, opts.RepoPath, opts.Git, "checkout", "-B", opts.Branch, "origin/"+opts.Branch)
+			}
 			return run(ctx, opts.RepoPath, opts.Git, "checkout", "-B", opts.Branch)
 		}
 		return nil
 	}
-	if err := os.MkdirAll(opts.RepoPath, 0o755); err != nil {
+	if err := os.MkdirAll(opts.RepoPath, creationDirMode(opts)); err != nil {
 		return fmt.Errorf("create repo path: %w", err)
 	}
 	if err := run(ctx, opts.RepoPath, opts.Git, "init"); err != nil {
 		return err
+	}
+	if opts.DirMode != 0 {
+		if err := os.Chmod(opts.RepoPath, opts.DirMode); err != nil {
+			return fmt.Errorf("set repo permissions: %w", err)
+		}
 	}
 	if opts.Branch != "" {
 		return run(ctx, opts.RepoPath, opts.Git, "checkout", "-B", opts.Branch)
@@ -92,11 +113,24 @@ func PullCurrent(ctx context.Context, opts Options) error {
 	if err := run(ctx, opts.RepoPath, opts.Git, "fetch", "--prune", "origin"); err != nil {
 		return err
 	}
-	if _, err := output(ctx, opts.RepoPath, opts.Git, "rev-parse", "--verify", "refs/heads/"+opts.Branch); err != nil {
+	remoteRef := "refs/remotes/origin/" + opts.Branch
+	_, remoteErr := output(ctx, opts.RepoPath, opts.Git, "rev-parse", "--verify", remoteRef)
+	_, localErr := output(ctx, opts.RepoPath, opts.Git, "rev-parse", "--verify", "refs/heads/"+opts.Branch)
+	if localErr != nil && remoteErr != nil {
+		return run(ctx, opts.RepoPath, opts.Git, "checkout", "-B", opts.Branch)
+	}
+	if localErr != nil {
 		return run(ctx, opts.RepoPath, opts.Git, "checkout", "-B", opts.Branch, "origin/"+opts.Branch)
 	}
 	if err := run(ctx, opts.RepoPath, opts.Git, "checkout", opts.Branch); err != nil {
 		return err
+	}
+	if remoteErr != nil {
+		trackedRemote, err := output(ctx, opts.RepoPath, opts.Git, "config", "--get", "branch."+opts.Branch+".remote")
+		if err == nil && strings.TrimSpace(trackedRemote) == "origin" {
+			return fmt.Errorf("tracked remote branch origin/%s is missing", opts.Branch)
+		}
+		return nil
 	}
 	return run(ctx, opts.RepoPath, opts.Git, "pull", "--ff-only", "origin", opts.Branch)
 }
@@ -337,6 +371,13 @@ func normalize(opts Options) Options {
 		opts.Git = "git"
 	}
 	return opts
+}
+
+func creationDirMode(opts Options) os.FileMode {
+	if opts.DirMode != 0 {
+		return opts.DirMode
+	}
+	return 0o755
 }
 
 func setOrigin(ctx context.Context, opts Options) error {
