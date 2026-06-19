@@ -1,6 +1,6 @@
 module github.com/openclaw/crawlkit
 
-go 1.26.2
+go 1.26.4
 
 require (
 	filippo.io/age v1.3.1

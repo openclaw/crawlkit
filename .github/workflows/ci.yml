@@ -22,12 +22,14 @@ jobs:
       - run: GOWORK=off go vet ./...
       - run: |
           output_file=$(mktemp)
-          GOWORK=off go run golang.org/x/tools/cmd/deadcode@v0.45.0 -test ./... > "$output_file"
+          GOWORK=off go run golang.org/x/tools/cmd/deadcode@v0.46.0 -test ./... > "$output_file"
           if [ -s "$output_file" ]; then
             cat "$output_file"
             exit 1
           fi
+      - run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...
       - run: GOWORK=off go test ./...
+      - run: GOWORK=off go test -race ./...
 
   windows-test:
     runs-on: windows-latest
