@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 func FTS5Phrase(value string) string {
@@ -31,6 +32,29 @@ func FTS5Terms(value, operator string) (string, error) {
 		separator = " " + operator + " "
 	}
 	return strings.Join(quoted, separator), nil
+}
+
+// FTS5TokenQuery converts arbitrary user input into quoted FTS5 tokens joined
+// by implicit AND, discarding punctuation that could be parsed as operators.
+func FTS5TokenQuery(value string) string {
+	terms := make([]string, 0)
+	var token strings.Builder
+	flush := func() {
+		if token.Len() == 0 {
+			return
+		}
+		terms = append(terms, FTS5Phrase(token.String()))
+		token.Reset()
+	}
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
+			token.WriteRune(r)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return strings.Join(terms, " ")
 }
 
 type contextExecer interface {
