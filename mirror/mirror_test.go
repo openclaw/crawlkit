@@ -480,7 +480,7 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(dirtyBody) != "unrelated dirty edit\n" {
+	if strings.ReplaceAll(string(dirtyBody), "\r\n", "\n") != "unrelated dirty edit\n" {
 		t.Fatalf("dirty edit was not restored: %q", dirtyBody)
 	}
 }
