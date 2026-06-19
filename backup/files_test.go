@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -44,6 +45,13 @@ func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 	}
 	if len(manifest.Files) != 2 || manifest.Files[0].Shard != manifest.Files[1].Shard {
 		t.Fatalf("files were not content-deduplicated: %#v", manifest.Files)
+	}
+	manifestBody, err := os.ReadFile(filepath.Join(cfg.Repo, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(manifestBody), "photo.jpg") || strings.Contains(string(manifestBody), "copy.jpg") {
+		t.Fatalf("manifest exposes logical media paths: %s", manifestBody)
 	}
 	ciphertext, err := os.ReadFile(filepath.Join(cfg.Repo, filepath.FromSlash(manifest.Files[0].Shard)))
 	if err != nil {
@@ -89,8 +97,7 @@ func TestRestoreFilesRejectsUnsafePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := Config{Repo: dir, Identity: identity}
-	manifest := Manifest{Format: FormatVersion, Files: []FileEntry{{Path: "../escape", Shard: "data/files/aa/file.age"}}}
-	if _, err := RestoreFiles(ctx, cfg, manifest, filepath.Join(dir, "restore")); err == nil {
+	if _, err := safeRestoreTarget(filepath.Join(dir, "restore"), "../escape"); err == nil {
 		t.Fatal("unsafe restore path should fail")
 	}
 
@@ -110,7 +117,7 @@ func TestRestoreFilesRejectsUnsafePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Recipients = []string{recipient}
-	manifest, err = WriteSnapshotWithFiles(ctx, cfg, nil, files, Manifest{})
+	manifest, err := WriteSnapshotWithFiles(ctx, cfg, nil, files, Manifest{})
 	if err != nil {
 		t.Fatal(err)
 	}

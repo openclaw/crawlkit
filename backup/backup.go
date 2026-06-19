@@ -49,7 +49,6 @@ type ShardEntry struct {
 }
 
 type FileEntry struct {
-	Path   string `json:"path"`
 	Shard  string `json:"shard"`
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
@@ -103,11 +102,22 @@ func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, fil
 		manifest.Counts[countKey] += rows
 		manifest.Shards = append(manifest.Shards, entry)
 	}
-	filesManifest, err := writeFiles(ctx, cfg, old, files, reuseEncrypted)
+	filesManifest, fileIndex, err := writeFiles(ctx, cfg, old, files, reuseEncrypted)
 	if err != nil {
 		return Manifest{}, err
 	}
 	manifest.Files = filesManifest
+	if len(fileIndex) > 0 {
+		plaintext, rows, err := encodeJSONL(ctx, fileIndex)
+		if err != nil {
+			return Manifest{}, fmt.Errorf("encode backup file index: %w", err)
+		}
+		entry, err := writeShard(ctx, cfg, old, fileIndexTable, fileIndexPath, plaintext, rows, reuseEncrypted)
+		if err != nil {
+			return Manifest{}, err
+		}
+		manifest.Shards = append(manifest.Shards, entry)
+	}
 	sort.Slice(manifest.Shards, func(i, j int) bool { return manifest.Shards[i].Path < manifest.Shards[j].Path })
 	if EquivalentManifest(old, manifest) {
 		return old, nil
@@ -139,6 +149,9 @@ func readSnapshotWith(manifest Manifest, load func(ShardEntry) ([]byte, error)) 
 	}
 	var out []DecodedShard
 	for _, shard := range manifest.Shards {
+		if shard.Table == fileIndexTable {
+			continue
+		}
 		plaintext, err := load(shard)
 		if err != nil {
 			return nil, err
