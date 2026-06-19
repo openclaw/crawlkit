@@ -15,7 +15,8 @@ type Options struct {
 	Remote   string
 	Branch   string
 	Git      string
-	DirMode  os.FileMode
+	// DirMode enforces repository-root permissions on POSIX filesystems when nonzero.
+	DirMode os.FileMode
 }
 
 func EnsureRepo(ctx context.Context, opts Options) error {

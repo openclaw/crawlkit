@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -78,6 +79,9 @@ func TestEnsureRepoAppliesPrivateDirectoryMode(t *testing.T) {
 	if err := EnsureRemote(ctx, Options{RepoPath: repo, Remote: remote, Branch: "main", DirMode: 0o750}); err != nil {
 		t.Fatal(err)
 	}
+	if runtime.GOOS == "windows" {
+		return
+	}
 	info, err := os.Stat(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +139,7 @@ func TestEnsureRepoClonesRequestedRemoteBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(body) != "release\n" {
+	if strings.ReplaceAll(string(body), "\r\n", "\n") != "release\n" {
 		t.Fatalf("manifest = %q, want release", body)
 	}
 }
