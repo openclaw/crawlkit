@@ -109,14 +109,13 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 	ordered := append([]File(nil), files...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Path < ordered[j].Path })
 	oldByHash := make(map[string]indexedFile, len(old.Files))
-	if reuseEncrypted {
+	if reuseEncrypted && len(files) > 0 {
 		records, err := loadLocalFileIndex(cfg, old)
-		if err != nil {
-			return nil, nil, err
-		}
-		for index, entry := range old.Files {
-			record := records[index]
-			oldByHash[record.SHA256] = indexedFile{Entry: entry, Record: record}
+		if err == nil {
+			for index, entry := range old.Files {
+				record := records[index]
+				oldByHash[record.SHA256] = indexedFile{Entry: entry, Record: record}
+			}
 		}
 	}
 	written := make(map[string]FileEntry, len(files))

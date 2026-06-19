@@ -77,6 +77,26 @@ func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 	if !EquivalentManifest(manifest, second) || !second.Exported.Equal(manifest.Exported) {
 		t.Fatalf("unchanged files rewrote manifest: %#v", second)
 	}
+	publicOnly := cfg
+	publicOnly.Identity = ""
+	publicOnly.Repo = filepath.Join(dir, "public-only")
+	if err := os.MkdirAll(publicOnly.Repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	withoutReuse, err := WriteSnapshotWithFiles(ctx, publicOnly, nil, files, manifest)
+	if err != nil {
+		t.Fatalf("public-recipient-only writer should re-encrypt files: %v", err)
+	}
+	if len(withoutReuse.Files) != len(files) {
+		t.Fatalf("public-only file manifest = %#v", withoutReuse.Files)
+	}
+	withoutFiles, err := WriteSnapshotWithFiles(ctx, publicOnly, nil, nil, withoutReuse)
+	if err != nil {
+		t.Fatalf("removing files should not require an identity: %v", err)
+	}
+	if len(withoutFiles.Files) != 0 {
+		t.Fatalf("removed file manifest = %#v", withoutFiles.Files)
+	}
 	restoreRoot := filepath.Join(dir, "restore")
 	if err := os.MkdirAll(restoreRoot, 0o700); err != nil {
 		t.Fatal(err)
