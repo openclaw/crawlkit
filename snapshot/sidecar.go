@@ -19,6 +19,7 @@ type SidecarTreeOptions struct {
 	TargetDir string
 	Kind      string
 	Include   func(relativePath string) bool
+	Prune     func(relativePath string) bool
 }
 
 // SyncSidecarTree atomically copies a managed directory tree into a snapshot,
@@ -94,7 +95,7 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 	if err != nil {
 		return nil, err
 	}
-	if err := pruneSidecarTree(ctx, targetRoot, keep); err != nil {
+	if err := pruneSidecarTree(ctx, targetRoot, keep, opts.Prune); err != nil {
 		return nil, err
 	}
 	sort.Slice(sidecars, func(i, j int) bool { return sidecars[i].Path < sidecars[j].Path })
@@ -153,7 +154,7 @@ func copyFingerprintFile(source, target string) (int64, string, error) {
 	return size, hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func pruneSidecarTree(ctx context.Context, root string, keep map[string]struct{}) error {
+func pruneSidecarTree(ctx context.Context, root string, keep map[string]struct{}, shouldPrune func(relativePath string) bool) error {
 	return filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -166,6 +167,15 @@ func pruneSidecarTree(ctx context.Context, root string, keep map[string]struct{}
 		}
 		if _, ok := keep[filepath.Clean(path)]; ok {
 			return nil
+		}
+		if shouldPrune != nil {
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			if !shouldPrune(filepath.ToSlash(rel)) {
+				return nil
+			}
 		}
 		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("remove stale sidecar %s: %w", path, err)
