@@ -150,12 +150,17 @@ func TestSyncSidecarTreeCopiesFingerprintsAndPrunes(t *testing.T) {
 	if err := os.WriteFile(stale, []byte("stale"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	preserved := filepath.Join(root, "pages", "README.txt")
+	if err := os.WriteFile(preserved, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	sidecars, err := SyncSidecarTree(ctx, SidecarTreeOptions{
 		SourceDir: source,
 		RootDir:   root,
 		TargetDir: "pages",
 		Kind:      "markdown",
 		Include:   func(rel string) bool { return strings.HasSuffix(rel, ".md") },
+		Prune:     func(rel string) bool { return strings.HasSuffix(rel, ".md") },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -168,6 +173,9 @@ func TestSyncSidecarTreeCopiesFingerprintsAndPrunes(t *testing.T) {
 	}
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Fatalf("stale sidecar should be pruned: %v", err)
+	}
+	if _, err := os.Stat(preserved); err != nil {
+		t.Fatalf("excluded sidecar should be preserved: %v", err)
 	}
 	if _, err := SyncSidecarTree(ctx, SidecarTreeOptions{SourceDir: source, RootDir: root, TargetDir: "../escape"}); err == nil {
 		t.Fatal("escaping sidecar target should fail")
