@@ -109,6 +109,28 @@ func SyncForWrite(ctx context.Context, opts Options) error {
 	if err := EnsureRepo(ctx, opts); err != nil {
 		return err
 	}
+	return syncBranchForWrite(ctx, opts)
+}
+
+// SyncCurrentForWrite rebases the checked-out branch, preserving repositories
+// created before a caller standardized its default branch name.
+func SyncCurrentForWrite(ctx context.Context, opts Options) error {
+	opts = normalize(opts)
+	if err := EnsureRepo(ctx, opts); err != nil {
+		return err
+	}
+	branch, err := output(ctx, opts.RepoPath, opts.Git, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if err != nil {
+		return fmt.Errorf("resolve current git branch: %w", err)
+	}
+	opts.Branch = strings.TrimSpace(branch)
+	if opts.Branch == "" {
+		return errors.New("current git branch is empty")
+	}
+	return syncBranchForWrite(ctx, opts)
+}
+
+func syncBranchForWrite(ctx context.Context, opts Options) error {
 	remotes, err := output(ctx, opts.RepoPath, opts.Git, "remote")
 	if err != nil {
 		return fmt.Errorf("list git remotes: %w", err)

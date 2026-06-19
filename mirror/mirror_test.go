@@ -283,6 +283,58 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 	}
 }
 
+func TestSyncCurrentForWritePreservesLegacyBranch(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	seed := filepath.Join(dir, "seed")
+	repo := filepath.Join(dir, "share")
+	if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, "", "git", "clone", remote, seed); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, seed, "git", "checkout", "-B", "legacy"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	seedOpts := Options{RepoPath: seed, Branch: "legacy"}
+	if committed, err := Commit(ctx, seedOpts, "archive: seed"); err != nil || !committed {
+		t.Fatalf("seed commit = %v, %v", committed, err)
+	}
+	if err := PushAtomic(ctx, seedOpts, "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, "", "git", "clone", "--branch", "legacy", remote, repo); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "remote.txt"), []byte("remote\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, seedOpts, "archive: remote"); err != nil || !committed {
+		t.Fatalf("remote commit = %v, %v", committed, err)
+	}
+	if err := PushAtomic(ctx, seedOpts, "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncCurrentForWrite(ctx, Options{RepoPath: repo, Branch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "remote.txt")); err != nil {
+		t.Fatalf("legacy branch did not sync: %v", err)
+	}
+	branch, err := output(ctx, repo, "git", "branch", "--show-current")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(branch) != "legacy" {
+		t.Fatalf("branch = %q, want legacy", strings.TrimSpace(branch))
+	}
+}
+
 func TestCleanSQLiteSidecars(t *testing.T) {
 	dir := t.TempDir()
 	files := []string{"archive.db", "archive.db-wal", "archive.db-shm", "notes.txt"}
