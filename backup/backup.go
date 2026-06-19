@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -384,6 +385,9 @@ func writeFileAtomicContext(ctx context.Context, target string, data []byte, per
 }
 
 func syncDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	file, err := os.Open(dir)
 	if err != nil {
 		return err
