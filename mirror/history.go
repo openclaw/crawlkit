@@ -139,6 +139,72 @@ func ValidateTag(ctx context.Context, opts Options, tag string) error {
 
 func PushAtomic(ctx context.Context, opts Options, refs ...string) error {
 	opts = normalize(opts)
+	out, err := pushAtomic(ctx, opts, refs...)
+	if err != nil {
+		return fmt.Errorf("atomic git push: %w\n%s", err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+// PushSnapshot atomically pushes the archive branch and an immutable snapshot
+// tag, rebasing and retargeting unpublished tags before one retry when needed.
+func PushSnapshot(ctx context.Context, opts Options, tag string) error {
+	opts = normalize(opts)
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return errors.New("snapshot tag is required")
+	}
+	if err := ValidateTag(ctx, opts, tag); err != nil {
+		return err
+	}
+	refs := []string{"HEAD:refs/heads/" + opts.Branch, "refs/tags/" + tag}
+	out, err := pushAtomic(ctx, opts, refs...)
+	if err == nil {
+		return nil
+	}
+	if !isNonFastForward(out) {
+		return fmt.Errorf("atomic snapshot push: %w\n%s", err, strings.TrimSpace(out))
+	}
+	if syncErr := SyncForWrite(ctx, opts); syncErr != nil {
+		return fmt.Errorf("sync before atomic snapshot push retry: %w", syncErr)
+	}
+	out, err = pushAtomic(ctx, opts, refs...)
+	if err != nil {
+		return fmt.Errorf("atomic snapshot push retry: %w\n%s", err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+// PushCurrentSnapshot atomically pushes the checked-out archive branch and an
+// immutable snapshot tag, preserving legacy branch names during one retry.
+func PushCurrentSnapshot(ctx context.Context, opts Options, tag string) error {
+	opts = normalize(opts)
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return errors.New("snapshot tag is required")
+	}
+	if err := ValidateTag(ctx, opts, tag); err != nil {
+		return err
+	}
+	refs := []string{"HEAD", "refs/tags/" + tag}
+	out, err := pushAtomic(ctx, opts, refs...)
+	if err == nil {
+		return nil
+	}
+	if !isNonFastForward(out) {
+		return fmt.Errorf("atomic current snapshot push: %w\n%s", err, strings.TrimSpace(out))
+	}
+	if syncErr := SyncCurrentForWrite(ctx, opts); syncErr != nil {
+		return fmt.Errorf("sync before atomic current snapshot push retry: %w", syncErr)
+	}
+	out, err = pushAtomic(ctx, opts, refs...)
+	if err != nil {
+		return fmt.Errorf("atomic current snapshot push retry: %w\n%s", err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+func pushAtomic(ctx context.Context, opts Options, refs ...string) (string, error) {
 	args := []string{"push", "--atomic", "-u", "origin"}
 	if len(refs) == 0 {
 		refs = []string{"HEAD:refs/heads/" + opts.Branch}
@@ -151,9 +217,9 @@ func PushAtomic(ctx context.Context, opts Options, refs ...string) error {
 		args = append(args, ref)
 	}
 	if len(args) == 4 {
-		return errors.New("at least one git ref is required")
+		return "", errors.New("at least one git ref is required")
 	}
-	return run(ctx, opts.RepoPath, opts.Git, args...)
+	return output(ctx, opts.RepoPath, opts.Git, args...)
 }
 
 func ListTreeFiles(ctx context.Context, opts Options, ref, root string) ([]TreeFile, error) {

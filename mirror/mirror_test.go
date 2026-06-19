@@ -475,6 +475,81 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 	}
 }
 
+func TestPushSnapshotRebasesAndRetargetsTag(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	seed := filepath.Join(dir, "seed")
+	publisher := filepath.Join(dir, "publisher")
+	peer := filepath.Join(dir, "peer")
+	if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+		t.Fatal(err)
+	}
+	seedOpts := Options{RepoPath: seed, Remote: remote, Branch: "main"}
+	if err := EnsureRemote(ctx, seedOpts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("seed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, seedOpts, "seed"); err != nil || !committed {
+		t.Fatalf("seed commit = %v, %v", committed, err)
+	}
+	if err := Push(ctx, seedOpts); err != nil {
+		t.Fatal(err)
+	}
+	for _, clone := range []string{publisher, peer} {
+		if err := run(ctx, "", "git", "clone", "--branch", "main", remote, clone); err != nil {
+			t.Fatal(err)
+		}
+	}
+	publisherOpts := Options{RepoPath: publisher, Branch: "main"}
+	if err := os.WriteFile(filepath.Join(publisher, "manifest.json"), []byte("publisher\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, publisherOpts, "publisher snapshot"); err != nil || !committed {
+		t.Fatalf("publisher commit = %v, %v", committed, err)
+	}
+	if tag, err := CreateImmutableTag(ctx, publisherOpts, "snapshot/race"); err != nil || tag != "snapshot/race" {
+		t.Fatalf("publisher tag = %q, %v", tag, err)
+	}
+	peerOpts := Options{RepoPath: peer, Branch: "main"}
+	if err := os.WriteFile(filepath.Join(peer, "peer.txt"), []byte("peer\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, peerOpts, "peer update"); err != nil || !committed {
+		t.Fatalf("peer commit = %v, %v", committed, err)
+	}
+	if err := Push(ctx, peerOpts); err != nil {
+		t.Fatal(err)
+	}
+	if err := PushSnapshot(ctx, publisherOpts, "snapshot/race"); err != nil {
+		t.Fatal(err)
+	}
+	head, err := ResolveCommit(ctx, publisherOpts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tagged, err := ResolveCommit(ctx, publisherOpts, "snapshot/race")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tagged != head {
+		t.Fatalf("snapshot tag = %s, want rebased HEAD %s", tagged, head)
+	}
+	remoteHead, err := ResolveCommit(ctx, Options{RepoPath: remote}, "refs/heads/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteTag, err := ResolveCommit(ctx, Options{RepoPath: remote}, "refs/tags/snapshot/race")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remoteHead != head || remoteTag != head {
+		t.Fatalf("remote branch/tag = %s/%s, want %s", remoteHead, remoteTag, head)
+	}
+}
+
 func TestSyncCurrentForWritePreservesLegacyBranch(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -524,6 +599,43 @@ func TestSyncCurrentForWritePreservesLegacyBranch(t *testing.T) {
 	}
 	if strings.TrimSpace(branch) != "legacy" {
 		t.Fatalf("branch = %q, want legacy", strings.TrimSpace(branch))
+	}
+	if err := os.WriteFile(filepath.Join(repo, "local-snapshot.txt"), []byte("local\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	localOpts := Options{RepoPath: repo, Branch: "main"}
+	if committed, err := Commit(ctx, localOpts, "archive: local snapshot"); err != nil || !committed {
+		t.Fatalf("local snapshot commit = %v, %v", committed, err)
+	}
+	if tag, err := CreateImmutableTag(ctx, localOpts, "snapshot/legacy"); err != nil || tag != "snapshot/legacy" {
+		t.Fatalf("legacy snapshot tag = %q, %v", tag, err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "remote-two.txt"), []byte("remote two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, seedOpts, "archive: remote two"); err != nil || !committed {
+		t.Fatalf("second remote commit = %v, %v", committed, err)
+	}
+	if err := PushAtomic(ctx, seedOpts, "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	if err := PushCurrentSnapshot(ctx, localOpts, "snapshot/legacy"); err != nil {
+		t.Fatal(err)
+	}
+	localHead, err := ResolveCommit(ctx, localOpts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteHead, err := ResolveCommit(ctx, Options{RepoPath: remote}, "refs/heads/legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteTag, err := ResolveCommit(ctx, Options{RepoPath: remote}, "refs/tags/snapshot/legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remoteHead != localHead || remoteTag != localHead {
+		t.Fatalf("legacy remote branch/tag = %s/%s, want %s", remoteHead, remoteTag, localHead)
 	}
 }
 
@@ -686,6 +798,12 @@ func TestHistoryValidationAndLocalFetch(t *testing.T) {
 	}
 	if err := ValidateTag(ctx, opts, "bad tag"); err == nil {
 		t.Fatal("invalid tag validation should fail")
+	}
+	if err := PushSnapshot(ctx, opts, "snapshot/good:refs/heads/release"); err == nil {
+		t.Fatal("snapshot push should reject refspec syntax")
+	}
+	if err := PushCurrentSnapshot(ctx, opts, "snapshot/good:refs/heads/release"); err == nil {
+		t.Fatal("current snapshot push should reject refspec syntax")
 	}
 	if err := ValidateTag(ctx, opts, ""); err != nil {
 		t.Fatalf("empty optional tag: %v", err)
