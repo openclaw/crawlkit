@@ -150,6 +150,14 @@ func TestWriteShardVersionsChangedExistingManifestPath(t *testing.T) {
 	if entry.Path == rel {
 		t.Fatalf("re-encrypted shard reused old path %q", rel)
 	}
+	rotated := entry
+	entry, err = writeShard(context.Background(), cfg, Manifest{Shards: []ShardEntry{rotated}}, "messages", rel, []byte("new plaintext\n"), 1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry != rotated {
+		t.Fatalf("unchanged versioned shard was rewritten: got %+v, want %+v", entry, rotated)
+	}
 }
 
 func TestPublicBackupHelpers(t *testing.T) {
