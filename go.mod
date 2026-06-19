@@ -10,7 +10,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/mattn/go-isatty v0.0.22
-	github.com/pelletier/go-toml/v2 v2.3.1
+	github.com/pelletier/go-toml/v2 v2.4.0
 	modernc.org/sqlite v1.52.0
 )
 
