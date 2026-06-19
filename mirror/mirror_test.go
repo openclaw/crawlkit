@@ -67,6 +67,40 @@ func TestEnsureRepoUpdatesExistingOrigin(t *testing.T) {
 	}
 }
 
+func TestEnsureRepoAppliesPrivateDirectoryMode(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(dir, "share")
+	if err := EnsureRemote(ctx, Options{RepoPath: repo, Remote: remote, Branch: "main", DirMode: 0o750}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o750 {
+		t.Fatalf("repo mode = %o, want 750", mode)
+	}
+	localRepo := filepath.Join(dir, "local-share")
+	if err := os.Mkdir(localRepo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureRepo(ctx, Options{RepoPath: localRepo, Branch: "main", DirMode: 0o750}); err != nil {
+		t.Fatal(err)
+	}
+	info, err = os.Stat(localRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o750 {
+		t.Fatalf("local repo mode = %o, want 750", mode)
+	}
+}
+
 func TestPushWritesCurrentBranchToOrigin(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -224,6 +258,80 @@ func TestPullCurrentUsesExistingOrigin(t *testing.T) {
 	}
 	if strings.ReplaceAll(string(data), "\r\n", "\n") != "two\n" {
 		t.Fatalf("manifest = %q, want updated content", data)
+	}
+}
+
+func TestPullCurrentPreservesUnpublishedLocalBranch(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	repo := filepath.Join(dir, "share")
+	if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{RepoPath: repo, Remote: remote, Branch: "private"}
+	if err := EnsureRemote(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "manifest.json"), []byte("local\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, opts, "local snapshot"); err != nil || !committed {
+		t.Fatalf("commit = %v, %v", committed, err)
+	}
+	headBefore, err := output(ctx, repo, "git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PullCurrent(ctx, Options{RepoPath: repo, Branch: "private"}); err != nil {
+		t.Fatal(err)
+	}
+	headAfter, err := output(ctx, repo, "git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(headAfter) != strings.TrimSpace(headBefore) {
+		t.Fatalf("HEAD moved from %s to %s", strings.TrimSpace(headBefore), strings.TrimSpace(headAfter))
+	}
+}
+
+func TestPullCurrentRejectsDeletedTrackedBranch(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	seed := filepath.Join(dir, "seed")
+	repo := filepath.Join(dir, "share")
+	if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, "", "git", "clone", remote, seed); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, seed, "git", "checkout", "-B", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("remote\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	seedOpts := Options{RepoPath: seed, Remote: remote, Branch: "main"}
+	if committed, err := Commit(ctx, seedOpts, "remote snapshot"); err != nil || !committed {
+		t.Fatalf("commit = %v, %v", committed, err)
+	}
+	if err := Push(ctx, seedOpts); err != nil {
+		t.Fatal(err)
+	}
+	if err := Pull(ctx, Options{RepoPath: repo, Remote: remote, Branch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, repo, "git", "branch", "--set-upstream-to", "origin/main", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, remote, "git", "update-ref", "-d", "refs/heads/main"); err != nil {
+		t.Fatal(err)
+	}
+	err := PullCurrent(ctx, Options{RepoPath: repo, Branch: "main"})
+	if err == nil || !strings.Contains(err.Error(), "tracked remote branch origin/main is missing") {
+		t.Fatalf("PullCurrent error = %v", err)
 	}
 }
 
