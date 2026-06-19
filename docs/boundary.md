@@ -19,6 +19,9 @@ parsers, and product-specific ranking in the apps.
 | `wacrawl` | `main` | backup encryption helpers and control metadata | WhatsApp Desktop parsing, archive schema, read-time sync policy, media copying, and app-specific backup commands |
 | `telecrawl` | `main` | backup encryption helpers and control metadata | Telegram Desktop bridge, Telethon/opentele2 orchestration, archive schema, media metadata, and app-specific backup commands |
 | `notcrawl` | `main` | config/status/control, snapshot packing/import, git mirror mechanics, output helpers, and shared document TUI | Notion API/Desktop parsing, Markdown rendering, page/comment/database schema, Notion FTS body construction, and data-source compatibility |
+| `graincrawl` | `main` | config/status/control, snapshot packing/import, SQLite helpers, release checks, and shared document TUI | Granola API/cache parsing, archive schema, Markdown rendering, unlock policy, and redaction |
+| `imsgcrawl` | `main` | control metadata and SQLite helpers | Messages database parsing, source-native schema, contact name selection, and transcript CLI presentation |
+| `photoscrawl` | `main` | platform config paths, control/status payloads, SQLite/state/output helpers | PhotoKit/Photos parsing, evidence schema, classification, geocoding, and media privacy policy |
 
 ## owns
 
@@ -54,6 +57,11 @@ parsers, and product-specific ranking in the apps.
   HTTP client behavior for Worker-fronted archive services.
 - Safe read-only desktop-cache snapshot helpers. The provider-specific parsing
   of those snapshots stays in the apps.
+- Non-mutating Git history/ref/tag reads and encrypted historical snapshot
+  restore mechanics. Apps still choose command names, shard contents, and
+  public backup metadata.
+- Stable cross-crawler interchange DTOs such as the narrow contact-export
+  envelope. Apps still own contact selection, normalization, and ranking.
 
 ## does not own
 

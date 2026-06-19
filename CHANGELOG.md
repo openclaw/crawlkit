@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add reusable Git snapshot history/tag/ref restoration, SQLite bundle snapshots, managed snapshot sidecars, mapped sync-state adapters, FTS5 helpers, and the shared contact-export contract; refresh stable dependencies.
+
 ## v0.12.2 - 2026-06-17
 
 - Fix SQLite file URI generation for absolute Windows paths while preserving

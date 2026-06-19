@@ -205,3 +205,42 @@ func TestStateSchemasCoexistInOneDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMappedStoresUseExistingSyncStateTables(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "mapped.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(ctx, `
+create table discrawl_state(scope text primary key, cursor text not null, updated_at text not null);
+create table notcrawl_state(source text not null, kind text not null, entity text not null, cursor text not null, synced_at text not null, primary key(source, kind, entity));
+`); err != nil {
+		t.Fatal(err)
+	}
+	scoped, err := NewScopedMapped(db, ScopedMapping{Table: "discrawl_state", Scope: "scope", Cursor: "cursor", UpdatedAt: "updated_at"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := scoped.Set(ctx, "sync:last", "123"); err != nil {
+		t.Fatal(err)
+	}
+	if rec, ok, err := scoped.Get(ctx, "sync:last"); err != nil || !ok || rec.Cursor != "123" {
+		t.Fatalf("mapped scoped record = %+v ok=%v err=%v", rec, ok, err)
+	}
+
+	cursor, err := NewCursorMapped(db, CursorMapping{Table: "notcrawl_state", Source: "source", EntityType: "kind", EntityID: "entity", Cursor: "cursor", SyncedAt: "synced_at"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cursor.Set(ctx, "api", "page", "one", "done"); err != nil {
+		t.Fatal(err)
+	}
+	if rec, ok, err := cursor.Get(ctx, "api", "page", "one"); err != nil || !ok || rec.Cursor != "done" {
+		t.Fatalf("mapped cursor record = %+v ok=%v err=%v", rec, ok, err)
+	}
+	if _, err := NewScopedMapped(db, ScopedMapping{Table: `bad"table`, Scope: "scope", Cursor: "cursor", UpdatedAt: "updated_at"}); err == nil {
+		t.Fatal("unsafe mapped identifier should fail")
+	}
+}

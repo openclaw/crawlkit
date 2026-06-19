@@ -105,12 +105,18 @@ func WriteSnapshot(ctx context.Context, cfg Config, shards []Shard, old Manifest
 }
 
 func ReadSnapshot(cfg Config, manifest Manifest) ([]DecodedShard, error) {
+	return readSnapshotWith(manifest, func(shard ShardEntry) ([]byte, error) {
+		return DecryptShardFile(cfg, shard)
+	})
+}
+
+func readSnapshotWith(manifest Manifest, load func(ShardEntry) ([]byte, error)) ([]DecodedShard, error) {
 	if manifest.Format != FormatVersion {
 		return nil, fmt.Errorf("unsupported backup format %d", manifest.Format)
 	}
 	var out []DecodedShard
 	for _, shard := range manifest.Shards {
-		plaintext, err := DecryptShardFile(cfg, shard)
+		plaintext, err := load(shard)
 		if err != nil {
 			return nil, err
 		}

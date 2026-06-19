@@ -151,3 +151,35 @@ func TestDSNUsesAbsoluteWindowsFileURI(t *testing.T) {
 		t.Fatalf("dsn = %q", got)
 	}
 }
+
+func TestFTS5Helpers(t *testing.T) {
+	query, err := FTS5Terms(`hello "quoted" world`, "AND")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if query != `"hello" AND """quoted""" AND "world"` {
+		t.Fatalf("query = %q", query)
+	}
+	if _, err := FTS5Terms("hello", "NEAR"); err == nil {
+		t.Fatal("unsupported operator should fail")
+	}
+
+	ctx := context.Background()
+	st, err := Open(ctx, Options{
+		Path:   filepath.Join(t.TempDir(), "fts.db"),
+		Schema: `create virtual table docs using fts5(body);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if _, err := st.DB().ExecContext(ctx, `insert into docs(body) values('hello world')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := OptimizeFTS5(ctx, st.DB(), "docs"); err != nil {
+		t.Fatal(err)
+	}
+	if err := OptimizeFTS5(ctx, st.DB(), `bad"table`); err == nil {
+		t.Fatal("unsafe FTS table should fail")
+	}
+}

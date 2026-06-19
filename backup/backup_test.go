@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/openclaw/crawlkit/mirror"
 )
 
 type row struct {
@@ -183,5 +185,81 @@ func TestResolveShardPathRejectsEscapes(t *testing.T) {
 		if _, err := ResolveShardPath(t.TempDir(), rel); err == nil {
 			t.Fatalf("expected error for %q", rel)
 		}
+	}
+}
+
+func TestHistoricalEncryptedSnapshot(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	identity := filepath.Join(dir, "age.key")
+	recipient, err := EnsureIdentity(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Repo: filepath.Join(dir, "repo"), Identity: identity, Recipients: []string{recipient}}
+	mirrorOpts := mirror.Options{RepoPath: cfg.Repo, Branch: "main"}
+	if err := mirror.EnsureRepo(ctx, mirrorOpts); err != nil {
+		t.Fatal(err)
+	}
+	firstManifest, err := WriteSnapshot(ctx, cfg, []Shard{
+		{Table: "messages", Path: "data/messages.jsonl.gz.age", Rows: []row{{ID: "1", Body: "first"}}},
+	}, Manifest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := mirror.Commit(ctx, mirrorOpts, "snapshot one"); err != nil || !committed {
+		t.Fatalf("first commit = %v, %v", committed, err)
+	}
+	first, err := mirror.ResolveCommit(ctx, mirrorOpts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mirror.CreateImmutableTag(ctx, mirrorOpts, "snapshot/one"); err != nil {
+		t.Fatal(err)
+	}
+	secondManifest, err := WriteSnapshot(ctx, cfg, []Shard{
+		{Table: "messages", Path: "data/messages.jsonl.gz.age", Rows: []row{{ID: "1", Body: "second"}}},
+	}, firstManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := mirror.Commit(ctx, mirrorOpts, "snapshot two"); err != nil || !committed {
+		t.Fatalf("second commit = %v, %v", committed, err)
+	}
+	second, err := mirror.ResolveCommit(ctx, mirrorOpts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	history, err := History(ctx, mirrorOpts, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 2 || history[0].Ref != second || history[1].Ref != first || len(history[1].Tags) != 1 {
+		t.Fatalf("history = %#v", history)
+	}
+	manifest, ref, err := ReadManifestAt(ctx, mirrorOpts, "snapshot/one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref != first || manifest.Counts["messages"] != 1 {
+		t.Fatalf("manifest at ref = %#v, %s", manifest, ref)
+	}
+	decoded, resolved, err := ReadSnapshotAt(ctx, cfg, mirrorOpts, manifest, "snapshot/one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != first || len(decoded) != 1 {
+		t.Fatalf("decoded historical snapshot = %#v at %s", decoded, resolved)
+	}
+	var historicalRows []row
+	if err := DecodeJSONL(decoded[0].Plaintext, &historicalRows); err != nil {
+		t.Fatal(err)
+	}
+	if len(historicalRows) != 1 || historicalRows[0].Body != "first" {
+		t.Fatalf("historical rows = %#v", historicalRows)
+	}
+	if secondManifest.Counts["messages"] != 1 {
+		t.Fatalf("second manifest = %#v", secondManifest)
 	}
 }

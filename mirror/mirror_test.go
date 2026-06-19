@@ -253,3 +253,138 @@ func TestCleanSQLiteSidecars(t *testing.T) {
 		}
 	}
 }
+
+func TestHistoryReadsAndTagsWithoutChangingCheckout(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	repo := filepath.Join(dir, "share")
+	peer := filepath.Join(dir, "peer")
+	if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{RepoPath: repo, Remote: remote, Branch: "main"}
+	if err := EnsureRemote(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "manifest.json"), []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "Meeting notes.md"), []byte("notes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, opts, "archive: one"); err != nil || !committed {
+		t.Fatalf("first commit = %v, %v", committed, err)
+	}
+	first, err := ResolveCommit(ctx, opts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tag, err := CreateImmutableTag(ctx, opts, "snapshot/one"); err != nil || tag != "snapshot/one" {
+		t.Fatalf("tag = %q, %v", tag, err)
+	}
+	if err := PushAtomic(ctx, opts, "HEAD:refs/heads/main", "refs/tags/snapshot/one"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "manifest.json"), []byte("two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, opts, "archive: two"); err != nil || !committed {
+		t.Fatalf("second commit = %v, %v", committed, err)
+	}
+	second, err := ResolveCommit(ctx, opts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("second commit did not advance")
+	}
+	if err := Push(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := run(ctx, "", "git", "clone", remote, peer); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, peer, "git", "checkout", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(peer, "note.txt"), []byte("remote\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, peer, "git", "add", "note.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, peer, "git", "-c", "commit.gpgsign=false", "-c", "user.name=test", "-c", "user.email=test@example.invalid", "commit", "-m", "remote"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, peer, "git", "push", "origin", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Fetch(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	afterFetch, err := ResolveCommit(ctx, opts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterFetch != second {
+		t.Fatalf("fetch changed checkout from %s to %s", second, afterFetch)
+	}
+
+	body, resolved, err := ReadFileAt(ctx, opts, "snapshot/one", "manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "one\n" || resolved != first {
+		t.Fatalf("historical file = %q at %s", body, resolved)
+	}
+	commits, err := CommitsChanging(ctx, opts, "manifest.json", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 2 || commits[0] != second || commits[1] != first {
+		t.Fatalf("commits = %#v", commits)
+	}
+	tags, err := TagsAt(ctx, opts, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tags) != 1 || tags[0] != "snapshot/one" {
+		t.Fatalf("tags = %#v", tags)
+	}
+	files, err := ListTreeFiles(ctx, opts, first, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 || files[0].Path != "Meeting notes.md" || files[0].Size != 6 || files[1].Path != "manifest.json" || files[1].Size != 4 {
+		t.Fatalf("tree files = %#v", files)
+	}
+	if _, err := CreateImmutableTag(ctx, opts, "snapshot/one"); err == nil {
+		t.Fatal("moving an immutable tag should fail")
+	}
+}
+
+func TestHistoryValidationAndLocalFetch(t *testing.T) {
+	ctx := context.Background()
+	repo := filepath.Join(t.TempDir(), "local")
+	opts := Options{RepoPath: repo}
+	if err := Fetch(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveCommit(ctx, opts, ""); err == nil {
+		t.Fatal("empty ref should fail")
+	}
+	if _, _, err := ReadFileAt(ctx, opts, "HEAD", "../secret"); err == nil {
+		t.Fatal("escaping tree path should fail")
+	}
+	if _, err := CommitsChanging(ctx, opts, "manifest.json", 0); err == nil {
+		t.Fatal("zero history limit should fail")
+	}
+	if _, err := CreateImmutableTag(ctx, opts, "bad tag"); err == nil {
+		t.Fatal("invalid tag should fail")
+	}
+	if got := ShortRef("123456789012345"); got != "123456789012" {
+		t.Fatalf("short ref = %q", got)
+	}
+}
