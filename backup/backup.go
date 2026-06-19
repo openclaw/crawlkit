@@ -33,9 +33,10 @@ type Manifest struct {
 }
 
 type Shard struct {
-	Table string
-	Path  string
-	Rows  any
+	Table    string
+	CountKey string
+	Path     string
+	Rows     any
 }
 
 type ShardEntry struct {
@@ -82,7 +83,11 @@ func WriteSnapshot(ctx context.Context, cfg Config, shards []Shard, old Manifest
 		if err := ctx.Err(); err != nil {
 			return Manifest{}, err
 		}
-		manifest.Counts[shard.Table] += rows
+		countKey := strings.TrimSpace(shard.CountKey)
+		if countKey == "" {
+			countKey = shard.Table
+		}
+		manifest.Counts[countKey] += rows
 		manifest.Shards = append(manifest.Shards, entry)
 	}
 	sort.Slice(manifest.Shards, func(i, j int) bool { return manifest.Shards[i].Path < manifest.Shards[j].Path })
