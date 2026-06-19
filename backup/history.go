@@ -88,11 +88,15 @@ func ReadSnapshotAt(ctx context.Context, cfg Config, opts mirror.Options, manife
 }
 
 func RestoreFilesAt(ctx context.Context, cfg Config, opts mirror.Options, manifest Manifest, ref, targetRoot string) (int, string, error) {
+	return RestoreFilesAtUnder(ctx, cfg, opts, manifest, ref, targetRoot, "")
+}
+
+func RestoreFilesAtUnder(ctx context.Context, cfg Config, opts mirror.Options, manifest Manifest, ref, targetRoot, requiredPrefix string) (int, string, error) {
 	commit, err := mirror.ResolveCommit(ctx, opts, ref)
 	if err != nil {
 		return 0, "", err
 	}
-	count, err := restoreFilesWith(ctx, cfg.Identity, manifest, targetRoot, func(rel string) (io.ReadCloser, error) {
+	count, err := restoreFilesWith(ctx, cfg.Identity, manifest, targetRoot, requiredPrefix, func(rel string) (io.ReadCloser, error) {
 		if _, err := ResolveShardPath(cfg.Repo, rel); err != nil {
 			return nil, err
 		}

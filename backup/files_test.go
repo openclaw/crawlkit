@@ -88,6 +88,13 @@ func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 			t.Fatalf("restored %s = %q", name, body)
 		}
 	}
+	confinedRoot := filepath.Join(dir, "confined")
+	if err := os.MkdirAll(confinedRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RestoreFilesUnder(ctx, cfg, manifest, confinedRoot, "attachments"); err == nil {
+		t.Fatal("restore outside required prefix should fail")
+	}
 }
 
 func TestRestoreFilesRejectsUnsafePaths(t *testing.T) {

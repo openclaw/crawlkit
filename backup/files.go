@@ -201,7 +201,11 @@ func reusableFileEntry(cfg Config, oldByHash, written map[string]FileEntry, hash
 }
 
 func RestoreFiles(ctx context.Context, cfg Config, manifest Manifest, targetRoot string) (int, error) {
-	return restoreFilesWith(ctx, cfg.Identity, manifest, targetRoot, func(rel string) (io.ReadCloser, error) {
+	return RestoreFilesUnder(ctx, cfg, manifest, targetRoot, "")
+}
+
+func RestoreFilesUnder(ctx context.Context, cfg Config, manifest Manifest, targetRoot, requiredPrefix string) (int, error) {
+	return restoreFilesWith(ctx, cfg.Identity, manifest, targetRoot, requiredPrefix, func(rel string) (io.ReadCloser, error) {
 		shard, err := ResolveShardPath(cfg.Repo, rel)
 		if err != nil {
 			return nil, err
@@ -210,7 +214,7 @@ func RestoreFiles(ctx context.Context, cfg Config, manifest Manifest, targetRoot
 	})
 }
 
-func restoreFilesWith(ctx context.Context, identityPath string, manifest Manifest, targetRoot string, load encryptedFileLoader) (int, error) {
+func restoreFilesWith(ctx context.Context, identityPath string, manifest Manifest, targetRoot, requiredPrefix string, load encryptedFileLoader) (int, error) {
 	if manifest.Format != FormatVersion {
 		return 0, fmt.Errorf("unsupported backup format %d", manifest.Format)
 	}
@@ -227,6 +231,13 @@ func restoreFilesWith(ctx context.Context, identityPath string, manifest Manifes
 		return 0, err
 	}
 	seen := make(map[string]struct{}, len(manifest.Files))
+	prefix := ""
+	if requiredPrefix != "" {
+		prefix, err = cleanFilePath(requiredPrefix)
+		if err != nil {
+			return 0, err
+		}
+	}
 	for index, entry := range manifest.Files {
 		if err := ctx.Err(); err != nil {
 			return 0, err
@@ -235,6 +246,9 @@ func restoreFilesWith(ctx context.Context, identityPath string, manifest Manifes
 		logical, err = cleanFilePath(logical)
 		if err != nil {
 			return 0, err
+		}
+		if prefix != "" && logical != prefix && !strings.HasPrefix(logical, prefix+"/") {
+			return 0, fmt.Errorf("backup file path is outside required prefix %s: %s", prefix, logical)
 		}
 		if _, exists := seen[logical]; exists {
 			return 0, fmt.Errorf("duplicate backup file path: %s", logical)
