@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"path"
 	"strings"
 
 	"github.com/openclaw/crawlkit/mirror"
@@ -68,10 +67,10 @@ func ReadSnapshotAt(ctx context.Context, cfg Config, opts mirror.Options, manife
 		return nil, "", err
 	}
 	shards, err := readSnapshotWith(manifest, func(shard ShardEntry) ([]byte, error) {
-		if _, err := ResolveShardPath(cfg.Repo, shard.Path); err != nil {
+		clean, err := cleanShardPath(shard.Path)
+		if err != nil {
 			return nil, err
 		}
-		clean := path.Clean(strings.TrimSpace(shard.Path))
 		ciphertext, resolved, err := mirror.ReadFileAt(ctx, opts, commit, clean)
 		if err != nil {
 			return nil, err
@@ -97,10 +96,10 @@ func RestoreFilesAtUnder(ctx context.Context, cfg Config, opts mirror.Options, m
 		return 0, "", err
 	}
 	count, err := restoreFilesWith(ctx, cfg.Identity, manifest, targetRoot, requiredPrefix, func(rel string) (io.ReadCloser, error) {
-		if _, err := ResolveShardPath(cfg.Repo, rel); err != nil {
+		clean, err := cleanShardPath(rel)
+		if err != nil {
 			return nil, err
 		}
-		clean := path.Clean(strings.TrimSpace(rel))
 		ciphertext, resolved, err := mirror.ReadFileAt(ctx, opts, commit, clean)
 		if err != nil {
 			return nil, err

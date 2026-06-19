@@ -211,7 +211,7 @@ func TestPublicBackupHelpers(t *testing.T) {
 }
 
 func TestResolveShardPathRejectsEscapes(t *testing.T) {
-	for _, rel := range []string{"../x.age", "data/../x.age", "data/x.txt", "/data/x.age"} {
+	for _, rel := range []string{"../x.age", "data/../x.age", "data/x.txt", "/data/x.age", `data\files\index.jsonl.gz.age`, `data/files\index.jsonl.gz.age`} {
 		if _, err := ResolveShardPath(t.TempDir(), rel); err == nil {
 			t.Fatalf("expected error for %q", rel)
 		}

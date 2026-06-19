@@ -68,7 +68,10 @@ func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, fil
 		return Manifest{}, err
 	}
 	for _, shard := range shards {
-		cleanPath := path.Clean(strings.TrimSpace(shard.Path))
+		cleanPath, err := cleanShardPath(shard.Path)
+		if err != nil {
+			return Manifest{}, err
+		}
 		if shard.Table == fileIndexTable || cleanPath == "data/files" || strings.HasPrefix(cleanPath, "data/files/") {
 			return Manifest{}, fmt.Errorf("backup shard uses reserved file index namespace: %s", shard.Path)
 		}
@@ -249,12 +252,9 @@ func DecryptShardFile(cfg Config, shard ShardEntry) ([]byte, error) {
 }
 
 func ResolveShardPath(repo, rel string) (string, error) {
-	clean := path.Clean(strings.TrimSpace(rel))
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) {
-		return "", fmt.Errorf("backup shard path escapes backup root: %s", rel)
-	}
-	if !strings.HasPrefix(clean, "data/") || !strings.HasSuffix(clean, ".age") {
-		return "", fmt.Errorf("invalid backup shard path: %s", rel)
+	clean, err := cleanShardPath(rel)
+	if err != nil {
+		return "", err
 	}
 	full := filepath.Join(repo, filepath.FromSlash(clean))
 	root := filepath.Clean(filepath.Join(repo, "data"))
@@ -263,6 +263,20 @@ func ResolveShardPath(repo, rel string) (string, error) {
 		return "", fmt.Errorf("backup shard path escapes backup root: %s", rel)
 	}
 	return full, nil
+}
+
+func cleanShardPath(rel string) (string, error) {
+	if strings.ContainsRune(rel, '\\') {
+		return "", fmt.Errorf("invalid backup shard path: %s", rel)
+	}
+	clean := path.Clean(strings.TrimSpace(rel))
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) {
+		return "", fmt.Errorf("backup shard path escapes backup root: %s", rel)
+	}
+	if !strings.HasPrefix(clean, "data/") || !strings.HasSuffix(clean, ".age") {
+		return "", fmt.Errorf("invalid backup shard path: %s", rel)
+	}
+	return clean, nil
 }
 
 func EncodeJSONL(rows any) ([]byte, int, error) {
