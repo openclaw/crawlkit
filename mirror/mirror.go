@@ -101,6 +101,38 @@ func PullCurrent(ctx context.Context, opts Options) error {
 	return run(ctx, opts.RepoPath, opts.Git, "pull", "--ff-only", "origin", opts.Branch)
 }
 
+// SyncForWrite updates the archive branch while preserving local commits from a
+// previous failed push. Repositories without an origin or remote branch remain
+// local-only.
+func SyncForWrite(ctx context.Context, opts Options) error {
+	opts = normalize(opts)
+	if err := EnsureRepo(ctx, opts); err != nil {
+		return err
+	}
+	remotes, err := output(ctx, opts.RepoPath, opts.Git, "remote")
+	if err != nil {
+		return fmt.Errorf("list git remotes: %w", err)
+	}
+	if !containsField(remotes, "origin") {
+		return nil
+	}
+	if err := run(ctx, opts.RepoPath, opts.Git, "fetch", "--prune", "--tags", "origin"); err != nil {
+		return err
+	}
+	remoteRef := "refs/remotes/origin/" + opts.Branch
+	if _, err := output(ctx, opts.RepoPath, opts.Git, "rev-parse", "--verify", remoteRef); err != nil {
+		return nil
+	}
+	localRef := "refs/heads/" + opts.Branch
+	if _, err := output(ctx, opts.RepoPath, opts.Git, "rev-parse", "--verify", localRef); err != nil {
+		return run(ctx, opts.RepoPath, opts.Git, "checkout", "-B", opts.Branch, "origin/"+opts.Branch)
+	}
+	if err := run(ctx, opts.RepoPath, opts.Git, "checkout", opts.Branch); err != nil {
+		return err
+	}
+	return run(ctx, opts.RepoPath, opts.Git, "rebase", "origin/"+opts.Branch)
+}
+
 func Commit(ctx context.Context, opts Options, message string) (bool, error) {
 	return CommitPaths(ctx, opts, message, []string{"."})
 }

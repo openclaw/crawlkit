@@ -103,10 +103,10 @@ func CreateImmutableTag(ctx context.Context, opts Options, tag string) (string, 
 	if tag == "" {
 		return "", nil
 	}
-	fullRef := "refs/tags/" + tag
-	if err := run(ctx, opts.RepoPath, opts.Git, "check-ref-format", fullRef); err != nil {
-		return "", fmt.Errorf("invalid snapshot tag %q: %w", tag, err)
+	if err := ValidateTag(ctx, opts, tag); err != nil {
+		return "", err
 	}
+	fullRef := "refs/tags/" + tag
 	head, err := ResolveCommit(ctx, opts, "HEAD")
 	if err != nil {
 		return "", err
@@ -122,6 +122,19 @@ func CreateImmutableTag(ctx context.Context, opts Options, tag string) (string, 
 		return "", err
 	}
 	return tag, nil
+}
+
+// ValidateTag checks a proposed tag without changing repository refs.
+func ValidateTag(ctx context.Context, opts Options, tag string) error {
+	opts = normalize(opts)
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return nil
+	}
+	if err := run(ctx, opts.RepoPath, opts.Git, "check-ref-format", "refs/tags/"+tag); err != nil {
+		return fmt.Errorf("invalid snapshot tag %q: %w", tag, err)
+	}
+	return nil
 }
 
 func PushAtomic(ctx context.Context, opts Options, refs ...string) error {
