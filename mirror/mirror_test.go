@@ -227,6 +227,155 @@ func TestPullCurrentUsesExistingOrigin(t *testing.T) {
 	}
 }
 
+func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	seed := filepath.Join(dir, "seed")
+	repo := filepath.Join(dir, "share")
+	peer := filepath.Join(dir, "peer")
+	if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{RepoPath: seed, Remote: remote, Branch: "main"}
+	if err := EnsureRemote(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, opts, "archive: seed"); err != nil || !committed {
+		t.Fatalf("seed commit = %v, %v", committed, err)
+	}
+	if err := Push(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, "", "git", "clone", "--branch", "main", remote, repo); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, "", "git", "clone", "--branch", "main", remote, peer); err != nil {
+		t.Fatal(err)
+	}
+	localOpts := Options{RepoPath: repo, Branch: "main"}
+	if err := os.WriteFile(filepath.Join(repo, "local.txt"), []byte("local\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, localOpts, "archive: local"); err != nil || !committed {
+		t.Fatalf("local commit = %v, %v", committed, err)
+	}
+	if tag, err := CreateImmutableTag(ctx, localOpts, "snapshot/local"); err != nil || tag != "snapshot/local" {
+		t.Fatalf("local tag = %q, %v", tag, err)
+	}
+	oldFirst, err := ResolveCommit(ctx, localOpts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "local-two.txt"), []byte("local two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, localOpts, "archive: local two"); err != nil || !committed {
+		t.Fatalf("second local commit = %v, %v", committed, err)
+	}
+	if tag, err := CreateImmutableTag(ctx, localOpts, "snapshot/local-two"); err != nil || tag != "snapshot/local-two" {
+		t.Fatalf("second local tag = %q, %v", tag, err)
+	}
+	oldLocal, err := ResolveCommit(ctx, localOpts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	peerOpts := Options{RepoPath: peer, Branch: "main"}
+	if err := os.WriteFile(filepath.Join(peer, "remote.txt"), []byte("remote\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, peerOpts, "archive: remote"); err != nil || !committed {
+		t.Fatalf("remote commit = %v, %v", committed, err)
+	}
+	if err := Push(ctx, peerOpts); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncForWrite(ctx, localOpts); err != nil {
+		t.Fatal(err)
+	}
+	newLocal, err := ResolveCommit(ctx, localOpts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newLocal == oldLocal {
+		t.Fatal("local commit was not rebased")
+	}
+	firstTagged, err := ResolveCommit(ctx, localOpts, "snapshot/local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstTagged == oldFirst || firstTagged == newLocal {
+		t.Fatalf("first local tag was not mapped to its rebased commit: %s", firstTagged)
+	}
+	secondTagged, err := ResolveCommit(ctx, localOpts, "snapshot/local-two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondTagged != newLocal {
+		t.Fatalf("second local tag = %s, want rebased HEAD %s", secondTagged, newLocal)
+	}
+	for _, name := range []string{"local.txt", "remote.txt"} {
+		if _, err := os.Stat(filepath.Join(repo, name)); err != nil {
+			t.Fatalf("%s missing after sync: %v", name, err)
+		}
+	}
+}
+
+func TestSyncCurrentForWritePreservesLegacyBranch(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	seed := filepath.Join(dir, "seed")
+	repo := filepath.Join(dir, "share")
+	if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, "", "git", "clone", remote, seed); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, seed, "git", "checkout", "-B", "legacy"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("one\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	seedOpts := Options{RepoPath: seed, Branch: "legacy"}
+	if committed, err := Commit(ctx, seedOpts, "archive: seed"); err != nil || !committed {
+		t.Fatalf("seed commit = %v, %v", committed, err)
+	}
+	if err := PushAtomic(ctx, seedOpts, "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, "", "git", "clone", "--branch", "legacy", remote, repo); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "remote.txt"), []byte("remote\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, seedOpts, "archive: remote"); err != nil || !committed {
+		t.Fatalf("remote commit = %v, %v", committed, err)
+	}
+	if err := PushAtomic(ctx, seedOpts, "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncCurrentForWrite(ctx, Options{RepoPath: repo, Branch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "remote.txt")); err != nil {
+		t.Fatalf("legacy branch did not sync: %v", err)
+	}
+	branch, err := output(ctx, repo, "git", "branch", "--show-current")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(branch) != "legacy" {
+		t.Fatalf("branch = %q, want legacy", strings.TrimSpace(branch))
+	}
+}
+
 func TestCleanSQLiteSidecars(t *testing.T) {
 	dir := t.TempDir()
 	files := []string{"archive.db", "archive.db-wal", "archive.db-shm", "notes.txt"}
@@ -383,6 +532,12 @@ func TestHistoryValidationAndLocalFetch(t *testing.T) {
 	}
 	if _, err := CreateImmutableTag(ctx, opts, "bad tag"); err == nil {
 		t.Fatal("invalid tag should fail")
+	}
+	if err := ValidateTag(ctx, opts, "bad tag"); err == nil {
+		t.Fatal("invalid tag validation should fail")
+	}
+	if err := ValidateTag(ctx, opts, ""); err != nil {
+		t.Fatalf("empty optional tag: %v", err)
 	}
 	if got := ShortRef("123456789012345"); got != "123456789012" {
 		t.Fatalf("short ref = %q", got)

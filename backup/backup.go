@@ -33,9 +33,10 @@ type Manifest struct {
 }
 
 type Shard struct {
-	Table string
-	Path  string
-	Rows  any
+	Table    string
+	CountKey string
+	Path     string
+	Rows     any
 }
 
 type ShardEntry struct {
@@ -82,7 +83,11 @@ func WriteSnapshot(ctx context.Context, cfg Config, shards []Shard, old Manifest
 		if err := ctx.Err(); err != nil {
 			return Manifest{}, err
 		}
-		manifest.Counts[shard.Table] += rows
+		countKey := strings.TrimSpace(shard.CountKey)
+		if countKey == "" {
+			countKey = shard.Table
+		}
+		manifest.Counts[countKey] += rows
 		manifest.Shards = append(manifest.Shards, entry)
 	}
 	sort.Slice(manifest.Shards, func(i, j int) bool { return manifest.Shards[i].Path < manifest.Shards[j].Path })
@@ -138,16 +143,19 @@ func writeShard(ctx context.Context, cfg Config, old Manifest, table, rel string
 	}
 	hash := SHA256Hex(plaintext)
 	targetRel := rel
-	if oldEntry, ok := old.Entry(rel); ok {
+	oldEntry, hasOldEntry := old.logicalEntry(table, rel)
+	if hasOldEntry {
 		if oldEntry.SHA256 != hash || !reuseEncrypted {
 			targetRel = versionedShardPath(rel, hash)
+		} else {
+			targetRel = oldEntry.Path
 		}
 	}
 	target, err := ResolveShardPath(cfg.Repo, targetRel)
 	if err != nil {
 		return ShardEntry{}, err
 	}
-	if oldEntry, ok := old.Entry(targetRel); reuseEncrypted && ok && oldEntry.SHA256 == hash {
+	if reuseEncrypted && hasOldEntry && oldEntry.Path == targetRel && oldEntry.SHA256 == hash {
 		if info, err := os.Stat(target); err == nil {
 			oldEntry.Bytes = info.Size()
 			return oldEntry, nil
@@ -170,6 +178,18 @@ func writeShard(ctx context.Context, cfg Config, old Manifest, table, rel string
 		return ShardEntry{}, err
 	}
 	return ShardEntry{Table: table, Path: targetRel, Rows: rows, SHA256: hash, Bytes: int64(len(encrypted))}, nil
+}
+
+func (m Manifest) logicalEntry(table, rel string) (ShardEntry, bool) {
+	if entry, ok := m.Entry(rel); ok {
+		return entry, true
+	}
+	for _, entry := range m.Shards {
+		if entry.Table == table && entry.Path == versionedShardPath(rel, entry.SHA256) {
+			return entry, true
+		}
+	}
+	return ShardEntry{}, false
 }
 
 func versionedShardPath(rel, hash string) string {

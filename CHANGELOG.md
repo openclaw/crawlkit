@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add non-mutating archive tag validation and rebase-based write synchronization for durable multi-machine backup retries.
 - Add reusable Git snapshot history/tag/ref restoration, SQLite bundle snapshots, managed snapshot sidecars, mapped sync-state adapters, FTS5 helpers, and the shared contact-export contract; refresh stable dependencies.
 
 ## v0.12.2 - 2026-06-17

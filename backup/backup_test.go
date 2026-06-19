@@ -82,6 +82,28 @@ func TestWriteSnapshotHonorsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestWriteSnapshotSupportsStableCountKeys(t *testing.T) {
+	dir := t.TempDir()
+	identity := filepath.Join(dir, "age.key")
+	recipient, err := EnsureIdentity(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Repo: filepath.Join(dir, "repo"), Identity: identity, Recipients: []string{recipient}}
+	manifest, err := WriteSnapshot(context.Background(), cfg, []Shard{
+		{Table: "group_participants", CountKey: "participants", Path: "data/participants.jsonl.gz.age", Rows: []row{{ID: "1"}}},
+	}, Manifest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Counts["participants"] != 1 {
+		t.Fatalf("stable count key missing: %+v", manifest.Counts)
+	}
+	if _, ok := manifest.Counts["group_participants"]; ok {
+		t.Fatalf("table name leaked into counts: %+v", manifest.Counts)
+	}
+}
+
 func TestWriteShardVersionsChangedExistingManifestPath(t *testing.T) {
 	dir := t.TempDir()
 	identity := filepath.Join(dir, "age.key")
@@ -127,6 +149,14 @@ func TestWriteShardVersionsChangedExistingManifestPath(t *testing.T) {
 	}
 	if entry.Path == rel {
 		t.Fatalf("re-encrypted shard reused old path %q", rel)
+	}
+	rotated := entry
+	entry, err = writeShard(context.Background(), cfg, Manifest{Shards: []ShardEntry{rotated}}, "messages", rel, []byte("new plaintext\n"), 1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry != rotated {
+		t.Fatalf("unchanged versioned shard was rewritten: got %+v, want %+v", entry, rotated)
 	}
 }
 
