@@ -137,7 +137,7 @@ func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, fil
 	if err := ctx.Err(); err != nil {
 		return Manifest{}, err
 	}
-	if err := removeStaleBackupFiles(ctx, cfg.Repo, manifest.Shards, manifest.Files); err != nil {
+	if err := removeStaleBackupFiles(ctx, cfg.Repo, manifest.Shards, manifest.Files, true); err != nil {
 		return Manifest{}, err
 	}
 	return manifest, nil
@@ -435,11 +435,15 @@ func RemoveStaleShards(repo string, shards []ShardEntry) error {
 	return removeStaleShards(context.Background(), repo, shards)
 }
 
-func removeStaleShards(ctx context.Context, repo string, shards []ShardEntry) error {
-	return removeStaleBackupFiles(ctx, repo, shards, nil)
+func RemoveStaleManifestFiles(repo string, manifest Manifest) error {
+	return removeStaleBackupFiles(context.Background(), repo, manifest.Shards, manifest.Files, true)
 }
 
-func removeStaleBackupFiles(ctx context.Context, repo string, shards []ShardEntry, files []FileEntry) error {
+func removeStaleShards(ctx context.Context, repo string, shards []ShardEntry) error {
+	return removeStaleBackupFiles(ctx, repo, shards, nil, false)
+}
+
+func removeStaleBackupFiles(ctx context.Context, repo string, shards []ShardEntry, files []FileEntry, manageFiles bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -451,6 +455,7 @@ func removeStaleBackupFiles(ctx context.Context, repo string, shards []ShardEntr
 		keep[filepath.Clean(filepath.Join(repo, filepath.FromSlash(file.Shard)))] = struct{}{}
 	}
 	root := filepath.Join(repo, "data")
+	filesRoot := filepath.Join(root, "files")
 	if _, err := os.Stat(root); os.IsNotExist(err) {
 		return nil
 	}
@@ -466,6 +471,9 @@ func removeStaleBackupFiles(ctx context.Context, repo string, shards []ShardEntr
 			return nil
 		}
 		clean := filepath.Clean(path)
+		if !manageFiles && (clean == filesRoot || strings.HasPrefix(clean, filesRoot+string(filepath.Separator))) {
+			return nil
+		}
 		if _, ok := keep[clean]; ok {
 			return nil
 		}

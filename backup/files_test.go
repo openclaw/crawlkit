@@ -61,6 +61,12 @@ func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 	if string(ciphertext) == "same private media" {
 		t.Fatal("backup file was stored as plaintext")
 	}
+	if err := RemoveStaleShards(cfg.Repo, manifest.Shards); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.Repo, filepath.FromSlash(manifest.Files[0].Shard))); err != nil {
+		t.Fatalf("legacy stale cleanup removed file bundle object: %v", err)
+	}
 	second, err := WriteSnapshotWithFiles(ctx, cfg, nil, files, manifest)
 	if err != nil {
 		t.Fatal(err)
