@@ -166,21 +166,61 @@ func TestFTS5Helpers(t *testing.T) {
 	if query := FTS5TokenQuery(`scope-upgrade OR café_2`); query != `"scope" "upgrade" "OR" "café_2"` {
 		t.Fatalf("token query = %q", query)
 	}
-	if query := FTS5TokenQuery(`-- ""`); query != "" {
-		t.Fatalf("punctuation-only token query = %q", query)
+	if query := FTS5TokenQuery("e\u0301clair"); query != "\"e\u0301clair\"" {
+		t.Fatalf("decomposed Unicode token query = %q", query)
+	}
+	for _, input := range []string{"", `-- ""`, `*:^()`} {
+		if query := FTS5TokenQuery(input); query != "" {
+			t.Fatalf("empty/punctuation-only token query = %q", query)
+		}
 	}
 
 	ctx := context.Background()
 	st, err := Open(ctx, Options{
 		Path:   filepath.Join(t.TempDir(), "fts.db"),
-		Schema: `create virtual table docs using fts5(body);`,
+		Schema: `create virtual table docs using fts5(id unindexed, body);`,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if _, err := st.DB().ExecContext(ctx, `insert into docs(body) values('hello world')`); err != nil {
-		t.Fatal(err)
+	docs := []struct {
+		id   string
+		body string
+	}{
+		{id: "plain", body: "scope upgrade"},
+		{id: "spaced", body: "scope filler upgrade"},
+		{id: "operator", body: "foo OR bar"},
+		{id: "unicode", body: "café_2 東京 мир"},
+		{id: "decomposed", body: "e\u0301clair"},
+	}
+	for _, doc := range docs {
+		if _, err := st.DB().ExecContext(ctx, `insert into docs(id, body) values (?, ?)`, doc.id, doc.body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queries := []struct {
+		input string
+		want  string
+	}{
+		{input: `scope-upgrade`, want: "plain,spaced"},
+		{input: `foo" OR bar*`, want: "operator"},
+		{input: `café_2 東京 мир`, want: "unicode"},
+		{input: "e\u0301clair", want: "decomposed"},
+	}
+	for _, tt := range queries {
+		var got string
+		query := FTS5TokenQuery(tt.input)
+		err := st.DB().QueryRowContext(ctx, `
+			select coalesce(group_concat(id, ','), '')
+			from (select id from docs where docs match ? order by id)
+		`, query).Scan(&got)
+		if err != nil {
+			t.Fatalf("query %q: %v", tt.input, err)
+		}
+		if got != tt.want {
+			t.Fatalf("query %q matches %q, want %q", tt.input, got, tt.want)
+		}
 	}
 	if err := OptimizeFTS5(ctx, st.DB(), "docs"); err != nil {
 		t.Fatal(err)
