@@ -129,6 +129,16 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 		if !info.Mode().IsRegular() {
 			return nil, nil, fmt.Errorf("backup file is not regular: %s", file.Source)
 		}
+		hashValue, size, err := hashFile(ctx, file.Source)
+		if err != nil {
+			return nil, nil, err
+		}
+		if entry, ok, err := reusableFileEntry(cfg, oldByHash, written, hashValue, size); err != nil {
+			return nil, nil, err
+		} else if ok {
+			out = append(out, entry)
+			continue
+		}
 		tmpPath, hashValue, size, encryptedSize, err := encryptFileTemp(ctx, file.Source, cfg.Repo, cfg.Recipients)
 		if err != nil {
 			return nil, nil, err
@@ -139,7 +149,9 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 				_ = os.Remove(tmpPath)
 			}
 		}()
-		if entry, ok := written[hashValue]; ok {
+		if entry, ok, err := reusableFileEntry(cfg, oldByHash, written, hashValue, size); err != nil {
+			return nil, nil, err
+		} else if ok {
 			if err := os.Remove(tmpPath); err != nil {
 				return nil, nil, err
 			}
@@ -148,22 +160,6 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 			continue
 		}
 		shard := path.Join("data/files", hashValue[:2], hashValue+".gz.age")
-		if oldEntry, ok := oldByHash[hashValue]; ok && oldEntry.Shard == shard {
-			target, resolveErr := ResolveShardPath(cfg.Repo, shard)
-			if resolveErr != nil {
-				return nil, nil, resolveErr
-			}
-			if encryptedInfo, statErr := os.Stat(target); statErr == nil {
-				if err := os.Remove(tmpPath); err != nil {
-					return nil, nil, err
-				}
-				keepTemp = false
-				entry := FileEntry{Shard: shard, SHA256: hashValue, Size: size, Bytes: encryptedInfo.Size()}
-				written[hashValue] = entry
-				out = append(out, entry)
-				continue
-			}
-		}
 		target, err := ResolveShardPath(cfg.Repo, shard)
 		if err != nil {
 			return nil, nil, err
@@ -183,6 +179,31 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 		out = append(out, entry)
 	}
 	return out, index, nil
+}
+
+func reusableFileEntry(cfg Config, oldByHash, written map[string]FileEntry, hashValue string, size int64) (FileEntry, bool, error) {
+	if entry, ok := written[hashValue]; ok {
+		return entry, true, nil
+	}
+	shard := path.Join("data/files", hashValue[:2], hashValue+".gz.age")
+	oldEntry, ok := oldByHash[hashValue]
+	if !ok || oldEntry.Shard != shard || oldEntry.Size != size {
+		return FileEntry{}, false, nil
+	}
+	target, err := ResolveShardPath(cfg.Repo, shard)
+	if err != nil {
+		return FileEntry{}, false, err
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return FileEntry{}, false, nil
+		}
+		return FileEntry{}, false, err
+	}
+	entry := FileEntry{Shard: shard, SHA256: hashValue, Size: size, Bytes: info.Size()}
+	written[hashValue] = entry
+	return entry, true, nil
 }
 
 func RestoreFiles(ctx context.Context, cfg Config, manifest Manifest, targetRoot string) (int, error) {
@@ -429,6 +450,20 @@ func encryptFileTemp(ctx context.Context, source, repo string, recipientStrings 
 	}
 	cleanup = false
 	return tmpPath, hex.EncodeToString(hasher.Sum(nil)), size, info.Size(), nil
+}
+
+func hashFile(ctx context.Context, source string) (string, int64, error) {
+	file, err := os.Open(source) // #nosec G304 -- source is explicitly supplied by the caller.
+	if err != nil {
+		return "", 0, err
+	}
+	defer file.Close()
+	hasher := sha256.New()
+	size, err := copyContext(ctx, hasher, file)
+	if err != nil {
+		return "", 0, err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), size, nil
 }
 
 func safeRestoreTarget(root, logical string) (string, error) {
