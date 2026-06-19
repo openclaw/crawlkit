@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -144,7 +145,11 @@ func TestCollectFilesPreservesWhitespaceAndRejectsSwappedSymlink(t *testing.T) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"name", "name "} {
+	names := []string{"name"}
+	if runtime.GOOS != "windows" {
+		names = append(names, "name ")
+	}
+	for _, name := range names {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -153,7 +158,7 @@ func TestCollectFilesPreservesWhitespaceAndRejectsSwappedSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 2 || files[0].Path != "media/name" || files[1].Path != "media/name " {
+	if len(files) != len(names) || files[0].Path != "media/name" || (runtime.GOOS != "windows" && files[1].Path != "media/name ") {
 		t.Fatalf("whitespace paths changed: %#v", files)
 	}
 
@@ -178,5 +183,17 @@ func TestCollectFilesPreservesWhitespaceAndRejectsSwappedSymlink(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(cfg.Repo, "manifest.json")); !os.IsNotExist(err) {
 		t.Fatalf("failed backup wrote a manifest: %v", err)
+	}
+}
+
+func TestWriteSnapshotRejectsReservedFileIndexNamespace(t *testing.T) {
+	ctx := context.Background()
+	for _, shard := range []Shard{
+		{Table: fileIndexTable, Path: "data/custom.jsonl.gz.age", Rows: []row{}},
+		{Table: "custom", Path: fileIndexPath, Rows: []row{}},
+	} {
+		if _, err := WriteSnapshotWithFiles(ctx, Config{}, []Shard{shard}, nil, Manifest{}); err == nil {
+			t.Fatalf("reserved shard should fail: %#v", shard)
+		}
 	}
 }
