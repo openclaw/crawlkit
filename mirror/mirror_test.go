@@ -266,6 +266,19 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 	if tag, err := CreateImmutableTag(ctx, localOpts, "snapshot/local"); err != nil || tag != "snapshot/local" {
 		t.Fatalf("local tag = %q, %v", tag, err)
 	}
+	oldFirst, err := ResolveCommit(ctx, localOpts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "local-two.txt"), []byte("local two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, localOpts, "archive: local two"); err != nil || !committed {
+		t.Fatalf("second local commit = %v, %v", committed, err)
+	}
+	if tag, err := CreateImmutableTag(ctx, localOpts, "snapshot/local-two"); err != nil || tag != "snapshot/local-two" {
+		t.Fatalf("second local tag = %q, %v", tag, err)
+	}
 	oldLocal, err := ResolveCommit(ctx, localOpts, "HEAD")
 	if err != nil {
 		t.Fatal(err)
@@ -290,12 +303,19 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 	if newLocal == oldLocal {
 		t.Fatal("local commit was not rebased")
 	}
-	tagged, err := ResolveCommit(ctx, localOpts, "snapshot/local")
+	firstTagged, err := ResolveCommit(ctx, localOpts, "snapshot/local")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tagged != newLocal {
-		t.Fatalf("local tag = %s, want rebased HEAD %s", tagged, newLocal)
+	if firstTagged == oldFirst || firstTagged == newLocal {
+		t.Fatalf("first local tag was not mapped to its rebased commit: %s", firstTagged)
+	}
+	secondTagged, err := ResolveCommit(ctx, localOpts, "snapshot/local-two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondTagged != newLocal {
+		t.Fatalf("second local tag = %s, want rebased HEAD %s", secondTagged, newLocal)
 	}
 	for _, name := range []string{"local.txt", "remote.txt"} {
 		if _, err := os.Stat(filepath.Join(repo, name)); err != nil {
