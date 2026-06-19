@@ -190,30 +190,57 @@ func syncBranchForWrite(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	stashed, err := stashLocalChanges(ctx, opts)
+	if err != nil {
+		return err
+	}
 	if err := run(ctx, opts.RepoPath, opts.Git,
 		"-c", "commit.gpgsign=false",
 		"-c", "user.name=crawlkit",
 		"-c", "user.email=crawlkit@example.invalid",
 		"rebase", "--reapply-cherry-picks", "--empty=keep", "origin/"+opts.Branch,
 	); err != nil {
+		if stashed {
+			return fmt.Errorf("rebase archive branch (local changes remain in git stash): %w", err)
+		}
 		return err
 	}
-	if len(tagMoves) == 0 {
-		return nil
-	}
-	newCommits, err := localCommits(ctx, opts, remoteRef, localRef)
-	if err != nil {
-		return err
-	}
-	if len(newCommits) != len(oldCommits) {
-		return fmt.Errorf("archive rebase changed local commit count from %d to %d; snapshot tags were not moved", len(oldCommits), len(newCommits))
-	}
-	for _, move := range tagMoves {
-		if err := run(ctx, opts.RepoPath, opts.Git, "update-ref", "refs/tags/"+move.tag, newCommits[move.commitIndex], move.oldCommit); err != nil {
-			return fmt.Errorf("retarget local snapshot tag %q after rebase: %w", move.tag, err)
+	var syncErr error
+	if len(tagMoves) > 0 {
+		newCommits, err := localCommits(ctx, opts, remoteRef, localRef)
+		if err != nil {
+			syncErr = err
+		} else if len(newCommits) != len(oldCommits) {
+			syncErr = fmt.Errorf("archive rebase changed local commit count from %d to %d; snapshot tags were not moved", len(oldCommits), len(newCommits))
+		} else {
+			for _, move := range tagMoves {
+				if err := run(ctx, opts.RepoPath, opts.Git, "update-ref", "refs/tags/"+move.tag, newCommits[move.commitIndex], move.oldCommit); err != nil {
+					syncErr = fmt.Errorf("retarget local snapshot tag %q after rebase: %w", move.tag, err)
+					break
+				}
+			}
 		}
 	}
-	return nil
+	if stashed {
+		if err := run(ctx, opts.RepoPath, opts.Git, "stash", "pop", "--index"); err != nil {
+			syncErr = errors.Join(syncErr, fmt.Errorf("restore local changes after archive rebase: %w", err))
+		}
+	}
+	return syncErr
+}
+
+func stashLocalChanges(ctx context.Context, opts Options) (bool, error) {
+	status, err := output(ctx, opts.RepoPath, opts.Git, "status", "--porcelain", "--untracked-files=all")
+	if err != nil {
+		return false, fmt.Errorf("inspect local mirror changes: %w", err)
+	}
+	if strings.TrimSpace(status) == "" {
+		return false, nil
+	}
+	if err := run(ctx, opts.RepoPath, opts.Git, "stash", "push", "--include-untracked", "--message", "crawlkit mirror sync"); err != nil {
+		return false, fmt.Errorf("stash local mirror changes: %w", err)
+	}
+	return true, nil
 }
 
 type tagMove struct {

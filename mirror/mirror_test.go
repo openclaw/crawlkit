@@ -434,6 +434,9 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(repo, "local.txt"), []byte("unrelated dirty edit\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	peerOpts := Options{RepoPath: peer, Branch: "main"}
 	if err := os.WriteFile(filepath.Join(peer, "remote.txt"), []byte("remote\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -472,6 +475,84 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(repo, name)); err != nil {
 			t.Fatalf("%s missing after sync: %v", name, err)
 		}
+	}
+	dirtyBody, err := os.ReadFile(filepath.Join(repo, "local.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ReplaceAll(string(dirtyBody), "\r\n", "\n") != "unrelated dirty edit\n" {
+		t.Fatalf("dirty edit was not restored: %q", dirtyBody)
+	}
+}
+
+func TestSyncForWriteRetargetsTagsBeforeConflictedStashRestore(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	seed := filepath.Join(dir, "seed")
+	repo := filepath.Join(dir, "share")
+	peer := filepath.Join(dir, "peer")
+	if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+		t.Fatal(err)
+	}
+	seedOpts := Options{RepoPath: seed, Remote: remote, Branch: "main"}
+	if err := EnsureRemote(ctx, seedOpts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("base\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, seedOpts, "seed"); err != nil || !committed {
+		t.Fatalf("seed commit = %v, %v", committed, err)
+	}
+	if err := Push(ctx, seedOpts); err != nil {
+		t.Fatal(err)
+	}
+	for _, clone := range []string{repo, peer} {
+		if err := run(ctx, "", "git", "clone", "--branch", "main", remote, clone); err != nil {
+			t.Fatal(err)
+		}
+	}
+	localOpts := Options{RepoPath: repo, Branch: "main"}
+	if err := os.WriteFile(filepath.Join(repo, "local.txt"), []byte("local\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, localOpts, "local snapshot"); err != nil || !committed {
+		t.Fatalf("local commit = %v, %v", committed, err)
+	}
+	if tag, err := CreateImmutableTag(ctx, localOpts, "snapshot/conflict"); err != nil || tag != "snapshot/conflict" {
+		t.Fatalf("local tag = %q, %v", tag, err)
+	}
+	oldTag, err := ResolveCommit(ctx, localOpts, "snapshot/conflict")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "manifest.json"), []byte("dirty local\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	peerOpts := Options{RepoPath: peer, Branch: "main"}
+	if err := os.WriteFile(filepath.Join(peer, "manifest.json"), []byte("remote update\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, peerOpts, "remote update"); err != nil || !committed {
+		t.Fatalf("remote commit = %v, %v", committed, err)
+	}
+	if err := Push(ctx, peerOpts); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncForWrite(ctx, localOpts); err == nil || !strings.Contains(err.Error(), "restore local changes") {
+		t.Fatalf("SyncForWrite error = %v", err)
+	}
+	newTag, err := ResolveCommit(ctx, localOpts, "snapshot/conflict")
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := ResolveCommit(ctx, localOpts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newTag == oldTag || newTag != head {
+		t.Fatalf("tag after conflicted restore = %s, old %s, HEAD %s", newTag, oldTag, head)
 	}
 }
 
