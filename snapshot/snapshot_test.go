@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -126,6 +127,53 @@ func TestExportRejectsUnsafeTablePath(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(root, "..", "escape")); !os.IsNotExist(statErr) {
 		t.Fatalf("unexpected escaped path stat err = %v", statErr)
+	}
+}
+
+func TestSyncSidecarTreeCopiesFingerprintsAndPrunes(t *testing.T) {
+	ctx := context.Background()
+	source := t.TempDir()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(source, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "page.md"), []byte("page\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "nested", "other.txt"), []byte("skip\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(root, "pages", "stale.md")
+	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sidecars, err := SyncSidecarTree(ctx, SidecarTreeOptions{
+		SourceDir: source,
+		RootDir:   root,
+		TargetDir: "pages",
+		Kind:      "markdown",
+		Include:   func(rel string) bool { return strings.HasSuffix(rel, ".md") },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sidecars) != 1 || sidecars[0].Path != "pages/page.md" || sidecars[0].Size != 5 || len(sidecars[0].SHA256) != 64 {
+		t.Fatalf("sidecars = %+v", sidecars)
+	}
+	if _, err := os.Stat(filepath.Join(root, "pages", "page.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale sidecar should be pruned: %v", err)
+	}
+	if _, err := SyncSidecarTree(ctx, SidecarTreeOptions{SourceDir: source, RootDir: root, TargetDir: "../escape"}); err == nil {
+		t.Fatal("escaping sidecar target should fail")
+	}
+	if _, err := SyncSidecarTree(ctx, SidecarTreeOptions{SourceDir: source, RootDir: source, TargetDir: "pages"}); err == nil {
+		t.Fatal("overlapping sidecar trees should fail")
 	}
 }
 

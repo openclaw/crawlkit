@@ -64,9 +64,11 @@ type ImportProgress struct {
 }
 
 type Sidecar struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-	Kind string `json:"kind,omitempty"`
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Kind   string `json:"kind,omitempty"`
+	Size   int64  `json:"size,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 type Manifest struct {

@@ -59,3 +59,21 @@ func TestSQLiteDatabaseStatsPathReadOnly(t *testing.T) {
 		t.Fatalf("counts = %#v", db.Counts)
 	}
 }
+
+func TestValidateContactExport(t *testing.T) {
+	valid := ContactExport{Contacts: []Contact{{DisplayName: "Alice", PhoneNumbers: []string{"+15550100"}}}}
+	if err := ValidateContactExport(valid); err != nil {
+		t.Fatal(err)
+	}
+	invalid := []ContactExport{
+		{Contacts: []Contact{{PhoneNumbers: []string{"+15550100"}}}},
+		{Contacts: []Contact{{DisplayName: "Alice"}}},
+		{Contacts: []Contact{{DisplayName: "Alice", PhoneNumbers: []string{""}}}},
+		{Contacts: []Contact{{DisplayName: "Alice", PhoneNumbers: []string{"+15550100", "+15550100"}}}},
+	}
+	for _, value := range invalid {
+		if err := ValidateContactExport(value); err == nil {
+			t.Fatalf("expected invalid contact export: %+v", value)
+		}
+	}
+}
