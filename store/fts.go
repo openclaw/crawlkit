@@ -36,6 +36,7 @@ func FTS5Terms(value, operator string) (string, error) {
 
 // FTS5TokenQuery converts arbitrary user input into quoted FTS5 tokens joined
 // by implicit AND, discarding punctuation that could be parsed as operators.
+// It returns an empty string when no searchable tokens remain.
 func FTS5TokenQuery(value string) string {
 	terms := make([]string, 0)
 	var token strings.Builder
@@ -47,7 +48,7 @@ func FTS5TokenQuery(value string) string {
 		token.Reset()
 	}
 	for _, r := range value {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r) || r == '_' {
 			token.WriteRune(r)
 			continue
 		}

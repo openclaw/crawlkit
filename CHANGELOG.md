@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Add shared SQL LIKE literal escaping for crawler search queries.
+- Preserve Unicode combining marks in tokenized FTS5 queries.
 - Add a safe tokenized FTS5 query helper for arbitrary user search input.
 - Preserve unrelated tracked mirror edits across write synchronization rebases.
 - Retry atomic branch-and-tag snapshot pushes after rebasing and retargeting unpublished tags.
