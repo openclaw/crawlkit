@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ type Manifest struct {
 	Recipients []string       `json:"recipients,omitempty"`
 	Counts     map[string]int `json:"counts"`
 	Shards     []ShardEntry   `json:"shards"`
+	Files      []FileEntry    `json:"files,omitempty"`
 }
 
 type Shard struct {
@@ -47,14 +49,32 @@ type ShardEntry struct {
 	Bytes  int64  `json:"bytes"`
 }
 
+type FileEntry struct {
+	Shard string `json:"shard"`
+	Bytes int64  `json:"bytes"`
+}
+
 type DecodedShard struct {
 	Entry     ShardEntry
 	Plaintext []byte
 }
 
 func WriteSnapshot(ctx context.Context, cfg Config, shards []Shard, old Manifest) (Manifest, error) {
+	return WriteSnapshotWithFiles(ctx, cfg, shards, nil, old)
+}
+
+func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, files []File, old Manifest) (Manifest, error) {
 	if err := ctx.Err(); err != nil {
 		return Manifest{}, err
+	}
+	for _, shard := range shards {
+		cleanPath, err := cleanShardPath(shard.Path)
+		if err != nil {
+			return Manifest{}, err
+		}
+		if shard.Table == fileIndexTable || cleanPath == "data/files" || strings.HasPrefix(cleanPath, "data/files/") {
+			return Manifest{}, fmt.Errorf("backup shard uses reserved file index namespace: %s", shard.Path)
+		}
 	}
 	recipients := normalizedStrings(cfg.Recipients)
 	reuseEncrypted := sameStrings(old.Recipients, recipients)
@@ -90,6 +110,22 @@ func WriteSnapshot(ctx context.Context, cfg Config, shards []Shard, old Manifest
 		manifest.Counts[countKey] += rows
 		manifest.Shards = append(manifest.Shards, entry)
 	}
+	filesManifest, fileIndex, err := writeFiles(ctx, cfg, old, files, reuseEncrypted)
+	if err != nil {
+		return Manifest{}, err
+	}
+	manifest.Files = filesManifest
+	if len(fileIndex) > 0 {
+		plaintext, rows, err := encodeJSONL(ctx, fileIndex)
+		if err != nil {
+			return Manifest{}, fmt.Errorf("encode backup file index: %w", err)
+		}
+		entry, err := writeShard(ctx, cfg, old, fileIndexTable, fileIndexPath, plaintext, rows, reuseEncrypted)
+		if err != nil {
+			return Manifest{}, err
+		}
+		manifest.Shards = append(manifest.Shards, entry)
+	}
 	sort.Slice(manifest.Shards, func(i, j int) bool { return manifest.Shards[i].Path < manifest.Shards[j].Path })
 	if EquivalentManifest(old, manifest) {
 		return old, nil
@@ -103,7 +139,7 @@ func WriteSnapshot(ctx context.Context, cfg Config, shards []Shard, old Manifest
 	if err := ctx.Err(); err != nil {
 		return Manifest{}, err
 	}
-	if err := removeStaleShards(ctx, cfg.Repo, manifest.Shards); err != nil {
+	if err := removeStaleBackupFiles(ctx, cfg.Repo, manifest.Shards, manifest.Files, true); err != nil {
 		return Manifest{}, err
 	}
 	return manifest, nil
@@ -121,6 +157,9 @@ func readSnapshotWith(manifest Manifest, load func(ShardEntry) ([]byte, error)) 
 	}
 	var out []DecodedShard
 	for _, shard := range manifest.Shards {
+		if shard.Table == fileIndexTable {
+			continue
+		}
 		plaintext, err := load(shard)
 		if err != nil {
 			return nil, err
@@ -213,12 +252,9 @@ func DecryptShardFile(cfg Config, shard ShardEntry) ([]byte, error) {
 }
 
 func ResolveShardPath(repo, rel string) (string, error) {
-	clean := path.Clean(strings.TrimSpace(rel))
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) {
-		return "", fmt.Errorf("backup shard path escapes backup root: %s", rel)
-	}
-	if !strings.HasPrefix(clean, "data/") || !strings.HasSuffix(clean, ".age") {
-		return "", fmt.Errorf("invalid backup shard path: %s", rel)
+	clean, err := cleanShardPath(rel)
+	if err != nil {
+		return "", err
 	}
 	full := filepath.Join(repo, filepath.FromSlash(clean))
 	root := filepath.Clean(filepath.Join(repo, "data"))
@@ -227,6 +263,20 @@ func ResolveShardPath(repo, rel string) (string, error) {
 		return "", fmt.Errorf("backup shard path escapes backup root: %s", rel)
 	}
 	return full, nil
+}
+
+func cleanShardPath(rel string) (string, error) {
+	if strings.ContainsRune(rel, '\\') {
+		return "", fmt.Errorf("invalid backup shard path: %s", rel)
+	}
+	clean := path.Clean(strings.TrimSpace(rel))
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) {
+		return "", fmt.Errorf("backup shard path escapes backup root: %s", rel)
+	}
+	if !strings.HasPrefix(clean, "data/") || !strings.HasSuffix(clean, ".age") {
+		return "", fmt.Errorf("invalid backup shard path: %s", rel)
+	}
+	return clean, nil
 }
 
 func EncodeJSONL(rows any) ([]byte, int, error) {
@@ -353,6 +403,9 @@ func writeFileAtomicContext(ctx context.Context, target string, data []byte, per
 }
 
 func syncDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	file, err := os.Open(dir)
 	if err != nil {
 		return err
@@ -371,11 +424,18 @@ func (m Manifest) Entry(path string) (ShardEntry, bool) {
 }
 
 func EquivalentManifest(a, b Manifest) bool {
-	if a.Format != b.Format || a.Encrypted != b.Encrypted || !sameStrings(a.Recipients, b.Recipients) || !sameCounts(a.Counts, b.Counts) || len(a.Shards) != len(b.Shards) {
+	if a.Format != b.Format || a.Encrypted != b.Encrypted || !sameStrings(a.Recipients, b.Recipients) || !sameCounts(a.Counts, b.Counts) || len(a.Shards) != len(b.Shards) || len(a.Files) != len(b.Files) {
 		return false
 	}
 	for i := range a.Shards {
 		left, right := a.Shards[i], b.Shards[i]
+		left.Bytes, right.Bytes = 0, 0
+		if left != right {
+			return false
+		}
+	}
+	for i := range a.Files {
+		left, right := a.Files[i], b.Files[i]
 		left.Bytes, right.Bytes = 0, 0
 		if left != right {
 			return false
@@ -389,6 +449,10 @@ func RemoveStaleShards(repo string, shards []ShardEntry) error {
 }
 
 func removeStaleShards(ctx context.Context, repo string, shards []ShardEntry) error {
+	return removeStaleBackupFiles(ctx, repo, shards, nil, false)
+}
+
+func removeStaleBackupFiles(ctx context.Context, repo string, shards []ShardEntry, files []FileEntry, manageFiles bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -396,7 +460,11 @@ func removeStaleShards(ctx context.Context, repo string, shards []ShardEntry) er
 	for _, shard := range shards {
 		keep[filepath.Clean(filepath.Join(repo, filepath.FromSlash(shard.Path)))] = struct{}{}
 	}
+	for _, file := range files {
+		keep[filepath.Clean(filepath.Join(repo, filepath.FromSlash(file.Shard)))] = struct{}{}
+	}
 	root := filepath.Join(repo, "data")
+	filesRoot := filepath.Join(root, "files")
 	if _, err := os.Stat(root); os.IsNotExist(err) {
 		return nil
 	}
@@ -412,6 +480,9 @@ func removeStaleShards(ctx context.Context, repo string, shards []ShardEntry) er
 			return nil
 		}
 		clean := filepath.Clean(path)
+		if !manageFiles && (clean == filesRoot || strings.HasPrefix(clean, filesRoot+string(filepath.Separator))) {
+			return nil
+		}
 		if _, ok := keep[clean]; ok {
 			return nil
 		}

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path"
+	"io"
 	"strings"
 
 	"github.com/openclaw/crawlkit/mirror"
@@ -67,10 +67,10 @@ func ReadSnapshotAt(ctx context.Context, cfg Config, opts mirror.Options, manife
 		return nil, "", err
 	}
 	shards, err := readSnapshotWith(manifest, func(shard ShardEntry) ([]byte, error) {
-		if _, err := ResolveShardPath(cfg.Repo, shard.Path); err != nil {
+		clean, err := cleanShardPath(shard.Path)
+		if err != nil {
 			return nil, err
 		}
-		clean := path.Clean(strings.TrimSpace(shard.Path))
 		ciphertext, resolved, err := mirror.ReadFileAt(ctx, opts, commit, clean)
 		if err != nil {
 			return nil, err
@@ -84,4 +84,33 @@ func ReadSnapshotAt(ctx context.Context, cfg Config, opts mirror.Options, manife
 		return nil, "", err
 	}
 	return shards, commit, nil
+}
+
+func RestoreFilesAt(ctx context.Context, cfg Config, opts mirror.Options, manifest Manifest, ref, targetRoot string) (int, string, error) {
+	return RestoreFilesAtUnder(ctx, cfg, opts, manifest, ref, targetRoot, "")
+}
+
+func RestoreFilesAtUnder(ctx context.Context, cfg Config, opts mirror.Options, manifest Manifest, ref, targetRoot, requiredPrefix string) (int, string, error) {
+	commit, err := mirror.ResolveCommit(ctx, opts, ref)
+	if err != nil {
+		return 0, "", err
+	}
+	count, err := restoreFilesWith(ctx, cfg.Identity, manifest, targetRoot, requiredPrefix, func(rel string) (io.ReadCloser, error) {
+		clean, err := cleanShardPath(rel)
+		if err != nil {
+			return nil, err
+		}
+		ciphertext, resolved, err := mirror.ReadFileAt(ctx, opts, commit, clean)
+		if err != nil {
+			return nil, err
+		}
+		if resolved != commit {
+			return nil, fmt.Errorf("backup ref changed while reading %s", clean)
+		}
+		return readEncryptedFileBytes(ciphertext), nil
+	})
+	if err != nil {
+		return 0, "", err
+	}
+	return count, commit, nil
 }

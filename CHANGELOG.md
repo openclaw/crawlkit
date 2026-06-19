@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add content-deduplicated encrypted file bundles with safe current and historical restore for crawler backups.
 - Add shared SQL LIKE literal escaping for crawler search queries.
 - Preserve Unicode combining marks in tokenized FTS5 queries.
 - Add a safe tokenized FTS5 query helper for arbitrary user search input.
