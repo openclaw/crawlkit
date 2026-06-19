@@ -163,6 +163,12 @@ func TestFTS5Helpers(t *testing.T) {
 	if _, err := FTS5Terms("hello", "NEAR"); err == nil {
 		t.Fatal("unsupported operator should fail")
 	}
+	if query := FTS5TokenQuery(`scope-upgrade OR café_2`); query != `"scope" "upgrade" "OR" "café_2"` {
+		t.Fatalf("token query = %q", query)
+	}
+	if query := FTS5TokenQuery(`-- ""`); query != "" {
+		t.Fatalf("punctuation-only token query = %q", query)
+	}
 
 	ctx := context.Background()
 	st, err := Open(ctx, Options{

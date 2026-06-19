@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add a safe tokenized FTS5 query helper for arbitrary user search input.
 - Preserve unrelated tracked mirror edits across write synchronization rebases.
 - Retry atomic branch-and-tag snapshot pushes after rebasing and retargeting unpublished tags.
 - Update Go to 1.26.4 for current standard-library security fixes and add race and vulnerability CI gates.
