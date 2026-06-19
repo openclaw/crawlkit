@@ -130,7 +130,12 @@ func SyncForWrite(ctx context.Context, opts Options) error {
 	if err := run(ctx, opts.RepoPath, opts.Git, "checkout", opts.Branch); err != nil {
 		return err
 	}
-	return run(ctx, opts.RepoPath, opts.Git, "rebase", "origin/"+opts.Branch)
+	return run(ctx, opts.RepoPath, opts.Git,
+		"-c", "commit.gpgsign=false",
+		"-c", "user.name=crawlkit",
+		"-c", "user.email=crawlkit@example.invalid",
+		"rebase", "origin/"+opts.Branch,
+	)
 }
 
 func Commit(ctx context.Context, opts Options, message string) (bool, error) {
