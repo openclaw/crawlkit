@@ -21,7 +21,7 @@ func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.Symlink(filepath.Join(source, "photo.jpg"), filepath.Join(source, "linked.jpg")); err != nil {
+	if err := os.Symlink(filepath.Join(source, "photo.jpg"), filepath.Join(source, "linked.jpg")); err != nil && runtime.GOOS != "windows" {
 		t.Fatal(err)
 	}
 	files, err := CollectFiles(ctx, source, "media")
@@ -176,9 +176,7 @@ func TestRestoreFilesRejectsUnsafePaths(t *testing.T) {
 	if err := os.MkdirAll(restoreRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(restoreRoot, "media")); err != nil {
-		t.Fatal(err)
-	}
+	symlinkOrSkip(t, outside, filepath.Join(restoreRoot, "media"))
 	if _, err := RestoreFiles(ctx, cfg, manifest, restoreRoot); err == nil {
 		t.Fatal("symlinked restore directory should fail")
 	}
@@ -215,9 +213,7 @@ func TestCollectFilesPreservesWhitespaceAndRejectsSwappedSymlink(t *testing.T) {
 	if err := os.Remove(files[0].Source); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, files[0].Source); err != nil {
-		t.Fatal(err)
-	}
+	symlinkOrSkip(t, outside, files[0].Source)
 	identity := filepath.Join(dir, "age.key")
 	recipient, err := EnsureIdentity(identity)
 	if err != nil {
@@ -229,6 +225,16 @@ func TestCollectFilesPreservesWhitespaceAndRejectsSwappedSymlink(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(cfg.Repo, "manifest.json")); !os.IsNotExist(err) {
 		t.Fatalf("failed backup wrote a manifest: %v", err)
+	}
+}
+
+func symlinkOrSkip(t *testing.T, oldname, newname string) {
+	t.Helper()
+	if err := os.Symlink(oldname, newname); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("symlink unavailable: %v", err)
+		}
+		t.Fatal(err)
 	}
 }
 
