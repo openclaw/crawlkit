@@ -117,6 +117,16 @@ func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 			t.Fatalf("restored %s = %q", name, body)
 		}
 	}
+	photo := filepath.Join(restoreRoot, "media", "photo.jpg")
+	if err := os.WriteFile(photo, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RestoreFiles(ctx, cfg, manifest, restoreRoot); err != nil {
+		t.Fatalf("repeat restore: %v", err)
+	}
+	if body, err := os.ReadFile(photo); err != nil || string(body) != "same private media" {
+		t.Fatalf("repeat restored photo = %q err=%v", body, err)
+	}
 	confinedRoot := filepath.Join(dir, "confined")
 	if err := os.MkdirAll(confinedRoot, 0o700); err != nil {
 		t.Fatal(err)

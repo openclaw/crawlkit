@@ -451,6 +451,8 @@ func restoreFile(ctx context.Context, identity *age.X25519Identity, ciphertext i
 	if err := tmp.Close(); err != nil {
 		return err
 	}
+	// os.Rename replaces regular files, including via MoveFileEx with
+	// MOVEFILE_REPLACE_EXISTING on Windows, without first hiding the old file.
 	if err := os.Rename(tmpPath, target); err != nil {
 		return err
 	}
