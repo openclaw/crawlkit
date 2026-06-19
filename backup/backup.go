@@ -435,10 +435,6 @@ func RemoveStaleShards(repo string, shards []ShardEntry) error {
 	return removeStaleShards(context.Background(), repo, shards)
 }
 
-func RemoveStaleManifestFiles(repo string, manifest Manifest) error {
-	return removeStaleBackupFiles(context.Background(), repo, manifest.Shards, manifest.Files, true)
-}
-
 func removeStaleShards(ctx context.Context, repo string, shards []ShardEntry) error {
 	return removeStaleBackupFiles(ctx, repo, shards, nil, false)
 }
