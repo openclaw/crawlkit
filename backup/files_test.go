@@ -204,6 +204,7 @@ func TestWriteSnapshotRejectsReservedFileIndexNamespace(t *testing.T) {
 	for _, shard := range []Shard{
 		{Table: fileIndexTable, Path: "data/custom.jsonl.gz.age", Rows: []row{}},
 		{Table: "custom", Path: fileIndexPath, Rows: []row{}},
+		{Table: "custom", Path: "data/files/aa/custom.gz.age", Rows: []row{}},
 	} {
 		if _, err := WriteSnapshotWithFiles(ctx, Config{}, []Shard{shard}, nil, Manifest{}); err == nil {
 			t.Fatalf("reserved shard should fail: %#v", shard)

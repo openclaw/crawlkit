@@ -70,7 +70,8 @@ func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, fil
 		return Manifest{}, err
 	}
 	for _, shard := range shards {
-		if shard.Table == fileIndexTable || path.Clean(strings.TrimSpace(shard.Path)) == fileIndexPath {
+		cleanPath := path.Clean(strings.TrimSpace(shard.Path))
+		if shard.Table == fileIndexTable || cleanPath == "data/files" || strings.HasPrefix(cleanPath, "data/files/") {
 			return Manifest{}, fmt.Errorf("backup shard uses reserved file index namespace: %s", shard.Path)
 		}
 	}
