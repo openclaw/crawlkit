@@ -21,6 +21,7 @@ import (
 type File struct {
 	Path   string
 	Source string
+	info   os.FileInfo
 }
 
 const (
@@ -86,7 +87,7 @@ func CollectFiles(ctx context.Context, root, prefix string) ([]File, error) {
 		if err != nil {
 			return err
 		}
-		files = append(files, File{Path: logical, Source: source})
+		files = append(files, File{Path: logical, Source: source, info: info})
 		return nil
 	})
 	if err != nil {
@@ -122,14 +123,7 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 		}
 		seenPaths[logical] = struct{}{}
 		index = append(index, fileIndexRecord{Path: logical})
-		info, err := os.Lstat(file.Source)
-		if err != nil {
-			return nil, nil, err
-		}
-		if !info.Mode().IsRegular() {
-			return nil, nil, fmt.Errorf("backup file is not regular: %s", file.Source)
-		}
-		hashValue, size, err := hashFile(ctx, file.Source)
+		hashValue, size, sourceInfo, err := hashFile(ctx, file)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -139,7 +133,7 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 			out = append(out, entry)
 			continue
 		}
-		tmpPath, hashValue, size, encryptedSize, err := encryptFileTemp(ctx, file.Source, cfg.Repo, cfg.Recipients)
+		tmpPath, hashValue, size, encryptedSize, err := encryptFileTemp(ctx, file, sourceInfo, cfg.Repo, cfg.Recipients)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -384,7 +378,7 @@ func restoreFile(ctx context.Context, identity *age.X25519Identity, ciphertext i
 	return syncDir(filepath.Dir(target))
 }
 
-func encryptFileTemp(ctx context.Context, source, repo string, recipientStrings []string) (string, string, int64, int64, error) {
+func encryptFileTemp(ctx context.Context, source File, expected os.FileInfo, repo string, recipientStrings []string) (string, string, int64, int64, error) {
 	recipients, err := parseRecipients(recipientStrings)
 	if err != nil {
 		return "", "", 0, 0, err
@@ -393,7 +387,7 @@ func encryptFileTemp(ctx context.Context, source, repo string, recipientStrings 
 	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
 		return "", "", 0, 0, err
 	}
-	in, err := os.Open(source) // #nosec G304 -- source is explicitly supplied by the caller.
+	in, _, err := openSourceFile(source, expected)
 	if err != nil {
 		return "", "", 0, 0, err
 	}
@@ -452,18 +446,45 @@ func encryptFileTemp(ctx context.Context, source, repo string, recipientStrings 
 	return tmpPath, hex.EncodeToString(hasher.Sum(nil)), size, info.Size(), nil
 }
 
-func hashFile(ctx context.Context, source string) (string, int64, error) {
-	file, err := os.Open(source) // #nosec G304 -- source is explicitly supplied by the caller.
+func hashFile(ctx context.Context, source File) (string, int64, os.FileInfo, error) {
+	file, info, err := openSourceFile(source, source.info)
 	if err != nil {
-		return "", 0, err
+		return "", 0, nil, err
 	}
 	defer file.Close()
 	hasher := sha256.New()
 	size, err := copyContext(ctx, hasher, file)
 	if err != nil {
-		return "", 0, err
+		return "", 0, nil, err
 	}
-	return hex.EncodeToString(hasher.Sum(nil)), size, nil
+	return hex.EncodeToString(hasher.Sum(nil)), size, info, nil
+}
+
+func openSourceFile(source File, expected os.FileInfo) (*os.File, os.FileInfo, error) {
+	before, err := os.Lstat(source.Source)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !before.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("backup file is not regular: %s", source.Source)
+	}
+	if expected != nil && !os.SameFile(expected, before) {
+		return nil, nil, fmt.Errorf("backup file changed during collection: %s", source.Source)
+	}
+	file, err := os.Open(source.Source) // #nosec G304 -- identity checks bind the opened file to the collected regular file before reads.
+	if err != nil {
+		return nil, nil, err
+	}
+	after, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, nil, err
+	}
+	if !after.Mode().IsRegular() || !os.SameFile(before, after) || (expected != nil && !os.SameFile(expected, after)) {
+		_ = file.Close()
+		return nil, nil, fmt.Errorf("backup file changed before open: %s", source.Source)
+	}
+	return file, after, nil
 }
 
 func safeRestoreTarget(root, logical string) (string, error) {
@@ -512,7 +533,6 @@ func ensureDirectory(dir string) error {
 }
 
 func cleanFilePath(value string) (string, error) {
-	value = strings.TrimSpace(value)
 	if value == "" || strings.Contains(value, "\\") {
 		return "", fmt.Errorf("invalid backup file path: %s", value)
 	}

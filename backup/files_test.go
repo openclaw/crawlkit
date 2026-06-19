@@ -136,3 +136,47 @@ func TestRestoreFilesRejectsUnsafePaths(t *testing.T) {
 		t.Fatal("symlinked restore directory should fail")
 	}
 }
+
+func TestCollectFilesPreservesWhitespaceAndRejectsSwappedSymlink(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	root := filepath.Join(dir, "source")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"name", "name "} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, err := CollectFiles(ctx, root, "media")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 || files[0].Path != "media/name" || files[1].Path != "media/name " {
+		t.Fatalf("whitespace paths changed: %#v", files)
+	}
+
+	outside := filepath.Join(dir, "outside")
+	if err := os.WriteFile(outside, []byte("outside secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(files[0].Source); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, files[0].Source); err != nil {
+		t.Fatal(err)
+	}
+	identity := filepath.Join(dir, "age.key")
+	recipient, err := EnsureIdentity(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Repo: filepath.Join(dir, "repo"), Identity: identity, Recipients: []string{recipient}}
+	if _, err := WriteSnapshotWithFiles(ctx, cfg, nil, files, Manifest{}); err == nil {
+		t.Fatal("symlink-swapped source should fail")
+	}
+	if _, err := os.Stat(filepath.Join(cfg.Repo, "manifest.json")); !os.IsNotExist(err) {
+		t.Fatalf("failed backup wrote a manifest: %v", err)
+	}
+}
