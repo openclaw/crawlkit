@@ -47,6 +47,10 @@ func EnsureRepo(ctx context.Context, opts Options) error {
 			}
 		}
 		if opts.Branch != "" {
+			remoteRef := "refs/remotes/origin/" + opts.Branch
+			if _, err := output(ctx, opts.RepoPath, opts.Git, "rev-parse", "--verify", remoteRef); err == nil {
+				return run(ctx, opts.RepoPath, opts.Git, "checkout", "-B", opts.Branch, "origin/"+opts.Branch)
+			}
 			return run(ctx, opts.RepoPath, opts.Git, "checkout", "-B", opts.Branch)
 		}
 		return nil

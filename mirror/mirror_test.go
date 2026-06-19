@@ -101,6 +101,45 @@ func TestEnsureRepoAppliesPrivateDirectoryMode(t *testing.T) {
 	}
 }
 
+func TestEnsureRepoClonesRequestedRemoteBranch(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	seed := filepath.Join(dir, "seed")
+	remote := filepath.Join(dir, "remote.git")
+	repo := filepath.Join(dir, "share")
+	if err := run(ctx, "", "git", "init", "-b", "main", seed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("release\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, Options{RepoPath: seed, Branch: "main"}, "release"); err != nil || !committed {
+		t.Fatalf("commit = %v, %v", committed, err)
+	}
+	if err := run(ctx, seed, "git", "branch", "release"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, Options{RepoPath: seed, Branch: "main"}, "main"); err != nil || !committed {
+		t.Fatalf("commit = %v, %v", committed, err)
+	}
+	if err := run(ctx, "", "git", "clone", "--bare", seed, remote); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureRepo(ctx, Options{RepoPath: repo, Remote: remote, Branch: "release"}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(repo, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "release\n" {
+		t.Fatalf("manifest = %q, want release", body)
+	}
+}
+
 func TestPushWritesCurrentBranchToOrigin(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
