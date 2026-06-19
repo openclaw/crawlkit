@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -30,7 +31,14 @@ const (
 )
 
 type fileIndexRecord struct {
-	Path string `json:"path"`
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+}
+
+type indexedFile struct {
+	Entry  FileEntry
+	Record fileIndexRecord
 }
 
 type encryptedFileLoader func(string) (io.ReadCloser, error)
@@ -100,10 +108,15 @@ func CollectFiles(ctx context.Context, root, prefix string) ([]File, error) {
 func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reuseEncrypted bool) ([]FileEntry, []fileIndexRecord, error) {
 	ordered := append([]File(nil), files...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Path < ordered[j].Path })
-	oldByHash := make(map[string]FileEntry, len(old.Files))
+	oldByHash := make(map[string]indexedFile, len(old.Files))
 	if reuseEncrypted {
-		for _, entry := range old.Files {
-			oldByHash[entry.SHA256] = entry
+		records, err := loadLocalFileIndex(cfg, old)
+		if err != nil {
+			return nil, nil, err
+		}
+		for index, entry := range old.Files {
+			record := records[index]
+			oldByHash[record.SHA256] = indexedFile{Entry: entry, Record: record}
 		}
 	}
 	written := make(map[string]FileEntry, len(files))
@@ -122,7 +135,6 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 			return nil, nil, fmt.Errorf("duplicate backup file path: %s", logical)
 		}
 		seenPaths[logical] = struct{}{}
-		index = append(index, fileIndexRecord{Path: logical})
 		hashValue, size, sourceInfo, err := hashFile(ctx, file)
 		if err != nil {
 			return nil, nil, err
@@ -131,6 +143,7 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 			return nil, nil, err
 		} else if ok {
 			out = append(out, entry)
+			index = append(index, fileIndexRecord{Path: logical, SHA256: hashValue, Size: size})
 			continue
 		}
 		tmpPath, hashValue, size, encryptedSize, err := encryptFileTemp(ctx, file, sourceInfo, cfg.Repo, cfg.Recipients)
@@ -151,9 +164,13 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 			}
 			keepTemp = false
 			out = append(out, entry)
+			index = append(index, fileIndexRecord{Path: logical, SHA256: hashValue, Size: size})
 			continue
 		}
-		shard := path.Join("data/files", hashValue[:2], hashValue+".gz.age")
+		shard, err := randomFileShard(cfg.Repo)
+		if err != nil {
+			return nil, nil, err
+		}
 		target, err := ResolveShardPath(cfg.Repo, shard)
 		if err != nil {
 			return nil, nil, err
@@ -168,23 +185,23 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 		if err := syncDir(filepath.Dir(target)); err != nil {
 			return nil, nil, err
 		}
-		entry := FileEntry{Shard: shard, SHA256: hashValue, Size: size, Bytes: encryptedSize}
+		entry := FileEntry{Shard: shard, Bytes: encryptedSize}
 		written[hashValue] = entry
 		out = append(out, entry)
+		index = append(index, fileIndexRecord{Path: logical, SHA256: hashValue, Size: size})
 	}
 	return out, index, nil
 }
 
-func reusableFileEntry(cfg Config, oldByHash, written map[string]FileEntry, hashValue string, size int64) (FileEntry, bool, error) {
+func reusableFileEntry(cfg Config, oldByHash map[string]indexedFile, written map[string]FileEntry, hashValue string, size int64) (FileEntry, bool, error) {
 	if entry, ok := written[hashValue]; ok {
 		return entry, true, nil
 	}
-	shard := path.Join("data/files", hashValue[:2], hashValue+".gz.age")
-	oldEntry, ok := oldByHash[hashValue]
-	if !ok || oldEntry.Shard != shard || oldEntry.Size != size {
+	oldFile, ok := oldByHash[hashValue]
+	if !ok || oldFile.Record.Size != size {
 		return FileEntry{}, false, nil
 	}
-	target, err := ResolveShardPath(cfg.Repo, shard)
+	target, err := ResolveShardPath(cfg.Repo, oldFile.Entry.Shard)
 	if err != nil {
 		return FileEntry{}, false, err
 	}
@@ -195,9 +212,50 @@ func reusableFileEntry(cfg Config, oldByHash, written map[string]FileEntry, hash
 		}
 		return FileEntry{}, false, err
 	}
-	entry := FileEntry{Shard: shard, SHA256: hashValue, Size: size, Bytes: info.Size()}
+	entry := FileEntry{Shard: oldFile.Entry.Shard, Bytes: info.Size()}
 	written[hashValue] = entry
 	return entry, true, nil
+}
+
+func loadLocalFileIndex(cfg Config, manifest Manifest) ([]fileIndexRecord, error) {
+	if len(manifest.Files) == 0 {
+		return nil, nil
+	}
+	identityData, err := os.ReadFile(expandHome(cfg.Identity)) // #nosec G304 -- path is configured by the caller.
+	if err != nil {
+		return nil, err
+	}
+	identity, err := parseIdentity(identityData)
+	if err != nil {
+		return nil, err
+	}
+	return readFileIndex(identity, manifest, func(rel string) (io.ReadCloser, error) {
+		shard, err := ResolveShardPath(cfg.Repo, rel)
+		if err != nil {
+			return nil, err
+		}
+		return os.Open(shard) // #nosec G304 -- ResolveShardPath confines manifest-controlled paths below data/.
+	})
+}
+
+func randomFileShard(repo string) (string, error) {
+	for range 10 {
+		var id [16]byte
+		if _, err := rand.Read(id[:]); err != nil {
+			return "", err
+		}
+		rel := path.Join("data/files/objects", hex.EncodeToString(id[:])+".gz.age")
+		target, err := ResolveShardPath(repo, rel)
+		if err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(target); os.IsNotExist(err) {
+			return rel, nil
+		} else if err != nil {
+			return "", err
+		}
+	}
+	return "", fmt.Errorf("generate unique backup file object path")
 }
 
 func RestoreFiles(ctx context.Context, cfg Config, manifest Manifest, targetRoot string) (int, error) {
@@ -226,7 +284,7 @@ func restoreFilesWith(ctx context.Context, identityPath string, manifest Manifes
 	if err != nil {
 		return 0, err
 	}
-	paths, err := readFileIndex(identity, manifest, load)
+	records, err := readFileIndex(identity, manifest, load)
 	if err != nil {
 		return 0, err
 	}
@@ -242,7 +300,8 @@ func restoreFilesWith(ctx context.Context, identityPath string, manifest Manifes
 		if err := ctx.Err(); err != nil {
 			return 0, err
 		}
-		logical := paths[index]
+		record := records[index]
+		logical := record.Path
 		logical, err = cleanFilePath(logical)
 		if err != nil {
 			return 0, err
@@ -261,7 +320,7 @@ func restoreFilesWith(ctx context.Context, identityPath string, manifest Manifes
 		if err != nil {
 			return 0, err
 		}
-		err = restoreFile(ctx, identity, ciphertext, targetRoot, logical, entry)
+		err = restoreFile(ctx, identity, ciphertext, targetRoot, logical, record)
 		closeErr := ciphertext.Close()
 		if err != nil {
 			return 0, err
@@ -273,9 +332,9 @@ func restoreFilesWith(ctx context.Context, identityPath string, manifest Manifes
 	return len(manifest.Files), nil
 }
 
-func readFileIndex(identity *age.X25519Identity, manifest Manifest, load encryptedFileLoader) ([]string, error) {
+func readFileIndex(identity *age.X25519Identity, manifest Manifest, load encryptedFileLoader) ([]fileIndexRecord, error) {
 	if len(manifest.Files) == 0 {
-		return []string{}, nil
+		return []fileIndexRecord{}, nil
 	}
 	var indexEntry *ShardEntry
 	for index := range manifest.Shards {
@@ -312,9 +371,9 @@ func readFileIndex(identity *age.X25519Identity, manifest Manifest, load encrypt
 	if len(records) != len(manifest.Files) {
 		return nil, fmt.Errorf("backup file index count mismatch")
 	}
-	paths := make([]string, 0, len(records))
 	seen := make(map[string]struct{}, len(records))
-	for _, record := range records {
+	for index := range records {
+		record := &records[index]
 		logical, err := cleanFilePath(record.Path)
 		if err != nil {
 			return nil, err
@@ -323,9 +382,16 @@ func readFileIndex(identity *age.X25519Identity, manifest Manifest, load encrypt
 			return nil, fmt.Errorf("duplicate backup file index path: %s", logical)
 		}
 		seen[logical] = struct{}{}
-		paths = append(paths, logical)
+		record.Path = logical
+		if record.Size < 0 {
+			return nil, fmt.Errorf("invalid backup file size for %s", logical)
+		}
+		hashBytes, err := hex.DecodeString(record.SHA256)
+		if err != nil || len(hashBytes) != sha256.Size {
+			return nil, fmt.Errorf("invalid backup file hash for %s", logical)
+		}
 	}
-	return paths, nil
+	return records, nil
 }
 
 func decryptFilePayload(identity *age.X25519Identity, ciphertext io.Reader) ([]byte, error) {
@@ -341,7 +407,7 @@ func decryptFilePayload(identity *age.X25519Identity, ciphertext io.Reader) ([]b
 	return io.ReadAll(gz)
 }
 
-func restoreFile(ctx context.Context, identity *age.X25519Identity, ciphertext io.Reader, targetRoot, logical string, entry FileEntry) error {
+func restoreFile(ctx context.Context, identity *age.X25519Identity, ciphertext io.Reader, targetRoot, logical string, record fileIndexRecord) error {
 	target, err := safeRestoreTarget(targetRoot, logical)
 	if err != nil {
 		return err
@@ -375,7 +441,7 @@ func restoreFile(ctx context.Context, identity *age.X25519Identity, ciphertext i
 		_ = tmp.Close()
 		return err
 	}
-	if size != entry.Size || hex.EncodeToString(hasher.Sum(nil)) != entry.SHA256 {
+	if size != record.Size || hex.EncodeToString(hasher.Sum(nil)) != record.SHA256 {
 		_ = tmp.Close()
 		return fmt.Errorf("backup file verification failed for %s", logical)
 	}

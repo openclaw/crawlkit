@@ -54,6 +54,9 @@ func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 	if strings.Contains(string(manifestBody), "photo.jpg") || strings.Contains(string(manifestBody), "copy.jpg") {
 		t.Fatalf("manifest exposes logical media paths: %s", manifestBody)
 	}
+	if strings.Contains(string(manifestBody), SHA256Hex([]byte("same private media"))) {
+		t.Fatalf("manifest exposes plaintext media hash: %s", manifestBody)
+	}
 	ciphertext, err := os.ReadFile(filepath.Join(cfg.Repo, filepath.FromSlash(manifest.Files[0].Shard)))
 	if err != nil {
 		t.Fatal(err)

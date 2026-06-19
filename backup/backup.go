@@ -50,10 +50,8 @@ type ShardEntry struct {
 }
 
 type FileEntry struct {
-	Shard  string `json:"shard"`
-	SHA256 string `json:"sha256"`
-	Size   int64  `json:"size"`
-	Bytes  int64  `json:"bytes"`
+	Shard string `json:"shard"`
+	Bytes int64  `json:"bytes"`
 }
 
 type DecodedShard struct {
