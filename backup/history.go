@@ -92,11 +92,11 @@ func RestoreFilesAt(ctx context.Context, cfg Config, opts mirror.Options, manife
 	if err != nil {
 		return 0, "", err
 	}
-	count, err := restoreFilesWith(ctx, cfg.Identity, manifest, targetRoot, func(entry FileEntry) (io.ReadCloser, error) {
-		if _, err := ResolveShardPath(cfg.Repo, entry.Shard); err != nil {
+	count, err := restoreFilesWith(ctx, cfg.Identity, manifest, targetRoot, func(rel string) (io.ReadCloser, error) {
+		if _, err := ResolveShardPath(cfg.Repo, rel); err != nil {
 			return nil, err
 		}
-		clean := path.Clean(strings.TrimSpace(entry.Shard))
+		clean := path.Clean(strings.TrimSpace(rel))
 		ciphertext, resolved, err := mirror.ReadFileAt(ctx, opts, commit, clean)
 		if err != nil {
 			return nil, err
