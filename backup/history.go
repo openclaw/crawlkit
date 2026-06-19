@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"path"
 	"strings"
 
@@ -84,4 +85,29 @@ func ReadSnapshotAt(ctx context.Context, cfg Config, opts mirror.Options, manife
 		return nil, "", err
 	}
 	return shards, commit, nil
+}
+
+func RestoreFilesAt(ctx context.Context, cfg Config, opts mirror.Options, manifest Manifest, ref, targetRoot string) (int, string, error) {
+	commit, err := mirror.ResolveCommit(ctx, opts, ref)
+	if err != nil {
+		return 0, "", err
+	}
+	count, err := restoreFilesWith(ctx, cfg.Identity, manifest, targetRoot, func(entry FileEntry) (io.ReadCloser, error) {
+		if _, err := ResolveShardPath(cfg.Repo, entry.Shard); err != nil {
+			return nil, err
+		}
+		clean := path.Clean(strings.TrimSpace(entry.Shard))
+		ciphertext, resolved, err := mirror.ReadFileAt(ctx, opts, commit, clean)
+		if err != nil {
+			return nil, err
+		}
+		if resolved != commit {
+			return nil, fmt.Errorf("backup ref changed while reading %s", clean)
+		}
+		return readEncryptedFileBytes(ciphertext), nil
+	})
+	if err != nil {
+		return 0, "", err
+	}
+	return count, commit, nil
 }

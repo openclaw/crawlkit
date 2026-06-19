@@ -231,9 +231,13 @@ func TestHistoricalEncryptedSnapshot(t *testing.T) {
 	if err := mirror.EnsureRepo(ctx, mirrorOpts); err != nil {
 		t.Fatal(err)
 	}
-	firstManifest, err := WriteSnapshot(ctx, cfg, []Shard{
+	mediaSource := filepath.Join(dir, "media.txt")
+	if err := os.WriteFile(mediaSource, []byte("first media"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	firstManifest, err := WriteSnapshotWithFiles(ctx, cfg, []Shard{
 		{Table: "messages", Path: "data/messages.jsonl.gz.age", Rows: []row{{ID: "1", Body: "first"}}},
-	}, Manifest{})
+	}, []File{{Path: "media/file.txt", Source: mediaSource}}, Manifest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,9 +251,12 @@ func TestHistoricalEncryptedSnapshot(t *testing.T) {
 	if _, err := mirror.CreateImmutableTag(ctx, mirrorOpts, "snapshot/one"); err != nil {
 		t.Fatal(err)
 	}
-	secondManifest, err := WriteSnapshot(ctx, cfg, []Shard{
+	if err := os.WriteFile(mediaSource, []byte("second media"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	secondManifest, err := WriteSnapshotWithFiles(ctx, cfg, []Shard{
 		{Table: "messages", Path: "data/messages.jsonl.gz.age", Rows: []row{{ID: "1", Body: "second"}}},
-	}, firstManifest)
+	}, []File{{Path: "media/file.txt", Source: mediaSource}}, firstManifest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,6 +295,24 @@ func TestHistoricalEncryptedSnapshot(t *testing.T) {
 	}
 	if len(historicalRows) != 1 || historicalRows[0].Body != "first" {
 		t.Fatalf("historical rows = %#v", historicalRows)
+	}
+	restoreRoot := filepath.Join(dir, "historical-restore")
+	if err := os.MkdirAll(restoreRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	restored, restoredRef, err := RestoreFilesAt(ctx, cfg, mirrorOpts, manifest, "snapshot/one", restoreRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored != 1 || restoredRef != first {
+		t.Fatalf("historical files = %d at %s", restored, restoredRef)
+	}
+	mediaBody, err := os.ReadFile(filepath.Join(restoreRoot, "media", "file.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(mediaBody) != "first media" {
+		t.Fatalf("historical media = %q", mediaBody)
 	}
 	if secondManifest.Counts["messages"] != 1 {
 		t.Fatalf("second manifest = %#v", secondManifest)
