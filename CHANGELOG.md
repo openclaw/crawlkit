@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## v0.13.0 - 2026-06-19
 
 - Add content-deduplicated encrypted file bundles with safe current and historical restore for crawler backups.
