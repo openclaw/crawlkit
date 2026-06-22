@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Harden crawlkit scheduler, output, release-check, vector ranking, and CI
+  workflow edges found by `clawpatch`.
+
 ## v0.13.0 - 2026-06-19
 
 - Add content-deduplicated encrypted file bundles with safe current and historical restore for crawler backups.

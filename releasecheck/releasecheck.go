@@ -130,7 +130,11 @@ func Notify(ctx context.Context, opts NotifyOptions) (Result, error) {
 	}
 	result, err := Check(ctx, opts.Options)
 	if err != nil {
-		return result, err
+		if !result.Skipped {
+			result.Skipped = true
+			result.Reason = err.Error()
+		}
+		return result, nil
 	}
 	if result.UpdateAvailable && opts.Stderr != nil {
 		_, _ = io.WriteString(opts.Stderr, Notice(opts.AppName, opts.InstallHint, result))

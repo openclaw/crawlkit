@@ -35,11 +35,11 @@ jobs:
     runs-on: [self-hosted, crabbox, openclaw, crawlkit, "${{ inputs.crabbox_runner_label }}"]
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.mod
           cache: true
@@ -74,8 +74,9 @@ jobs:
               ;;
           esac
           mkdir -p "$HOME/.crabbox/actions"
-          state="$HOME/.crabbox/actions/${CRABBOX_ID}.env"
-          env_file="$HOME/.crabbox/actions/${CRABBOX_ID}.env.sh"
+          key="${CRABBOX_ID}.${job}"
+          state="$HOME/.crabbox/actions/${key}.env"
+          env_file="$HOME/.crabbox/actions/${key}.env.sh"
           {
             for key in CI GITHUB_ACTIONS GITHUB_WORKSPACE GITHUB_REPOSITORY GITHUB_RUN_ID GITHUB_RUN_NUMBER GITHUB_RUN_ATTEMPT GITHUB_REF GITHUB_REF_NAME GITHUB_SHA GITHUB_EVENT_NAME GITHUB_ACTOR RUNNER_OS RUNNER_ARCH RUNNER_TEMP RUNNER_TOOL_CACHE PATH; do
               value="${!key-}"
@@ -99,12 +100,21 @@ jobs:
         shell: bash
         env:
           CRABBOX_ID: ${{ inputs.crabbox_id }}
+          CRABBOX_JOB: ${{ inputs.crabbox_job }}
           CRABBOX_KEEP_ALIVE_MINUTES: ${{ inputs.crabbox_keep_alive_minutes }}
         run: |
           set -euo pipefail
+          job="${CRABBOX_JOB}"
+          if [ -z "$job" ]; then job=hydrate; fi
           case "$CRABBOX_ID" in
             ''|*[!A-Za-z0-9._-]*)
               echo "Invalid crabbox_id" >&2
+              exit 2
+              ;;
+          esac
+          case "$job" in
+            ''|*[!A-Za-z0-9._-]*)
+              echo "Invalid crabbox_job" >&2
               exit 2
               ;;
           esac
@@ -112,7 +122,7 @@ jobs:
           case "$minutes" in
             ''|*[!0-9]*) minutes=90 ;;
           esac
-          stop="$HOME/.crabbox/actions/${CRABBOX_ID}.stop"
+          stop="$HOME/.crabbox/actions/${CRABBOX_ID}.${job}.stop"
           deadline=$(( $(date +%s) + minutes * 60 ))
           while [ "$(date +%s)" -lt "$deadline" ]; do
             if [ -f "$stop" ]; then

@@ -44,6 +44,25 @@ func TestPlanInstallBackends(t *testing.T) {
 	}
 }
 
+func TestPlanInstallRejectsConflictingConfigPaths(t *testing.T) {
+	paths := Paths{ConfigPath: "/tmp/crawlctl.toml", LogDir: "/tmp/logs"}
+	_, err := PlanInstall(InstallOptions{ConfigPath: "/tmp/other-crawlctl.toml", Backend: "cron", Every: "5m", Executable: "/bin/crawlctl", Paths: paths})
+	if err == nil || !strings.Contains(err.Error(), "conflicting config paths") {
+		t.Fatalf("err = %v, want conflicting config paths", err)
+	}
+}
+
+func TestPlanInstallUsesConfigPathWithoutPaths(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "crawlctl.toml")
+	plan, err := PlanInstall(InstallOptions{ConfigPath: configPath, Backend: "cron", Every: "5m", Executable: "/bin/crawlctl"})
+	if err != nil {
+		t.Fatalf("PlanInstall: %v", err)
+	}
+	if !strings.Contains(plan.Content, "'--config' '"+configPath+"' 'run'") {
+		t.Fatalf("plan content = %s", plan.Content)
+	}
+}
+
 func TestPlanInstallRejectsInexactMinuteBackends(t *testing.T) {
 	paths := Paths{ConfigPath: "/tmp/crawlctl.toml", LogDir: "/tmp/logs"}
 	plan, err := PlanInstall(InstallOptions{Backend: "systemd", Every: "90s", Executable: "/bin/crawlctl", Paths: paths})
@@ -129,11 +148,16 @@ func TestRunReturnsHistoryAppendError(t *testing.T) {
 		t.Skip("shell command path differs on windows")
 	}
 	dir := t.TempDir()
-	historyDir := filepath.Join(dir, "history-is-dir")
-	if err := os.MkdirAll(historyDir, 0o755); err != nil {
+	stateDir := filepath.Join(dir, "state")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	paths := Paths{LogDir: filepath.Join(dir, "logs"), StateDir: filepath.Join(dir, "state"), LockPath: filepath.Join(dir, "state", "lock"), History: historyDir}
+	historyPath := filepath.Join(stateDir, "runs.jsonl")
+	if err := os.WriteFile(historyPath, nil, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(historyPath, 0o600) }()
+	paths := Paths{LogDir: filepath.Join(dir, "logs"), StateDir: stateDir, LockPath: filepath.Join(stateDir, "lock"), History: historyPath}
 	cfg := DefaultConfig()
 	cfg.Jobs["ok"] = Job{Enabled: true, Command: []string{"sh", "-c", "echo ok"}}
 	records, err := Run(context.Background(), RunOptions{Config: cfg, Paths: paths})
@@ -142,6 +166,33 @@ func TestRunReturnsHistoryAppendError(t *testing.T) {
 	}
 	if len(records) != 1 || records[0].Status != "success" {
 		t.Fatalf("records = %#v", records)
+	}
+}
+
+func TestRunReturnsHistoryReadErrorBeforeRunningJobs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell command path differs on windows")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran")
+	paths := Paths{LogDir: filepath.Join(dir, "logs"), StateDir: filepath.Join(dir, "state"), LockPath: filepath.Join(dir, "state", "lock"), History: filepath.Join(dir, "state", "runs.jsonl")}
+	if err := os.MkdirAll(paths.StateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.History, []byte("{bad json}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := DefaultConfig()
+	cfg.Jobs["ok"] = Job{Enabled: true, Command: []string{"sh", "-c", "touch " + marker}}
+	records, err := Run(context.Background(), RunOptions{Config: cfg, Paths: paths})
+	if err == nil {
+		t.Fatal("expected history read error")
+	}
+	if len(records) != 0 {
+		t.Fatalf("records = %#v, want none", records)
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatalf("job marker stat = %v, want not exist", statErr)
 	}
 }
 

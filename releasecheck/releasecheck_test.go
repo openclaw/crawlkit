@@ -178,6 +178,40 @@ func TestNotifyWritesOnlyWhenAllowedAndOutdated(t *testing.T) {
 	}
 }
 
+func TestNotifySuppressesReleaseCheckErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	oldAPI := GitHubAPI
+	GitHubAPI = server.URL
+	defer func() { GitHubAPI = oldAPI }()
+
+	var stderr strings.Builder
+	result, err := Notify(context.Background(), NotifyOptions{
+		Options: Options{
+			AppName:        "discrawl",
+			Owner:          "openclaw",
+			Repo:           "discrawl",
+			CurrentVersion: "v0.8.0",
+			CacheDir:       t.TempDir(),
+			Client:         server.Client(),
+		},
+		Stderr:     &stderr,
+		IsTerminal: true,
+		Getenv:     func(string) string { return "" },
+	})
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if !result.Skipped || !strings.Contains(result.Reason, "github returned 503") {
+		t.Fatalf("result = %+v", result)
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestShouldNotifySkipsScriptedOutput(t *testing.T) {
 	tests := []struct {
 		name string

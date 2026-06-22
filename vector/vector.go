@@ -112,7 +112,11 @@ func ReciprocalRankFusion[T any](rankings [][]T, ids []func(T) string, weights [
 	if k <= 0 {
 		k = DefaultRRFK
 	}
-	entries := map[string]*RRFEntry[T]{}
+	type accumulated struct {
+		entry RRFEntry[T]
+		order int
+	}
+	entries := map[string]*accumulated{}
 	for rankingIndex, ranking := range rankings {
 		weight := 1.0
 		if rankingIndex < len(weights) && weights[rankingIndex] != 0 {
@@ -130,20 +134,27 @@ func ReciprocalRankFusion[T any](rankings [][]T, ids []func(T) string, weights [
 			if id == "" {
 				continue
 			}
-			entry := entries[id]
-			if entry == nil {
-				entry = &RRFEntry[T]{Item: item}
-				entries[id] = entry
+			acc := entries[id]
+			if acc == nil {
+				acc = &accumulated{entry: RRFEntry[T]{Item: item}, order: len(entries)}
+				entries[id] = acc
 			}
-			entry.Score += weight / (k + float64(index+1))
+			acc.entry.Score += weight / (k + float64(index+1))
 		}
 	}
-	out := make([]RRFEntry[T], 0, len(entries))
-	for _, entry := range entries {
-		out = append(out, *entry)
+	out := make([]accumulated, 0, len(entries))
+	for _, acc := range entries {
+		out = append(out, *acc)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].Score > out[j].Score
+		if out[i].entry.Score != out[j].entry.Score {
+			return out[i].entry.Score > out[j].entry.Score
+		}
+		return out[i].order < out[j].order
 	})
-	return out
+	results := make([]RRFEntry[T], 0, len(out))
+	for _, acc := range out {
+		results = append(results, acc.entry)
+	}
+	return results
 }

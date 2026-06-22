@@ -32,6 +32,15 @@ type InstallPlan struct {
 
 func PlanInstall(opts InstallOptions) (InstallPlan, error) {
 	paths := opts.Paths
+	if strings.TrimSpace(opts.ConfigPath) != "" && strings.TrimSpace(paths.ConfigPath) != "" {
+		defaults, err := DefaultPaths(opts.ConfigPath)
+		if err != nil {
+			return InstallPlan{}, err
+		}
+		if filepath.Clean(defaults.ConfigPath) != filepath.Clean(paths.ConfigPath) {
+			return InstallPlan{}, fmt.Errorf("conflicting config paths: %s and %s", opts.ConfigPath, paths.ConfigPath)
+		}
+	}
 	if paths.ConfigPath == "" {
 		var err error
 		paths, err = DefaultPaths(opts.ConfigPath)

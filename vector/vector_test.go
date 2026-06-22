@@ -66,6 +66,22 @@ func TestReciprocalRankFusion(t *testing.T) {
 	require.Greater(t, results[0].Score, results[1].Score)
 }
 
+func TestReciprocalRankFusionPreservesFirstSeenOrderForTies(t *testing.T) {
+	rankings := [][]string{
+		{"a"},
+		{"b"},
+	}
+	ids := []func(string) string{
+		func(value string) string { return value },
+		func(value string) string { return value },
+	}
+	results := ReciprocalRankFusion(rankings, ids, []float64{1, 1}, 60)
+	require.Len(t, results, 2)
+	require.Equal(t, "a", results[0].Item)
+	require.Equal(t, "b", results[1].Item)
+	require.Equal(t, results[0].Score, results[1].Score)
+}
+
 type requireAPI struct{}
 
 var require requireAPI

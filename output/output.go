@@ -56,6 +56,9 @@ func Write(w io.Writer, format Format, label string, value any) error {
 		if label == "" {
 			label = "result"
 		}
+		if !validLogLabel(label) {
+			return UsageError{Err: fmt.Errorf("invalid log label %q", label)}
+		}
 		body, err := json.Marshal(value)
 		if err != nil {
 			return err
@@ -68,6 +71,16 @@ func Write(w io.Writer, format Format, label string, value any) error {
 	default:
 		return UsageError{Err: fmt.Errorf("unknown output format %q", format)}
 	}
+}
+
+func validLogLabel(label string) bool {
+	for _, r := range label {
+		if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return label != ""
 }
 
 func IsUsage(err error) bool {

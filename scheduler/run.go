@@ -61,7 +61,10 @@ func Run(ctx context.Context, opts RunOptions) ([]RunRecord, error) {
 		return nil, err
 	}
 	defer release()
-	history, _ := ReadHistory(opts.Paths.History)
+	history, err := ReadHistory(opts.Paths.History)
+	if err != nil {
+		return nil, err
+	}
 	last := LastRecords(history)
 
 	names := selectedNames(opts.Config, opts.Names)
@@ -298,9 +301,10 @@ func ReadHistory(path string) ([]RunRecord, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var record RunRecord
-		if err := json.Unmarshal(scanner.Bytes(), &record); err == nil {
-			records = append(records, record)
+		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			return nil, err
 		}
+		records = append(records, record)
 	}
 	return records, scanner.Err()
 }
