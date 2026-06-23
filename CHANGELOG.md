@@ -2,8 +2,12 @@
 
 ## Unreleased
 
+## v0.13.1 - 2026-06-23
+
 - Harden crawlkit scheduler, output, release-check, vector ranking, and CI
   workflow edges found by `clawpatch`.
+- Expose remote ingest reset progress so crawl publishers can drain large
+  Cloudflare D1 table replacements before sending row batches.
 
 ## v0.13.0 - 2026-06-19
 

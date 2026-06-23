@@ -257,11 +257,13 @@ type IngestRequest struct {
 }
 
 type IngestResult struct {
-	RunID        string `json:"run_id,omitempty"`
-	Table        string `json:"table,omitempty"`
-	RowsAccepted int64  `json:"rows_accepted,omitempty"`
-	Cursor       string `json:"cursor,omitempty"`
-	Complete     bool   `json:"complete,omitempty"`
+	RunID           string `json:"run_id,omitempty"`
+	Table           string `json:"table,omitempty"`
+	RowsAccepted    int64  `json:"rows_accepted,omitempty"`
+	Cursor          string `json:"cursor,omitempty"`
+	Complete        bool   `json:"complete,omitempty"`
+	ResetIncomplete bool   `json:"reset_incomplete,omitempty"`
+	ResetDeleted    int64  `json:"reset_deleted,omitempty"`
 }
 
 type SQLiteUploadRequest struct {

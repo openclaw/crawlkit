@@ -127,6 +127,10 @@ func TestClientArchiveOperations(t *testing.T) {
 			if req.Manifest.App != "gitcrawl" || req.Manifest.Archive != "gitcrawl/openclaw" {
 				t.Fatalf("ingest manifest = %#v", req.Manifest)
 			}
+			if len(req.Rows) == 0 {
+				_ = json.NewEncoder(w).Encode(IngestResult{RunID: "run-1", Table: req.Table, ResetIncomplete: true, ResetDeleted: 10000})
+				return
+			}
 			_ = json.NewEncoder(w).Encode(IngestResult{RunID: "run-1", Table: req.Table, RowsAccepted: int64(len(req.Rows)), Complete: req.Final})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/github/start":
 			var req LoginStartRequest
@@ -184,6 +188,13 @@ func TestClientArchiveOperations(t *testing.T) {
 	if !ingest.Complete || ingest.RowsAccepted != 1 {
 		t.Fatalf("ingest result = %#v", ingest)
 	}
+	reset, err := client.Ingest(context.Background(), "gitcrawl", "gitcrawl/openclaw", IngestRequest{Table: "threads", Rows: [][]any{}})
+	if err != nil {
+		t.Fatalf("reset ingest: %v", err)
+	}
+	if !reset.ResetIncomplete || reset.ResetDeleted != 10000 {
+		t.Fatalf("reset result = %#v", reset)
+	}
 	start, err := client.StartGitHubLogin(context.Background(), "hash")
 	if err != nil {
 		t.Fatalf("start login: %v", err)
@@ -198,7 +209,7 @@ func TestClientArchiveOperations(t *testing.T) {
 	if poll.Status != "complete" || poll.Token != "session-token" {
 		t.Fatalf("poll = %#v", poll)
 	}
-	if len(requests) != 6 {
+	if len(requests) != 7 {
 		t.Fatalf("requests = %#v", requests)
 	}
 }
