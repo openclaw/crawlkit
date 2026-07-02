@@ -111,6 +111,14 @@ type ImportPlan struct {
 	Tables []TableImportPlan
 }
 
+type ImportImpact string
+
+const (
+	ImportImpactNone    ImportImpact = "none"
+	ImportImpactMerge   ImportImpact = "merge"
+	ImportImpactReplace ImportImpact = "replace"
+)
+
 type TableImportPlan struct {
 	Table  TableManifest
 	Mode   TableImportMode
@@ -240,6 +248,17 @@ func Import(ctx context.Context, opts ImportOptions) (Manifest, error) {
 }
 
 func PlanIncrementalImport(previous, current Manifest) ImportPlan {
+	return planIncrementalImport(previous, current, false)
+}
+
+// PlanMergeImport prepares a monotonic cache refresh. Changed snapshot files
+// are upserted without deleting rows that disappeared from the snapshot. Use
+// PlanIncrementalImport when the destination must exactly mirror the source.
+func PlanMergeImport(previous, current Manifest) ImportPlan {
+	return planIncrementalImport(previous, current, true)
+}
+
+func planIncrementalImport(previous, current Manifest, merge bool) ImportPlan {
 	if current.Version != previous.Version {
 		return ImportPlan{Full: true, Reason: "manifest version changed"}
 	}
@@ -260,15 +279,21 @@ func PlanIncrementalImport(previous, current Manifest) ImportPlan {
 	for _, table := range current.Tables {
 		previousTable, ok := previousTables[table.Name]
 		if !ok {
+			mode := TableImportReplace
+			reason := "new table"
+			if merge {
+				mode = TableImportFiles
+				reason = "merge new table"
+			}
 			plan.Tables = append(plan.Tables, TableImportPlan{
 				Table:  table,
-				Mode:   TableImportReplace,
+				Mode:   mode,
 				Files:  tableFileManifests(table),
-				Reason: "new table",
+				Reason: reason,
 			})
 			continue
 		}
-		tablePlan := planTableIncrement(previousTable, table)
+		tablePlan := planTableIncrement(previousTable, table, merge)
 		plan.Tables = append(plan.Tables, tablePlan)
 	}
 	return plan
@@ -284,6 +309,22 @@ func (p ImportPlan) Changed() bool {
 		}
 	}
 	return false
+}
+
+func (p ImportPlan) Impact() ImportImpact {
+	if p.Full {
+		return ImportImpactReplace
+	}
+	impact := ImportImpactNone
+	for _, table := range p.Tables {
+		switch table.Mode {
+		case TableImportReplace:
+			return ImportImpactReplace
+		case TableImportFiles:
+			impact = ImportImpactMerge
+		}
+	}
+	return impact
 }
 
 func ImportIncremental(ctx context.Context, opts IncrementalImportOptions) (Manifest, ImportPlan, error) {
@@ -691,7 +732,7 @@ func exportValue(value any) any {
 	}
 }
 
-func planTableIncrement(previous, current TableManifest) TableImportPlan {
+func planTableIncrement(previous, current TableManifest, merge bool) TableImportPlan {
 	if !sameStrings(previous.Columns, current.Columns) {
 		return TableImportPlan{Table: current, Mode: TableImportReplace, Files: tableFileManifests(current), Reason: "columns changed"}
 	}
@@ -705,6 +746,9 @@ func planTableIncrement(previous, current TableManifest) TableImportPlan {
 	}
 	if sameFileManifests(previousFiles, currentFiles) {
 		return TableImportPlan{Table: current, Mode: TableImportSkip, Reason: "unchanged"}
+	}
+	if merge {
+		return planTableMerge(previousFiles, currentFiles, current)
 	}
 	if len(currentFiles) < len(previousFiles) {
 		return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "files removed"}
@@ -732,6 +776,31 @@ func planTableIncrement(previous, current TableManifest) TableImportPlan {
 		return TableImportPlan{Table: current, Mode: TableImportSkip, Reason: "unchanged"}
 	}
 	return TableImportPlan{Table: current, Mode: TableImportFiles, Files: changed, Reason: "tail files changed"}
+}
+
+func planTableMerge(previousFiles, currentFiles []FileManifest, current TableManifest) TableImportPlan {
+	previousByPath := make(map[string]FileManifest, len(previousFiles))
+	for _, file := range previousFiles {
+		previousByPath[file.Path] = file
+	}
+	currentPaths := make(map[string]struct{}, len(currentFiles))
+	changed := make([]FileManifest, 0, len(currentFiles))
+	for _, file := range currentFiles {
+		currentPaths[file.Path] = struct{}{}
+		previous, ok := previousByPath[file.Path]
+		if !ok || !sameFileManifest(previous, file) {
+			changed = append(changed, file)
+		}
+	}
+	for _, file := range previousFiles {
+		if _, ok := currentPaths[file.Path]; !ok {
+			return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "files removed"}
+		}
+	}
+	if len(changed) == 0 {
+		return TableImportPlan{Table: current, Mode: TableImportSkip, Reason: "unchanged"}
+	}
+	return TableImportPlan{Table: current, Mode: TableImportFiles, Files: changed, Reason: "merge changed files"}
 }
 
 func tableShardDir(table string) (string, error) {

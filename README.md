@@ -27,7 +27,7 @@ See `docs/boundary.md` for the crawlkit-versus-app ownership boundary and
 - `config`: standard TOML config paths, opt-in platform-native runtime dirs,
   migration-safe legacy path fallback, and token diagnostics.
 - `store`: SQLite open/read-only/transaction/query helpers plus safe FTS5 term and optimization helpers.
-- `snapshot`: `manifest.json` plus JSONL/Gzip table snapshot export, file fingerprints, incremental import, and managed sidecar trees.
+- `snapshot`: `manifest.json` plus JSONL/Gzip table snapshot export, file fingerprints, exact or monotonic-merge import planning, impact classification, and managed sidecar trees.
 - `backup`: age-encrypted JSONL/Gzip shards, backup manifests, recipient/identity helpers, history listing, and historical-ref restore verification.
 - `mirror`: clone/init/pull/commit/push helpers plus non-mutating fetch, immutable tags, Git-object reads, and history inspection for private snapshot repos.
 - `state`: generic crawler cursor and freshness records, including mapped adapters for existing app table layouts.
