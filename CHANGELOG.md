@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.13.2 - 2026-07-02
 
 - Add explicit monotonic snapshot merge planning and import-impact reporting so cache consumers can apply changed shards without silently replacing local rows, while exact mirrors retain replacement semantics.
 
