@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add explicit monotonic snapshot merge planning and import-impact reporting so cache consumers can apply changed shards without silently replacing local rows, while exact mirrors retain replacement semantics.
+
 ## v0.13.1 - 2026-06-23
 
 - Harden crawlkit scheduler, output, release-check, vector ranking, and CI

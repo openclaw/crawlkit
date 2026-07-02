@@ -268,6 +268,82 @@ func TestPlanIncrementalImportReplacesUnsafeTailChanges(t *testing.T) {
 	}
 }
 
+func TestPlanMergeImportUsesChangedFilesWithoutReplacement(t *testing.T) {
+	previous := Manifest{
+		Version: 1,
+		Tables: []TableManifest{{
+			Name:    "things",
+			Columns: []string{"id", "body"},
+			Files:   []string{"tables/things/000000.jsonl.gz", "tables/things/000001.jsonl.gz"},
+			FileManifests: []FileManifest{
+				{Path: "tables/things/000000.jsonl.gz", Rows: 2, Size: 100, SHA256: "same"},
+				{Path: "tables/things/000001.jsonl.gz", Rows: 1, Size: 50, SHA256: "old"},
+			},
+		}},
+	}
+	current := previous
+	current.Tables = append([]TableManifest(nil), previous.Tables...)
+	current.Tables[0].Files = append([]string(nil), previous.Tables[0].Files...)
+	current.Tables[0].FileManifests = []FileManifest{
+		{Path: "tables/things/000000.jsonl.gz", Rows: 2, Size: 100, SHA256: "same"},
+		{Path: "tables/things/000001.jsonl.gz", Rows: 2, Size: 75, SHA256: "new"},
+		{Path: "tables/things/000002.jsonl.gz", Rows: 1, Size: 25, SHA256: "added"},
+	}
+	current.Tables[0].Files = append(current.Tables[0].Files, "tables/things/000002.jsonl.gz")
+
+	plan := PlanMergeImport(previous, current)
+	if plan.Impact() != ImportImpactMerge {
+		t.Fatalf("impact = %q, plan = %+v", plan.Impact(), plan)
+	}
+	if len(plan.Tables) != 1 || plan.Tables[0].Mode != TableImportFiles {
+		t.Fatalf("plan = %+v", plan)
+	}
+	files := plan.Tables[0].Files
+	if len(files) != 2 || files[0].SHA256 != "new" || files[1].SHA256 != "added" {
+		t.Fatalf("files = %+v", files)
+	}
+}
+
+func TestPlanMergeImportStillRequiresReplacementForRemovedFiles(t *testing.T) {
+	previous := Manifest{Version: 1, Tables: []TableManifest{{
+		Name: "things", Columns: []string{"id"}, Files: []string{"one", "two"},
+		FileManifests: []FileManifest{{Path: "one", SHA256: "one"}, {Path: "two", SHA256: "two"}},
+	}}}
+	current := Manifest{Version: 1, Tables: []TableManifest{{
+		Name: "things", Columns: []string{"id"}, Files: []string{"one"},
+		FileManifests: []FileManifest{{Path: "one", SHA256: "one"}},
+	}}}
+
+	plan := PlanMergeImport(previous, current)
+	if plan.Impact() != ImportImpactReplace || plan.Tables[0].Reason != "files removed" {
+		t.Fatalf("plan = %+v", plan)
+	}
+}
+
+func TestPlanMergeImportMergesNewTables(t *testing.T) {
+	current := Manifest{Version: 1, Tables: []TableManifest{{
+		Name: "things", Columns: []string{"id"}, Files: []string{"one"},
+		FileManifests: []FileManifest{{Path: "one", SHA256: "one"}},
+	}}}
+
+	plan := PlanMergeImport(Manifest{Version: 1}, current)
+	if plan.Impact() != ImportImpactMerge || plan.Tables[0].Mode != TableImportFiles {
+		t.Fatalf("plan = %+v", plan)
+	}
+}
+
+func TestImportPlanImpact(t *testing.T) {
+	if impact := (ImportPlan{}).Impact(); impact != ImportImpactNone {
+		t.Fatalf("empty impact = %q", impact)
+	}
+	if impact := (ImportPlan{Tables: []TableImportPlan{{Mode: TableImportFiles}}}).Impact(); impact != ImportImpactMerge {
+		t.Fatalf("merge impact = %q", impact)
+	}
+	if impact := (ImportPlan{Full: true}).Impact(); impact != ImportImpactReplace {
+		t.Fatalf("full impact = %q", impact)
+	}
+}
+
 func TestImportIncrementalImportsOnlyPlannedFiles(t *testing.T) {
 	ctx := context.Background()
 	src, err := store.Open(ctx, store.Options{
@@ -386,6 +462,62 @@ func TestImportIncrementalReplacesChangedTailShard(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got != "one:same,three:added" {
+		t.Fatalf("things = %q", got)
+	}
+}
+
+func TestImportIncrementalMergePreservesDestinationOnlyRows(t *testing.T) {
+	ctx := context.Background()
+	src, err := store.Open(ctx, store.Options{
+		Path:   filepath.Join(t.TempDir(), "src.db"),
+		Schema: `create table things(id text primary key, body text not null);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	mustExec(t, src.DB(), `insert into things(id, body) values('one', 'old')`)
+	root := t.TempDir()
+	previous, err := Export(ctx, ExportOptions{DB: src.DB(), RootDir: root, Tables: []string{"things"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dst, err := store.Open(ctx, store.Options{
+		Path:   filepath.Join(t.TempDir(), "dst.db"),
+		Schema: `create table things(id text primary key, body text not null);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	if _, err := Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root}); err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, dst.DB(), `insert into things(id, body) values('local', 'keep')`)
+	mustExec(t, src.DB(), `update things set body = 'new' where id = 'one'`)
+	mustExec(t, src.DB(), `insert into things(id, body) values('two', 'added')`)
+	current, err := Export(ctx, ExportOptions{DB: src.DB(), RootDir: root, Tables: []string{"things"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := PlanMergeImport(previous, current)
+	if plan.Impact() != ImportImpactMerge {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if _, _, err := ImportIncremental(ctx, IncrementalImportOptions{
+		DB:      dst.DB(),
+		RootDir: root,
+		Current: current,
+		Plan:    plan,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	if err := dst.DB().QueryRowContext(ctx, `select group_concat(id || ':' || body, ',') from (select id, body from things order by id)`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "local:keep,one:new,two:added" {
 		t.Fatalf("things = %q", got)
 	}
 }
