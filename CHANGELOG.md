@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.13.3 - 2026-07-06
+
+- Update the TOML parser to v2.4.3 for recursion, panic, and deeply nested input hardening.
+- Keep paired CodeQL actions on one version during dependency updates and update TruffleHog to v3.95.8.
+
 ## v0.13.2 - 2026-07-02
 
 - Add explicit monotonic snapshot merge planning and import-impact reporting so cache consumers can apply changed shards without silently replacing local rows, while exact mirrors retain replacement semantics.
