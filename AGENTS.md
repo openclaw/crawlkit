@@ -41,7 +41,7 @@ GOWORK=off go test -count=1 ./...
 For release readiness, also verify the public module tag:
 
 ```bash
-GOPROXY=https://proxy.golang.org GONOSUMDB= go list -m github.com/openclaw/crawlkit@v0.5.0
+GOPROXY=https://proxy.golang.org GONOSUMDB= go list -m github.com/openclaw/crawlkit@v0.13.4
 ```
 
 ## Downstream Compatibility
@@ -74,8 +74,11 @@ then consume it from the app.
 
 ## Release Model
 
-Go libraries are released by signed semver git tags. There is no npm, PyPI, or
-Homebrew publish step for `crawlkit`.
+Go libraries are released by signed semver git tags. Every GitHub release must
+also include Developer ID-signed `crawlctl` macOS artifacts produced through
+the repository release scripts from the clean checkout at that exact signed
+tag; never publish locally compiled or ad-hoc-signed macOS binaries. There is no
+npm, PyPI, or Homebrew publish step for `crawlkit`.
 
 Use patch tags for narrow fixes and minor tags for broader shared crawler or TUI
 infrastructure. After tagging, prime/verify the Go proxy and then update

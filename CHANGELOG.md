@@ -2,6 +2,8 @@
 
 ## v0.13.4 - Unreleased
 
+- Add stable Developer ID signing, verification, and atomic installation for macOS `crawlctl` release artifacts so Full Disk Access survives updates.
+
 ## v0.13.3 - 2026-07-06
 
 - Update the TOML parser to v2.4.3 for recursion, panic, and deeply nested input hardening.

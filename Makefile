@@ -1,4 +1,4 @@
-.PHONY: test vet tidy check
+.PHONY: test vet tidy check release-artifacts
 
 test:
 	GOWORK=off go test ./...
@@ -11,3 +11,8 @@ tidy:
 
 check: tidy vet test
 	git diff --exit-code -- go.mod go.sum
+
+release-artifacts:
+	@test -n "$(VERSION)" || (echo "usage: make release-artifacts VERSION=vX.Y.Z" >&2; exit 2)
+	@helper="$${MAC_RELEASE_HELPER:-$$HOME/Projects/agent-scripts/skills/release-mac-app/scripts/mac-release}"; \
+	"$$helper" codesign-run -- ./scripts/package-crawlctl-release.sh "$(VERSION)"

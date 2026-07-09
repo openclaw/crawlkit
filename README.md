@@ -14,11 +14,28 @@ safe desktop-cache snapshot utilities.
 
 ```bash
 go get github.com/openclaw/crawlkit@latest
-go install github.com/openclaw/crawlkit/cmd/crawlctl@latest
 ```
 
-Go packages are published by tagging this repository. There is no separate
-package registry step. See `docs/publishing.md` for the release commands.
+Beginning with the next release after v0.13.3, macOS users should install or
+update `crawlctl` from the Developer ID-signed release artifact:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/openclaw/crawlkit/main/scripts/install-crawlctl.sh
+bash install-crawlctl.sh
+```
+
+The installer replaces the active `crawlctl` path when one exists, otherwise it
+uses the Go binary directory. An explicit destination may be passed as the
+second argument. Moving from an ad-hoc build to the first signed release needs
+one final Full Disk Access re-grant; later signed updates preserve the identity.
+
+`go install github.com/openclaw/crawlkit/cmd/crawlctl@latest` remains useful for
+development, but produces a locally compiled, ad-hoc-signed macOS executable.
+Replacing that executable invalidates Full Disk Access grants.
+
+Go packages are published by tagging this repository. GitHub releases also
+carry signed macOS `crawlctl` artifacts. See `docs/publishing.md` for the
+release commands.
 See `docs/boundary.md` for the crawlkit-versus-app ownership boundary and
 `docs/remote-contract.md` for the Worker/client split.
 

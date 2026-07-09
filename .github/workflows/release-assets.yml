@@ -1,0 +1,59 @@
+name: Release Assets
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to verify"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify-macos-crawlctl:
+    if: >-
+      endsWith(github.workflow_ref, format('@refs/heads/{0}', github.event.repository.default_branch)) &&
+      (github.event_name == 'release' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: macos-15
+            arch: arm64
+          - runs-on: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runs-on }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: trusted
+
+      - name: Download crawlctl assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir artifacts \
+            --pattern "crawlctl-${RELEASE_TAG}-macos-${{ matrix.arch }}.tar.gz" \
+            --pattern "crawlctl-${RELEASE_TAG}-macos-${{ matrix.arch }}.tar.gz.sha256"
+
+      - name: Verify Developer ID signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="artifacts/crawlctl-${RELEASE_TAG}-macos-${{ matrix.arch }}.tar.gz"
+          expected=("$archive" "$archive.sha256")
+          for path in "${expected[@]}"; do
+            test -f "$path"
+          done
+          trusted/scripts/verify-crawlctl-release.sh "$RELEASE_TAG" "$archive"

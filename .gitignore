@@ -6,3 +6,5 @@ coverage.out
 *.db-wal
 .DS_Store
 .crabbox/
+.mac-release.env
+/dist/
