@@ -1,5 +1,7 @@
 # Changelog
 
+## v0.13.5 - Unreleased
+
 ## v0.13.4 - 2026-07-09
 
 - Add stable Developer ID signing, verification, and atomic installation for macOS `crawlctl` release artifacts so Full Disk Access survives updates.
