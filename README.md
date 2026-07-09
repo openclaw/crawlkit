@@ -27,11 +27,28 @@ bash install-crawlctl.sh
 The installer replaces the active `crawlctl` path when one exists, otherwise it
 uses the Go binary directory. An explicit destination may be passed as the
 second argument. Moving from an ad-hoc build to the first signed release needs
-one final Full Disk Access re-grant; later signed updates preserve the identity.
+one final Full Disk Access grant. Official builds keep the fixed
+`org.openclaw.crawlctl` identifier and OpenClaw Foundation designated
+requirement across in-place updates; the separate clean-VM release gate must
+prove that a later same-path build does not trigger a second protected-data
+alert. This contract does not suppress the first-install consent.
+
+Starting with v0.13.5, release binaries also require an Apple online
+notarization ticket before packaging and installation. The raw executable and
+ephemeral ZIP submitted to Apple do not support ticket stapling, so verification
+requires network access. Release verification also binds each thin binary's Go
+VCS metadata to the repository-pinned signed tag at the protected remote
+`main` head and rejects non-SSH, renamed, modified, or side-commit builds.
+`spctl --assess --type execute` is not a valid release gate for a standalone
+CLI: it can reject valid notarized code because the file is not an app bundle.
+These checks do not replace a separate launch test using a naturally
+quarantined download; `curl`, `scp`, and archive extraction alone are not
+reliable Gatekeeper proof.
 
 `go install github.com/openclaw/crawlkit/cmd/crawlctl@latest` remains useful for
 development, but produces a locally compiled, ad-hoc-signed macOS executable.
-Replacing that executable invalidates Full Disk Access grants.
+Replacing that executable changes its designated requirement and invalidates
+Full Disk Access grants.
 
 Go packages are published by tagging this repository. GitHub releases also
 carry signed macOS `crawlctl` artifacts. See `docs/publishing.md` for the

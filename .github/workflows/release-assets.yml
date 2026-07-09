@@ -43,6 +43,18 @@ jobs:
           path: trusted
           persist-credentials: false
 
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: trusted/go.mod
+          cache: false
+
+      - name: Verify release provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_commit=$(trusted/scripts/verify-crawlctl-release-provenance.sh "$RELEASE_TAG")
+          echo "RELEASE_COMMIT=$release_commit" >> "$GITHUB_ENV"
+
       - name: Download crawlctl assets
         shell: bash
         env:
@@ -65,4 +77,5 @@ jobs:
           for path in "${expected[@]}"; do
             test -f "$path"
           done
-          trusted/scripts/verify-crawlctl-release.sh "$RELEASE_TAG" "$archive"
+          trusted/scripts/verify-crawlctl-release.sh \
+            "$RELEASE_TAG" "$RELEASE_COMMIT" "$archive"

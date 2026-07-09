@@ -14,5 +14,4 @@ check: tidy vet test
 
 release-artifacts:
 	@test -n "$(VERSION)" || (echo "usage: make release-artifacts VERSION=vX.Y.Z" >&2; exit 2)
-	@helper="$${MAC_RELEASE_HELPER:-$$HOME/Projects/agent-scripts/skills/release-mac-app/scripts/mac-release}"; \
-	"$$helper" codesign-run -- ./scripts/package-crawlctl-release.sh "$(VERSION)"
+	@./scripts/package-crawlctl-release.sh "$(VERSION)"
