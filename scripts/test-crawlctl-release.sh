@@ -10,7 +10,7 @@ fail() {
   exit 1
 }
 
-for script in install-crawlctl.sh package-crawlctl-release.sh verify-crawlctl-release.sh; do
+for script in download-crawlctl-release-assets.sh install-crawlctl.sh package-crawlctl-release.sh verify-crawlctl-release.sh; do
   bash -n "$ROOT/scripts/$script"
 done
 
@@ -112,6 +112,22 @@ done
 cp "${MOCK_ASSET_DIR:?}/${url##*/}" "$output"
 EOF
 
+cat > "$FAKE_BIN/gh" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == api ]] || exit 2
+shift
+if [[ "${1:-}" == --paginate ]]; then
+  shift
+fi
+endpoint=${1:-}
+case "$endpoint" in
+  repos/*/releases\?per_page=100) cat "${MOCK_GH_RELEASES_JSON:?}" ;;
+  repos/*/releases/*/assets\?per_page=100) cat "${MOCK_GH_ASSETS_JSON:?}" ;;
+  https://api.github.com/repos/*/releases/assets/*) cat "${MOCK_GH_ASSET_DIR:?}/${endpoint##*/}" ;;
+  *) exit 2 ;;
+esac
+EOF
+
 chmod 0755 "$FAKE_BIN"/*
 export PATH="$FAKE_BIN:$PATH"
 export MOCK_CODESIGN_LOG="$WORK_DIR/codesign.log"
@@ -129,6 +145,39 @@ for version in v0.13.4 v0.13.5; do
     [[ -f "$archive" && -f "$archive.sha256" ]] || fail "missing $version $arch artifact"
   done
 done
+
+MOCK_GH_ASSET_DIR="$WORK_DIR/gh-assets"
+mkdir -p "$MOCK_GH_ASSET_DIR"
+cp "$WORK_DIR/v0.13.4/crawlctl-v0.13.4-macos-arm64.tar.gz" "$MOCK_GH_ASSET_DIR/1"
+cp "$WORK_DIR/v0.13.4/crawlctl-v0.13.4-macos-arm64.tar.gz.sha256" "$MOCK_GH_ASSET_DIR/2"
+cp "$WORK_DIR/v0.13.4/crawlctl-v0.13.4-macos-x86_64.tar.gz" "$MOCK_GH_ASSET_DIR/3"
+cp "$WORK_DIR/v0.13.4/crawlctl-v0.13.4-macos-x86_64.tar.gz.sha256" "$MOCK_GH_ASSET_DIR/4"
+MOCK_GH_RELEASES_JSON="$WORK_DIR/releases.json"
+MOCK_GH_ASSETS_JSON="$WORK_DIR/assets.json"
+cat > "$MOCK_GH_RELEASES_JSON" <<'EOF'
+[{"id":42,"tag_name":"v0.13.4","draft":true}]
+EOF
+cat > "$MOCK_GH_ASSETS_JSON" <<'EOF'
+[
+  {"name":"crawlctl-v0.13.4-macos-arm64.tar.gz","url":"https://api.github.com/repos/openclaw/crawlkit/releases/assets/1"},
+  {"name":"crawlctl-v0.13.4-macos-arm64.tar.gz.sha256","url":"https://api.github.com/repos/openclaw/crawlkit/releases/assets/2"},
+  {"name":"crawlctl-v0.13.4-macos-x86_64.tar.gz","url":"https://api.github.com/repos/openclaw/crawlkit/releases/assets/3"},
+  {"name":"crawlctl-v0.13.4-macos-x86_64.tar.gz.sha256","url":"https://api.github.com/repos/openclaw/crawlkit/releases/assets/4"}
+]
+EOF
+export MOCK_GH_ASSET_DIR MOCK_GH_RELEASES_JSON MOCK_GH_ASSETS_JSON
+api_download="$WORK_DIR/api-download"
+GITHUB_REPOSITORY=openclaw/crawlkit GH_TOKEN=test \
+  bash "$ROOT/scripts/download-crawlctl-release-assets.sh" v0.13.4 arm64 true "$api_download"
+cmp "$WORK_DIR/v0.13.4/crawlctl-v0.13.4-macos-arm64.tar.gz" \
+  "$api_download/crawlctl-v0.13.4-macos-arm64.tar.gz"
+cmp "$WORK_DIR/v0.13.4/crawlctl-v0.13.4-macos-arm64.tar.gz.sha256" \
+  "$api_download/crawlctl-v0.13.4-macos-arm64.tar.gz.sha256"
+if GITHUB_REPOSITORY=openclaw/crawlkit GH_TOKEN=test \
+  bash "$ROOT/scripts/download-crawlctl-release-assets.sh" v0.13.4 arm64 false "$WORK_DIR/wrong-draft" \
+    >/dev/null 2>&1; then
+  fail "draft release matched published-release lookup"
+fi
 
 if MOCK_CODESIGN_AUTHORITY='Developer ID Application: Peter Steinberger (Y5PE65HELJ)' \
   bash "$ROOT/scripts/verify-crawlctl-release.sh" v0.13.4 \

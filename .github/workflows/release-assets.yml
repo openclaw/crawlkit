@@ -11,7 +11,8 @@ on:
         type: string
 
 permissions:
-  contents: read
+  # GitHub hides draft releases from read-only workflow tokens.
+  contents: write
 
 jobs:
   verify-macos-crawlctl:
@@ -29,23 +30,25 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     env:
       RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ github.workflow_sha }}
           path: trusted
+          persist-credentials: false
 
       - name: Download crawlctl assets
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p artifacts
-          gh release download "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --dir artifacts \
-            --pattern "crawlctl-${RELEASE_TAG}-macos-${{ matrix.arch }}.tar.gz" \
-            --pattern "crawlctl-${RELEASE_TAG}-macos-${{ matrix.arch }}.tar.gz.sha256"
+          expected_draft=false
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            expected_draft=true
+          fi
+          trusted/scripts/download-crawlctl-release-assets.sh \
+            "$RELEASE_TAG" "${{ matrix.arch }}" "$expected_draft" artifacts
 
       - name: Verify Developer ID signatures
         shell: bash
