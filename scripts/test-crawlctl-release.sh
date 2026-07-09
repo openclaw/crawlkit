@@ -13,6 +13,12 @@ fail() {
 for script in download-crawlctl-release-assets.sh install-crawlctl.sh package-crawlctl-release.sh verify-crawlctl-release.sh; do
   bash -n "$ROOT/scripts/$script"
 done
+grep -F "github.event_name == 'release' ||" \
+  "$ROOT/.github/workflows/release-assets.yml" >/dev/null
+grep -F "ref: \${{ github.event_name == 'release' && github.event.repository.default_branch || github.workflow_sha }}" \
+  "$ROOT/.github/workflows/release-assets.yml" >/dev/null
+grep -F "expected_draft=\"\${{ inputs.draft }}\"" \
+  "$ROOT/.github/workflows/release-assets.yml" >/dev/null
 
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/crawlctl-release-test.XXXXXX")
 trap 'rm -rf "$WORK_DIR"' EXIT

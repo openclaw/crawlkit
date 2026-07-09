@@ -9,6 +9,11 @@ on:
         description: "Release tag to verify"
         required: true
         type: string
+      draft:
+        description: "Verify an unpublished draft release"
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   # GitHub hides draft releases from read-only workflow tokens.
@@ -17,8 +22,9 @@ permissions:
 jobs:
   verify-macos-crawlctl:
     if: >-
-      endsWith(github.workflow_ref, format('@refs/heads/{0}', github.event.repository.default_branch)) &&
-      (github.event_name == 'release' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+      github.event_name == 'release' ||
+      (endsWith(github.workflow_ref, format('@refs/heads/{0}', github.event.repository.default_branch)) &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || github.workflow_sha }}
           path: trusted
           persist-credentials: false
 
@@ -45,7 +51,7 @@ jobs:
           set -euo pipefail
           expected_draft=false
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            expected_draft=true
+            expected_draft="${{ inputs.draft }}"
           fi
           trusted/scripts/download-crawlctl-release-assets.sh \
             "$RELEASE_TAG" "${{ matrix.arch }}" "$expected_draft" artifacts
