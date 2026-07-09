@@ -3,6 +3,7 @@
 ## v0.13.4 - Unreleased
 
 - Add stable Developer ID signing, verification, and atomic installation for macOS `crawlctl` release artifacts so Full Disk Access survives updates.
+- Require Go 1.26.5 to include the standard-library TLS security fixes.
 
 ## v0.13.3 - 2026-07-06
 
