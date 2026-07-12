@@ -33,7 +33,7 @@ requirement across in-place updates; the separate clean-VM release gate must
 prove that a later same-path build does not trigger a second protected-data
 alert. This contract does not suppress the first-install consent.
 
-Starting with v0.13.5, release binaries also require an Apple online
+Starting with v0.14.0, release binaries also require an Apple online
 notarization ticket before packaging and installation. The raw executable and
 ephemeral ZIP submitted to Apple do not support ticket stapling, so verification
 requires network access. Release verification also binds each thin binary's Go

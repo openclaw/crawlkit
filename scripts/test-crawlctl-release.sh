@@ -433,7 +433,7 @@ if CRAWLCTL_EXPECTED_COMMIT="$MOCK_COMMIT" CODESIGN_IDENTITY="$EXPECTED_AUTHORIT
 fi
 [[ ! -e "$WORK_DIR/missing-ticket" ]] || fail "missing ticket mutated the artifact destination"
 
-for version in v0.13.4 v0.13.5; do
+for version in v0.13.4 v0.14.0; do
   GH_TOKEN=caller-token GITHUB_TOKEN=caller-token \
     bash "$ROOT/scripts/package-crawlctl-release.sh" "$version" "$WORK_DIR/$version" >/dev/null
   for arch in arm64 x86_64; do
@@ -452,7 +452,7 @@ awk '
 grep -F 'candidate' "$MOCK_RELEASE_EVENT_LOG" >/dev/null || fail "candidate probe was not instrumented"
 
 if MOCK_BUILDINFO_REVISION="$MOCK_SIDE_COMMIT" \
-  bash "$ROOT/scripts/package-crawlctl-release.sh" v0.13.5 "$WORK_DIR/wrong-build-revision" \
+  bash "$ROOT/scripts/package-crawlctl-release.sh" v0.14.0 "$WORK_DIR/wrong-build-revision" \
     >/dev/null 2>&1; then
   fail "package accepted a binary built from the wrong revision"
 fi
@@ -460,7 +460,7 @@ fi
   fail "wrong build revision mutated the artifact destination"
 
 if MOCK_BUILDINFO_MODIFIED=true \
-  bash "$ROOT/scripts/package-crawlctl-release.sh" v0.13.5 "$WORK_DIR/modified-build" \
+  bash "$ROOT/scripts/package-crawlctl-release.sh" v0.14.0 "$WORK_DIR/modified-build" \
     >/dev/null 2>&1; then
   fail "package accepted a binary with vcs.modified=true"
 fi
@@ -468,7 +468,7 @@ fi
   fail "modified build mutated the artifact destination"
 
 if MOCK_BUILDINFO_PATH=github.com/openclaw/crawlkit/cmd/other \
-  bash "$ROOT/scripts/package-crawlctl-release.sh" v0.13.5 "$WORK_DIR/wrong-package-path" \
+  bash "$ROOT/scripts/package-crawlctl-release.sh" v0.14.0 "$WORK_DIR/wrong-package-path" \
     >/dev/null 2>&1; then
   fail "package accepted another main package built from the release commit"
 fi
@@ -478,12 +478,12 @@ fi
 promotion_failure="$(cd "$WORK_DIR" && pwd)/promotion-failure"
 promotion_counter="$WORK_DIR/promotion-counter"
 if MOCK_FAIL_PROMOTION_DIR="$promotion_failure" MOCK_PROMOTION_COUNTER="$promotion_counter" \
-  bash "$ROOT/scripts/package-crawlctl-release.sh" v0.13.5 "$promotion_failure" \
+  bash "$ROOT/scripts/package-crawlctl-release.sh" v0.14.0 "$promotion_failure" \
     >/dev/null 2>&1; then
   fail "injected failure after the first artifact promotion was accepted"
 fi
 [[ ! -e "$promotion_failure" ]] || fail "failed promotion left partial official artifacts"
-bash "$ROOT/scripts/package-crawlctl-release.sh" v0.13.5 "$promotion_failure" >/dev/null
+bash "$ROOT/scripts/package-crawlctl-release.sh" v0.14.0 "$promotion_failure" >/dev/null
 [[ "$(find "$promotion_failure" -maxdepth 1 -type f | wc -l | tr -d ' ')" == 4 ]] ||
   fail "release packaging was not rerunnable after promotion rollback"
 
@@ -568,7 +568,7 @@ if MOCK_BUILDINFO_PATH=github.com/openclaw/crawlkit/cmd/other \
   fail "verifier accepted another main package built from the release commit"
 fi
 INSTALL_DIR="$WORK_DIR/install"
-for version in v0.13.4 v0.13.5; do
+for version in v0.13.4 v0.14.0; do
   GH_TOKEN=caller-token GITHUB_TOKEN=caller-token MOCK_ASSET_DIR="$WORK_DIR/$version" \
     CRAWLCTL_DOWNLOAD_BASE_URL=https://example.invalid/releases/download/"$version" \
     bash "$ROOT/scripts/install-crawlctl.sh" "$version" "$INSTALL_DIR" >/dev/null
@@ -581,35 +581,35 @@ second_hash=$(shasum -a 256 "$INSTALL_DIR/crawlctl" | awk '{print $1}')
 [[ "$first_hash" != "$second_hash" ]] || fail "update did not replace the executable"
 
 installed_hash=$second_hash
-if MOCK_NOTARY_TICKET=missing MOCK_ASSET_DIR="$WORK_DIR/v0.13.5" \
-  CRAWLCTL_DOWNLOAD_BASE_URL=https://example.invalid/releases/download/v0.13.5 \
-  bash "$ROOT/scripts/install-crawlctl.sh" v0.13.5 "$INSTALL_DIR" >/dev/null 2>&1; then
+if MOCK_NOTARY_TICKET=missing MOCK_ASSET_DIR="$WORK_DIR/v0.14.0" \
+  CRAWLCTL_DOWNLOAD_BASE_URL=https://example.invalid/releases/download/v0.14.0 \
+  bash "$ROOT/scripts/install-crawlctl.sh" v0.14.0 "$INSTALL_DIR" >/dev/null 2>&1; then
   fail "installer accepted a missing notarization ticket"
 fi
 [[ "$(shasum -a 256 "$INSTALL_DIR/crawlctl" | awk '{print $1}')" == "$installed_hash" ]] ||
   fail "missing-ticket install changed the destination"
 
 if MOCK_DESIGNATED_REQUIREMENT="$WRONG_REQUIREMENT" \
-  MOCK_ASSET_DIR="$WORK_DIR/v0.13.5" \
-  CRAWLCTL_DOWNLOAD_BASE_URL=https://example.invalid/releases/download/v0.13.5 \
-  bash "$ROOT/scripts/install-crawlctl.sh" v0.13.5 "$INSTALL_DIR" >/dev/null 2>&1; then
+  MOCK_ASSET_DIR="$WORK_DIR/v0.14.0" \
+  CRAWLCTL_DOWNLOAD_BASE_URL=https://example.invalid/releases/download/v0.14.0 \
+  bash "$ROOT/scripts/install-crawlctl.sh" v0.14.0 "$INSTALL_DIR" >/dev/null 2>&1; then
   fail "installer accepted a mismatched embedded designated requirement"
 fi
 [[ "$(shasum -a 256 "$INSTALL_DIR/crawlctl" | awk '{print $1}')" == "$installed_hash" ]] ||
   fail "wrong-designated-requirement install changed the destination"
 
-if MOCK_LIPO_ARCHS='arm64 x86_64' MOCK_ASSET_DIR="$WORK_DIR/v0.13.5" \
-  CRAWLCTL_DOWNLOAD_BASE_URL=https://example.invalid/releases/download/v0.13.5 \
-  bash "$ROOT/scripts/install-crawlctl.sh" v0.13.5 "$INSTALL_DIR" >/dev/null 2>&1; then
+if MOCK_LIPO_ARCHS='arm64 x86_64' MOCK_ASSET_DIR="$WORK_DIR/v0.14.0" \
+  CRAWLCTL_DOWNLOAD_BASE_URL=https://example.invalid/releases/download/v0.14.0 \
+  bash "$ROOT/scripts/install-crawlctl.sh" v0.14.0 "$INSTALL_DIR" >/dev/null 2>&1; then
   fail "installer accepted a universal binary in an architecture-specific asset"
 fi
 [[ "$(shasum -a 256 "$INSTALL_DIR/crawlctl" | awk '{print $1}')" == "$installed_hash" ]] ||
   fail "universal-binary install changed the destination"
 
 if MOCK_CODESIGN_AUTHORITY='Developer ID Application: Peter Steinberger (Y5PE65HELJ)' \
-  MOCK_ASSET_DIR="$WORK_DIR/v0.13.5" \
-  CRAWLCTL_DOWNLOAD_BASE_URL=https://example.invalid/releases/download/v0.13.5 \
-  bash "$ROOT/scripts/install-crawlctl.sh" v0.13.5 "$INSTALL_DIR" >/dev/null 2>&1; then
+  MOCK_ASSET_DIR="$WORK_DIR/v0.14.0" \
+  CRAWLCTL_DOWNLOAD_BASE_URL=https://example.invalid/releases/download/v0.14.0 \
+  bash "$ROOT/scripts/install-crawlctl.sh" v0.14.0 "$INSTALL_DIR" >/dev/null 2>&1; then
   fail "installer accepted the wrong signing identity"
 fi
 [[ "$(shasum -a 256 "$INSTALL_DIR/crawlctl" | awk '{print $1}')" == "$installed_hash" ]] ||
@@ -620,19 +620,19 @@ BAD_STAGE="$WORK_DIR/bad-stage"
 mkdir -p "$BAD_ASSETS" "$BAD_STAGE"
 cp "$INSTALL_DIR/crawlctl" "$BAD_STAGE/crawlctl"
 echo unexpected > "$BAD_STAGE/unexpected"
-bad_asset=crawlctl-v0.13.6-macos-arm64.tar.gz
+bad_asset=crawlctl-v0.14.1-macos-arm64.tar.gz
 tar -czf "$BAD_ASSETS/$bad_asset" -C "$BAD_STAGE" crawlctl unexpected
 (
   cd "$BAD_ASSETS"
   shasum -a 256 "$bad_asset" > "$bad_asset.sha256"
 )
 if MOCK_ASSET_DIR="$BAD_ASSETS" \
-  CRAWLCTL_DOWNLOAD_BASE_URL=https://example.invalid/releases/download/v0.13.6 \
-  bash "$ROOT/scripts/install-crawlctl.sh" v0.13.6 "$INSTALL_DIR" >/dev/null 2>&1; then
+  CRAWLCTL_DOWNLOAD_BASE_URL=https://example.invalid/releases/download/v0.14.1 \
+  bash "$ROOT/scripts/install-crawlctl.sh" v0.14.1 "$INSTALL_DIR" >/dev/null 2>&1; then
   fail "archive with extra entries was accepted"
 fi
-[[ "$("$INSTALL_DIR/crawlctl" --version)" == 0.13.5 ]] || fail "failed update changed the installed executable"
-if bash "$ROOT/scripts/verify-crawlctl-release.sh" v0.13.6 "$MOCK_COMMIT" \
+[[ "$("$INSTALL_DIR/crawlctl" --version)" == 0.14.0 ]] || fail "failed update changed the installed executable"
+if bash "$ROOT/scripts/verify-crawlctl-release.sh" v0.14.1 "$MOCK_COMMIT" \
   "$BAD_ASSETS/$bad_asset" >/dev/null 2>&1; then
   fail "verifier accepted an archive with extra entries"
 fi
