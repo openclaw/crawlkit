@@ -63,6 +63,11 @@ func TestClientQuerySendsBearerAndEscapedArchive(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(QueryResult{
 			Columns: []string{"number", "title"},
 			Rows:    [][]any{{float64(1), "remote"}},
+			Snapshot: &ArchiveSnapshot{
+				ID:           strings.Repeat("a", 64),
+				SourceSHA256: strings.Repeat("a", 64),
+				PublishedAt:  "2026-07-12T08:00:00Z",
+			},
 		})
 	}))
 	defer server.Close()
@@ -83,6 +88,9 @@ func TestClientQuerySendsBearerAndEscapedArchive(t *testing.T) {
 	}
 	if len(result.Rows) != 1 || result.Columns[0] != "number" {
 		t.Fatalf("result = %#v", result)
+	}
+	if result.Snapshot == nil || result.Snapshot.ID != strings.Repeat("a", 64) {
+		t.Fatalf("snapshot = %#v", result.Snapshot)
 	}
 }
 
@@ -105,9 +113,19 @@ func TestClientArchiveOperations(t *testing.T) {
 		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/archives":
-			_ = json.NewEncoder(w).Encode(map[string]any{"archives": []Archive{{ID: "arch-1", App: "gitcrawl"}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"archives": []Archive{{
+				ID:       "arch-1",
+				App:      "gitcrawl",
+				Snapshot: &ArchiveSnapshot{ID: strings.Repeat("b", 64)},
+			}}})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status"):
-			_ = json.NewEncoder(w).Encode(Status{App: "gitcrawl", Archive: "gitcrawl/openclaw", Mode: ModeCloud})
+			_ = json.NewEncoder(w).Encode(Status{
+				App:      "gitcrawl",
+				Archive:  "gitcrawl/openclaw",
+				Mode:     ModeCloud,
+				Snapshot: &ArchiveSnapshot{ID: strings.Repeat("b", 64)},
+				Publish:  &ArchivePublish{Status: "complete"},
+			})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/batch-read"):
 			var body struct {
 				Requests []QueryRequest `json:"requests"`
@@ -127,11 +145,20 @@ func TestClientArchiveOperations(t *testing.T) {
 			if req.Manifest.App != "gitcrawl" || req.Manifest.Archive != "gitcrawl/openclaw" {
 				t.Fatalf("ingest manifest = %#v", req.Manifest)
 			}
+			if req.Manifest.SnapshotID != strings.Repeat("b", 64) || req.Manifest.SourceSHA256 != strings.Repeat("b", 64) {
+				t.Fatalf("ingest snapshot manifest = %#v", req.Manifest)
+			}
 			if len(req.Rows) == 0 {
 				_ = json.NewEncoder(w).Encode(IngestResult{RunID: "run-1", Table: req.Table, ResetIncomplete: true, ResetDeleted: 10000})
 				return
 			}
-			_ = json.NewEncoder(w).Encode(IngestResult{RunID: "run-1", Table: req.Table, RowsAccepted: int64(len(req.Rows)), Complete: req.Final})
+			_ = json.NewEncoder(w).Encode(IngestResult{
+				RunID:        "run-1",
+				Table:        req.Table,
+				SnapshotID:   req.Manifest.SnapshotID,
+				RowsAccepted: int64(len(req.Rows)),
+				Complete:     req.Final,
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/github/start":
 			var req LoginStartRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -164,14 +191,14 @@ func TestClientArchiveOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("archives: %v", err)
 	}
-	if len(archives) != 1 || archives[0].ID != "arch-1" {
+	if len(archives) != 1 || archives[0].ID != "arch-1" || archives[0].Snapshot == nil {
 		t.Fatalf("archives = %#v", archives)
 	}
 	status, err := client.Status(context.Background(), "gitcrawl", "gitcrawl/openclaw")
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if status.Mode != ModeCloud {
+	if status.Mode != ModeCloud || status.Snapshot == nil || status.Publish == nil {
 		t.Fatalf("status = %#v", status)
 	}
 	results, err := client.BatchRead(context.Background(), "gitcrawl", "gitcrawl/openclaw", []QueryRequest{{Name: "threads"}})
@@ -181,14 +208,27 @@ func TestClientArchiveOperations(t *testing.T) {
 	if len(results) != 1 || results[0].Columns[0] != "id" {
 		t.Fatalf("batch results = %#v", results)
 	}
-	ingest, err := client.Ingest(context.Background(), "gitcrawl", "gitcrawl/openclaw", IngestRequest{Table: "threads", Rows: [][]any{{"1"}}, Final: true})
+	manifest := IngestManifest{
+		SnapshotID:   strings.Repeat("b", 64),
+		SourceSHA256: strings.Repeat("b", 64),
+	}
+	ingest, err := client.Ingest(context.Background(), "gitcrawl", "gitcrawl/openclaw", IngestRequest{
+		Manifest: manifest,
+		Table:    "threads",
+		Rows:     [][]any{{"1"}},
+		Final:    true,
+	})
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
-	if !ingest.Complete || ingest.RowsAccepted != 1 {
+	if !ingest.Complete || ingest.RowsAccepted != 1 || ingest.SnapshotID != manifest.SnapshotID {
 		t.Fatalf("ingest result = %#v", ingest)
 	}
-	reset, err := client.Ingest(context.Background(), "gitcrawl", "gitcrawl/openclaw", IngestRequest{Table: "threads", Rows: [][]any{}})
+	reset, err := client.Ingest(context.Background(), "gitcrawl", "gitcrawl/openclaw", IngestRequest{
+		Manifest: manifest,
+		Table:    "threads",
+		Rows:     [][]any{},
+	})
 	if err != nil {
 		t.Fatalf("reset ingest: %v", err)
 	}
@@ -306,6 +346,9 @@ func TestBuildGzipSQLiteBundleSplitsAndDescribesParts(t *testing.T) {
 	if bundle.Manifest.Object.Size != int64(len(payload)) || bundle.Manifest.Object.SHA256 == "" {
 		t.Fatalf("object = %#v", bundle.Manifest.Object)
 	}
+	if bundle.Manifest.SnapshotID != bundle.Manifest.Object.SHA256 {
+		t.Fatalf("snapshot id = %q object sha = %q", bundle.Manifest.SnapshotID, bundle.Manifest.Object.SHA256)
+	}
 	if bundle.Manifest.CompressedObject.Size <= 0 || bundle.Manifest.CompressedObject.SHA256 == "" {
 		t.Fatalf("compressed object = %#v", bundle.Manifest.CompressedObject)
 	}
@@ -371,6 +414,9 @@ func TestClientUploadSQLiteBundleFilesUploadsPartsThenManifest(t *testing.T) {
 			if manifest.Format != SQLiteGzipChunkedBundleFormat {
 				t.Fatalf("manifest = %#v", manifest)
 			}
+			if manifest.SnapshotID != strings.Repeat("c", 64) {
+				t.Fatalf("snapshot id = %q", manifest.SnapshotID)
+			}
 			_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{
 				App:      "gitcrawl",
 				Archive:  "gitcrawl/openclaw__openclaw",
@@ -387,9 +433,10 @@ func TestClientUploadSQLiteBundleFilesUploadsPartsThenManifest(t *testing.T) {
 		t.Fatalf("client: %v", err)
 	}
 	result, err := client.UploadSQLiteBundleFiles(context.Background(), "gitcrawl", "gitcrawl/openclaw__openclaw", SQLiteBundleManifest{
-		Format:  SQLiteGzipChunkedBundleFormat,
-		App:     "gitcrawl",
-		Archive: "gitcrawl/openclaw__openclaw",
+		Format:     SQLiteGzipChunkedBundleFormat,
+		App:        "gitcrawl",
+		Archive:    "gitcrawl/openclaw__openclaw",
+		SnapshotID: strings.Repeat("c", 64),
 	}, []SQLiteBundlePartFile{{
 		SQLiteBundlePart: SQLiteBundlePart{Index: 0, Size: int64(len("compressed")), SHA256: "part-sha"},
 		Path:             partPath,
