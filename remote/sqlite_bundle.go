@@ -86,6 +86,14 @@ type SQLiteBundlePartUpload struct {
 }
 
 func BuildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions) (SQLiteBundleBuild, error) {
+	return buildGzipSQLiteBundle(ctx, opts, false)
+}
+
+func BuildSnapshotGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions) (SQLiteBundleBuild, error) {
+	return buildGzipSQLiteBundle(ctx, opts, true)
+}
+
+func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, snapshotScoped bool) (SQLiteBundleBuild, error) {
 	if opts.SourcePath == "" {
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source path is required")
 	}
@@ -134,7 +142,17 @@ func BuildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions) (
 		cleanup()
 		return SQLiteBundleBuild{}, err
 	}
-	parts, err := splitBundleParts(ctx, compressedPath, tmpDir, opts.App, opts.Archive, sourceSHA, chunkSize)
+	snapshotID := ""
+	objectKey := SQLiteObjectKey(opts.App, opts.Archive)
+	compressedObjectKey := SQLiteCompressedObjectKey(opts.App, opts.Archive)
+	reconstruct := "concatenate parts in index order to current.db.gz, then gzip-decompress to current.db"
+	if snapshotScoped {
+		snapshotID = sourceSHA
+		objectKey = SQLiteSnapshotObjectKey(opts.App, opts.Archive, snapshotID)
+		compressedObjectKey = SQLiteSnapshotCompressedObjectKey(opts.App, opts.Archive, snapshotID)
+		reconstruct = "concatenate parts in index order to archive.db.gz, then gzip-decompress to archive.db"
+	}
+	parts, err := splitBundleParts(ctx, compressedPath, tmpDir, opts.App, opts.Archive, snapshotID, chunkSize)
 	if err != nil {
 		cleanup()
 		return SQLiteBundleBuild{}, err
@@ -147,7 +165,7 @@ func BuildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions) (
 		Format:      SQLiteGzipChunkedBundleFormat,
 		App:         opts.App,
 		Archive:     opts.Archive,
-		SnapshotID:  sourceSHA,
+		SnapshotID:  snapshotID,
 		GeneratedAt: generatedAt.Format(time.RFC3339Nano),
 		ContentType: contentType,
 		Compression: SQLiteBundleCompression{
@@ -155,16 +173,16 @@ func BuildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions) (
 		},
 		Privacy: opts.Privacy,
 		Object: SQLiteBundleObject{
-			Key:    SQLiteSnapshotObjectKey(opts.App, opts.Archive, sourceSHA),
+			Key:    objectKey,
 			Size:   sourceInfo.Size(),
 			SHA256: sourceSHA,
 		},
 		CompressedObject: SQLiteBundleObject{
-			Key:    SQLiteSnapshotCompressedObjectKey(opts.App, opts.Archive, sourceSHA),
+			Key:    compressedObjectKey,
 			Size:   compressedInfo.Size(),
 			SHA256: compressedSHA,
 		},
-		Reconstruct: "concatenate parts in index order to archive.db.gz, then gzip-decompress to archive.db",
+		Reconstruct: reconstruct,
 		Counts:      opts.Counts,
 		Parts:       manifestParts,
 	}
@@ -196,6 +214,9 @@ func SQLiteSnapshotObjectKey(app, archive, snapshotID string) string {
 	if snapshotID == "" {
 		return SQLiteObjectKey(app, archive)
 	}
+	if !validSQLiteSnapshotID(snapshotID) {
+		return ""
+	}
 	return fmt.Sprintf(
 		"v1/%s/%s/sqlite/snapshots/%s/archive.db",
 		url.PathEscape(app),
@@ -207,6 +228,9 @@ func SQLiteSnapshotObjectKey(app, archive, snapshotID string) string {
 func SQLiteSnapshotCompressedObjectKey(app, archive, snapshotID string) string {
 	if snapshotID == "" {
 		return SQLiteCompressedObjectKey(app, archive)
+	}
+	if !validSQLiteSnapshotID(snapshotID) {
+		return ""
 	}
 	return fmt.Sprintf(
 		"v1/%s/%s/sqlite/snapshots/%s/archive.db.gz",
@@ -220,6 +244,9 @@ func SQLiteSnapshotBundleManifestKey(app, archive, snapshotID string) string {
 	if snapshotID == "" {
 		return SQLiteBundleManifestKey(app, archive)
 	}
+	if !validSQLiteSnapshotID(snapshotID) {
+		return ""
+	}
 	return fmt.Sprintf(
 		"v1/%s/%s/sqlite/snapshots/%s/manifest.json",
 		url.PathEscape(app),
@@ -232,6 +259,9 @@ func SQLiteSnapshotBundlePartKey(app, archive, snapshotID string, index int) str
 	if snapshotID == "" {
 		return SQLiteBundlePartKey(app, archive, index)
 	}
+	if !validSQLiteSnapshotID(snapshotID) {
+		return ""
+	}
 	return fmt.Sprintf(
 		"v1/%s/%s/sqlite/snapshots/%s/chunks/archive.db.gz.part-%04d",
 		url.PathEscape(app),
@@ -239,6 +269,18 @@ func SQLiteSnapshotBundlePartKey(app, archive, snapshotID string, index int) str
 		url.PathEscape(snapshotID),
 		index,
 	)
+}
+
+func validSQLiteSnapshotID(snapshotID string) bool {
+	if len(snapshotID) != sha256.Size*2 {
+		return false
+	}
+	for _, char := range snapshotID {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func gzipFile(ctx context.Context, sourcePath, targetPath string, level int) error {
