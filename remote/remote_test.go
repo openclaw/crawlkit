@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -132,9 +133,12 @@ func TestClientArchiveOperations(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/archives":
 			_ = json.NewEncoder(w).Encode(map[string]any{"archives": []Archive{{
-				ID:       "arch-1",
-				App:      "gitcrawl",
-				Snapshot: &ArchiveSnapshot{ID: strings.Repeat("b", 64)},
+				ID:  "arch-1",
+				App: "gitcrawl",
+				Snapshot: &ArchiveSnapshot{
+					ID:           strings.Repeat("b", 64),
+					Capabilities: []string{"gitcrawl.observation-order.v1"},
+				},
 			}}})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status"):
 			_ = json.NewEncoder(w).Encode(Status{
@@ -153,8 +157,11 @@ func TestClientArchiveOperations(t *testing.T) {
 					RowCount: 10,
 					Complete: true,
 				}},
-				Snapshot: &ArchiveSnapshot{ID: strings.Repeat("b", 64)},
-				Publish:  &ArchivePublish{Status: "complete"},
+				Snapshot: &ArchiveSnapshot{
+					ID:           strings.Repeat("b", 64),
+					Capabilities: []string{"gitcrawl.observation-order.v1"},
+				},
+				Publish: &ArchivePublish{Status: "complete"},
 			})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/batch-read"):
 			var body struct {
@@ -238,7 +245,8 @@ func TestClientArchiveOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("archives: %v", err)
 	}
-	if len(archives) != 1 || archives[0].ID != "arch-1" || archives[0].Snapshot == nil {
+	if len(archives) != 1 || archives[0].ID != "arch-1" || archives[0].Snapshot == nil ||
+		!slices.Contains(archives[0].Snapshot.Capabilities, "gitcrawl.observation-order.v1") {
 		t.Fatalf("archives = %#v", archives)
 	}
 	status, err := client.Status(context.Background(), "gitcrawl", "gitcrawl/openclaw")
@@ -246,7 +254,8 @@ func TestClientArchiveOperations(t *testing.T) {
 		t.Fatalf("status: %v", err)
 	}
 	if status.Mode != ModeCloud || status.Snapshot == nil || status.Publish == nil ||
-		status.ActiveSnapshotID == "" || !status.CoverageComplete || len(status.Datasets) != 1 {
+		status.ActiveSnapshotID == "" || !status.CoverageComplete || len(status.Datasets) != 1 ||
+		!slices.Contains(status.Snapshot.Capabilities, "gitcrawl.observation-order.v1") {
 		t.Fatalf("status = %#v", status)
 	}
 	results, err := client.BatchRead(context.Background(), "gitcrawl", "gitcrawl/openclaw", []QueryRequest{{Name: "threads"}})
