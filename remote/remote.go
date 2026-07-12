@@ -548,7 +548,7 @@ func (c *Client) UploadSQLiteBundlePart(ctx context.Context, app, archive string
 	if part.SnapshotID != "" && !validSQLiteSnapshotID(part.SnapshotID) {
 		return SQLiteUploadResult{}, errors.New("sqlite bundle snapshot id must be empty or a lowercase sha256 digest")
 	}
-	if err := validateSQLiteBundlePartLimit(part.Index, part.Size); err != nil {
+	if err := validateSQLiteBundlePartLimit(part.Index, part.Size, part.SnapshotID != ""); err != nil {
 		return SQLiteUploadResult{}, err
 	}
 	headers := http.Header{}
@@ -771,8 +771,11 @@ func validSQLiteBundleSHA256(value string, canonical bool) bool {
 	return true
 }
 
-func validateSQLiteBundlePartLimit(index int, size int64) error {
-	if index < 0 || index >= maxSQLiteBundleParts {
+func validateSQLiteBundlePartLimit(index int, size int64, snapshotScoped bool) error {
+	if index < 0 {
+		return fmt.Errorf("sqlite bundle part index must not be negative")
+	}
+	if snapshotScoped && index >= maxSQLiteBundleParts {
 		return fmt.Errorf("sqlite bundle part index must be between 0 and %d", maxSQLiteBundleParts-1)
 	}
 	maxSize := DefaultSQLiteBundleChunkSize
@@ -783,13 +786,20 @@ func validateSQLiteBundlePartLimit(index int, size int64) error {
 }
 
 func validateSQLiteBundleManifestLimits(manifest SQLiteBundleManifest) error {
-	if len(manifest.Parts) == 0 || len(manifest.Parts) > maxSQLiteBundleParts {
+	snapshotScoped := manifest.SnapshotID != ""
+	if len(manifest.Parts) == 0 {
+		return fmt.Errorf("sqlite bundle manifest must contain at least one part")
+	}
+	if snapshotScoped && len(manifest.Parts) > maxSQLiteBundleParts {
 		return fmt.Errorf("sqlite bundle manifest must contain between 1 and %d parts", maxSQLiteBundleParts)
 	}
 	if manifest.Object.Size <= 0 || manifest.Object.Size > maxSQLiteBundleObjectSize {
 		return fmt.Errorf("sqlite bundle object size must be between 1 and %d bytes", maxSQLiteBundleObjectSize)
 	}
-	if manifest.CompressedObject.Size <= 0 || manifest.CompressedObject.Size > maxSQLiteBundleCompressedSize {
+	if manifest.CompressedObject.Size <= 0 {
+		return fmt.Errorf("sqlite bundle compressed size must be positive")
+	}
+	if snapshotScoped && manifest.CompressedObject.Size > maxSQLiteBundleCompressedSize {
 		return fmt.Errorf("sqlite bundle compressed size must be between 1 and %d bytes", maxSQLiteBundleCompressedSize)
 	}
 	var total int64
@@ -797,11 +807,15 @@ func validateSQLiteBundleManifestLimits(manifest SQLiteBundleManifest) error {
 		if part.Index != index {
 			return fmt.Errorf("sqlite bundle manifest part %d has index %d", index, part.Index)
 		}
-		if err := validateSQLiteBundlePartLimit(part.Index, part.Size); err != nil {
+		if err := validateSQLiteBundlePartLimit(part.Index, part.Size, snapshotScoped); err != nil {
 			return err
 		}
-		if total > maxSQLiteBundleCompressedSize-part.Size {
+		if snapshotScoped && total > maxSQLiteBundleCompressedSize-part.Size {
 			return fmt.Errorf("sqlite bundle parts exceed %d compressed bytes", maxSQLiteBundleCompressedSize)
+		}
+		if total > manifest.CompressedObject.Size ||
+			part.Size > manifest.CompressedObject.Size-total {
+			return fmt.Errorf("sqlite bundle part sizes exceed the declared compressed size")
 		}
 		total += part.Size
 	}

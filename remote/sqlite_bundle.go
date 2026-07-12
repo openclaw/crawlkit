@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -111,10 +112,12 @@ func BuildSnapshotGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOp
 }
 
 func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, snapshotScoped bool) (SQLiteBundleBuild, error) {
-	return buildGzipSQLiteBundleWithLimits(ctx, opts, snapshotScoped, sqliteBundleBuildLimits{
-		maxCompressedSize: maxSQLiteBundleCompressedSize,
-		maxParts:          maxSQLiteBundleParts,
-	})
+	limits := sqliteBundleBuildLimits{}
+	if snapshotScoped {
+		limits.maxCompressedSize = maxSQLiteBundleCompressedSize
+		limits.maxParts = maxSQLiteBundleParts
+	}
+	return buildGzipSQLiteBundleWithLimits(ctx, opts, snapshotScoped, limits)
 }
 
 func buildGzipSQLiteBundleWithLimits(
@@ -142,8 +145,9 @@ func buildGzipSQLiteBundleWithSourceCopy(
 	if opts.SourcePath == "" {
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source path is required")
 	}
-	if limits.maxCompressedSize <= 0 || limits.maxParts <= 0 {
-		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle build limits must be positive")
+	if limits.maxCompressedSize < 0 || limits.maxParts < 0 ||
+		(limits.maxCompressedSize == 0) != (limits.maxParts == 0) {
+		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle build limits must both be zero or positive")
 	}
 	if copySource == nil {
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source copier is required")
@@ -199,19 +203,23 @@ func buildGzipSQLiteBundleWithSourceCopy(
 	}
 	cleanup := func() { _ = os.RemoveAll(tmpDir) }
 	compressedPath := filepath.Join(tmpDir, "current.db.gz")
-	compressedLimit := limits.maxCompressedSize
-	compressedLimitErr := fmt.Errorf(
-		"compressed sqlite bundle exceeds %d bytes",
-		limits.maxCompressedSize,
-	)
-	partCapacity := chunkSize * int64(limits.maxParts)
-	if partCapacity < compressedLimit {
-		compressedLimit = partCapacity
+	compressedLimit := int64(math.MaxInt64)
+	compressedLimitErr := fmt.Errorf("compressed sqlite bundle exceeds the supported size")
+	if limits.maxCompressedSize > 0 {
+		compressedLimit = limits.maxCompressedSize
 		compressedLimitErr = fmt.Errorf(
-			"compressed sqlite bundle requires more than %d parts at %d bytes each",
-			limits.maxParts,
-			chunkSize,
+			"compressed sqlite bundle exceeds %d bytes",
+			limits.maxCompressedSize,
 		)
+		partCapacity := chunkSize * int64(limits.maxParts)
+		if partCapacity < compressedLimit {
+			compressedLimit = partCapacity
+			compressedLimitErr = fmt.Errorf(
+				"compressed sqlite bundle requires more than %d parts at %d bytes each",
+				limits.maxParts,
+				chunkSize,
+			)
+		}
 	}
 	sourceSHA, sourceSize, err := gzipFile(
 		ctx,
@@ -565,14 +573,14 @@ func splitBundleParts(
 	if info.Size() <= 0 {
 		return nil, fmt.Errorf("compressed sqlite bundle is empty")
 	}
-	if info.Size() > limits.maxCompressedSize {
+	if limits.maxCompressedSize > 0 && info.Size() > limits.maxCompressedSize {
 		return nil, fmt.Errorf(
 			"compressed sqlite bundle exceeds %d bytes",
 			limits.maxCompressedSize,
 		)
 	}
 	partCount := int((info.Size()-1)/chunkSize) + 1
-	if partCount > limits.maxParts {
+	if limits.maxParts > 0 && partCount > limits.maxParts {
 		return nil, fmt.Errorf(
 			"compressed sqlite bundle requires %d parts, maximum is %d",
 			partCount,

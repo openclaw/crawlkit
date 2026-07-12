@@ -869,6 +869,40 @@ func TestBuildGzipSQLiteBundleRejectsBoundedOutputAndCleansPartialArtifacts(t *t
 	}
 }
 
+func TestBuildGzipSQLiteBundlePreservesLegacyMutablePartCounts(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "archive.db")
+	payload := make([]byte, 4096)
+	for offset := 0; offset < len(payload); offset += sha256.Size {
+		sum := sha256.Sum256([]byte(fmt.Sprintf("legacy-mutable-block-%d", offset)))
+		copy(payload[offset:], sum[:])
+	}
+	if err := os.WriteFile(source, payload, 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	opts := SQLiteBundleBuildOptions{
+		App:              "gitcrawl",
+		Archive:          "gitcrawl/openclaw__openclaw",
+		SourcePath:       source,
+		WorkDir:          t.TempDir(),
+		ChunkSize:        128,
+		CompressionLevel: gzip.NoCompression,
+	}
+	mutable, err := BuildGzipSQLiteBundle(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("build legacy mutable bundle: %v", err)
+	}
+	defer mutable.Cleanup()
+	if len(mutable.Parts) <= maxSQLiteBundleParts {
+		t.Fatalf("mutable parts = %d, want more than %d", len(mutable.Parts), maxSQLiteBundleParts)
+	}
+
+	opts.WorkDir = t.TempDir()
+	_, err = BuildSnapshotGzipSQLiteBundle(context.Background(), opts)
+	if err == nil || !strings.Contains(err.Error(), "requires more than 8 parts") {
+		t.Fatalf("snapshot build error = %v", err)
+	}
+}
+
 func TestSplitBundlePartsRejectsPartOverflowBeforeCreatingFiles(t *testing.T) {
 	dir := t.TempDir()
 	compressedPath := filepath.Join(dir, "current.db.gz")
@@ -1789,12 +1823,25 @@ func TestSQLiteBundleUploadLimitsMatchRemoteContract(t *testing.T) {
 			wantErr:  "part 0 size",
 		},
 		{
-			name:     "too-many-parts",
+			name:     "legacy-mutable-many-parts",
 			manifest: manifest(false, 1, 1, 1, 1, 1, 1, 1, 1, 1),
+		},
+		{
+			name: "legacy-mutable-large-total",
+			manifest: manifest(
+				false,
+				DefaultSQLiteBundleChunkSize,
+				DefaultSQLiteBundleChunkSize,
+				1,
+			),
+		},
+		{
+			name:     "snapshot-too-many-parts",
+			manifest: manifest(true, 1, 1, 1, 1, 1, 1, 1, 1, 1),
 			wantErr:  "between 1 and 8 parts",
 		},
 		{
-			name:     "compressed-total-too-large",
+			name:     "snapshot-compressed-total-too-large",
 			manifest: manifest(true, DefaultSQLiteBundleChunkSize, DefaultSQLiteBundleChunkSize, 1),
 			wantErr:  "compressed size",
 		},
@@ -1815,6 +1862,42 @@ func TestSQLiteBundleUploadLimitsMatchRemoteContract(t *testing.T) {
 				t.Fatalf("validate limits err = %v, want %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestClientAllowsLegacyMutablePartIndexesBeyondSnapshotLimit(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if got := r.Header.Get("x-crawl-bundle-part-index"); got != "8" {
+			t.Fatalf("part index = %q", got)
+		}
+		_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
+	}))
+	defer server.Close()
+	client, err := NewClient(Options{
+		Endpoint:      server.URL,
+		TokenProvider: StaticToken("secret"),
+	})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	if _, err := client.UploadSQLiteBundlePart(
+		context.Background(),
+		"gitcrawl",
+		"gitcrawl/openclaw__openclaw",
+		SQLiteBundlePartUpload{
+			Index:       maxSQLiteBundleParts,
+			Body:        strings.NewReader("x"),
+			Size:        1,
+			SHA256:      strings.Repeat("a", 64),
+			Compression: SQLiteGzipCompression,
+		},
+	); err != nil {
+		t.Fatalf("upload legacy mutable part: %v", err)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d", requests)
 	}
 }
 
