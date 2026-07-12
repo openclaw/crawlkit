@@ -2,6 +2,7 @@ package remote
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -476,12 +478,20 @@ func (c *Client) publishStatus(ctx context.Context, app, archive, snapshotID str
 		return out, err
 	}
 	err = c.doRequest(ctx, req, false, &out, true)
-	if err == nil && snapshotID != "" && out.Snapshot != nil && out.Snapshot.ID != snapshotID {
-		return PublisherStatus{}, fmt.Errorf(
-			"publish status returned snapshot %q, want %q",
-			out.Snapshot.ID,
-			snapshotID,
-		)
+	if err == nil && snapshotID != "" {
+		if out.Snapshot == nil {
+			return PublisherStatus{}, fmt.Errorf(
+				"publish status did not return requested snapshot %q",
+				snapshotID,
+			)
+		}
+		if out.Snapshot.ID != snapshotID {
+			return PublisherStatus{}, fmt.Errorf(
+				"publish status returned snapshot %q, want %q",
+				out.Snapshot.ID,
+				snapshotID,
+			)
+		}
 	}
 	return out, err
 }
@@ -830,8 +840,9 @@ func validateSQLiteBundleManifestLimits(manifest SQLiteBundleManifest) error {
 }
 
 type validatedSQLiteBundlePartFile struct {
-	part SQLiteBundlePart
-	file *os.File
+	part    SQLiteBundlePart
+	file    *os.File
+	tempDir string
 }
 
 func openValidatedSQLiteBundleFiles(
@@ -845,10 +856,15 @@ func openValidatedSQLiteBundleFiles(
 	if len(parts) != len(manifest.Parts) {
 		return nil, fmt.Errorf("sqlite bundle has %d part files, want %d", len(parts), len(manifest.Parts))
 	}
+	tempDir, err := os.MkdirTemp("", "crawl-sqlite-upload-*")
+	if err != nil {
+		return nil, fmt.Errorf("create sqlite bundle upload snapshot: %w", err)
+	}
 	validated := make([]validatedSQLiteBundlePartFile, 0, len(parts))
 	defer func() {
 		if err != nil {
 			closeValidatedSQLiteBundleFiles(validated)
+			_ = os.RemoveAll(tempDir)
 		}
 	}()
 	for index, part := range parts {
@@ -856,47 +872,149 @@ func openValidatedSQLiteBundleFiles(
 		if part.SQLiteBundlePart != expected {
 			return nil, fmt.Errorf("sqlite bundle part file %d does not match the manifest", index)
 		}
-		file, err := os.Open(part.Path)
+		snapshot, err := snapshotSQLiteBundlePart(ctx, tempDir, index, part)
 		if err != nil {
-			return nil, fmt.Errorf("open sqlite bundle part %d: %w", index, err)
+			return nil, err
 		}
 		validated = append(validated, validatedSQLiteBundlePartFile{
-			part: expected,
-			file: file,
+			part:    expected,
+			file:    snapshot,
+			tempDir: tempDir,
 		})
-		infoBefore, err := file.Stat()
-		if err != nil {
-			return nil, fmt.Errorf("stat sqlite bundle part %d: %w", index, err)
-		}
-		if !infoBefore.Mode().IsRegular() || infoBefore.Size() != part.Size {
-			return nil, fmt.Errorf("sqlite bundle part file %d must be a %d-byte regular file", index, part.Size)
-		}
-		hash := sha256.New()
-		size, err := copyWithContext(ctx, hash, file)
-		if err != nil {
-			return nil, fmt.Errorf("hash sqlite bundle part %d: %w", index, err)
-		}
-		infoAfter, err := file.Stat()
-		if err != nil {
-			return nil, fmt.Errorf("restat sqlite bundle part %d: %w", index, err)
-		}
-		if !os.SameFile(infoBefore, infoAfter) || infoAfter.Size() != part.Size || size != part.Size {
-			return nil, fmt.Errorf("sqlite bundle part file %d changed during validation", index)
-		}
-		actualSHA256 := fmt.Sprintf("%x", hash.Sum(nil))
-		if !strings.EqualFold(actualSHA256, part.SHA256) {
-			return nil, fmt.Errorf("sqlite bundle part file %d sha256 does not match the manifest", index)
-		}
-		if _, err := file.Seek(0, io.SeekStart); err != nil {
-			return nil, fmt.Errorf("rewind sqlite bundle part %d: %w", index, err)
+	}
+	if manifest.SnapshotID != "" {
+		if err := validateSnapshotSQLiteBundleContent(ctx, manifest, validated); err != nil {
+			return nil, err
 		}
 	}
 	return validated, nil
 }
 
+func snapshotSQLiteBundlePart(
+	ctx context.Context,
+	tempDir string,
+	index int,
+	part SQLiteBundlePartFile,
+) (_ *os.File, err error) {
+	source, err := os.Open(part.Path)
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite bundle part %d: %w", index, err)
+	}
+	defer func() { _ = source.Close() }()
+	infoBefore, err := source.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat sqlite bundle part %d: %w", index, err)
+	}
+	if !infoBefore.Mode().IsRegular() || infoBefore.Size() != part.Size {
+		return nil, fmt.Errorf("sqlite bundle part file %d must be a %d-byte regular file", index, part.Size)
+	}
+	snapshotPath := filepath.Join(tempDir, fmt.Sprintf("part-%04d", index))
+	snapshot, err := os.OpenFile(snapshotPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("create sqlite bundle part snapshot %d: %w", index, err)
+	}
+	defer func() {
+		if err != nil {
+			_ = snapshot.Close()
+		}
+	}()
+	hash := sha256.New()
+	size, err := copyWithContext(ctx, io.MultiWriter(snapshot, hash), source)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot sqlite bundle part %d: %w", index, err)
+	}
+	infoAfter, err := source.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("restat sqlite bundle part %d: %w", index, err)
+	}
+	if !os.SameFile(infoBefore, infoAfter) || infoAfter.Size() != part.Size || size != part.Size {
+		return nil, fmt.Errorf("sqlite bundle part file %d changed during validation", index)
+	}
+	actualSHA256 := fmt.Sprintf("%x", hash.Sum(nil))
+	if !strings.EqualFold(actualSHA256, part.SHA256) {
+		return nil, fmt.Errorf("sqlite bundle part file %d sha256 does not match the manifest", index)
+	}
+	if err := snapshot.Sync(); err != nil {
+		return nil, fmt.Errorf("sync sqlite bundle part snapshot %d: %w", index, err)
+	}
+	if err := snapshot.Close(); err != nil {
+		return nil, fmt.Errorf("close sqlite bundle part snapshot %d: %w", index, err)
+	}
+	snapshot, err = os.Open(snapshotPath)
+	if err != nil {
+		return nil, fmt.Errorf("reopen sqlite bundle part snapshot %d: %w", index, err)
+	}
+	return snapshot, nil
+}
+
+func validateSnapshotSQLiteBundleContent(
+	ctx context.Context,
+	manifest SQLiteBundleManifest,
+	parts []validatedSQLiteBundlePartFile,
+) error {
+	compressedHash := sha256.New()
+	var compressedSize int64
+	for index, part := range parts {
+		size, err := copyWithContext(ctx, compressedHash, part.file)
+		if err != nil {
+			return fmt.Errorf("hash sqlite bundle compressed part %d: %w", index, err)
+		}
+		compressedSize += size
+	}
+	if compressedSize != manifest.CompressedObject.Size ||
+		fmt.Sprintf("%x", compressedHash.Sum(nil)) != manifest.CompressedObject.SHA256 {
+		return fmt.Errorf("sqlite bundle compressed object does not match the manifest")
+	}
+	if err := rewindValidatedSQLiteBundleFiles(parts); err != nil {
+		return err
+	}
+	readers := make([]io.Reader, len(parts))
+	for index := range parts {
+		readers[index] = parts[index].file
+	}
+	decompressor, err := gzip.NewReader(io.MultiReader(readers...))
+	if err != nil {
+		return fmt.Errorf("decompress sqlite bundle snapshot: %w", err)
+	}
+	objectHash := sha256.New()
+	objectSize, copyErr := copyWithContext(
+		ctx,
+		objectHash,
+		io.LimitReader(decompressor, manifest.Object.Size+1),
+	)
+	closeErr := decompressor.Close()
+	if copyErr != nil {
+		return fmt.Errorf("decompress sqlite bundle snapshot: %w", copyErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close sqlite bundle decompressor: %w", closeErr)
+	}
+	if objectSize != manifest.Object.Size ||
+		fmt.Sprintf("%x", objectHash.Sum(nil)) != manifest.Object.SHA256 {
+		return fmt.Errorf("sqlite bundle decompressed object does not match the manifest")
+	}
+	return rewindValidatedSQLiteBundleFiles(parts)
+}
+
+func rewindValidatedSQLiteBundleFiles(parts []validatedSQLiteBundlePartFile) error {
+	for index, part := range parts {
+		if _, err := part.file.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf("rewind sqlite bundle part %d: %w", index, err)
+		}
+	}
+	return nil
+}
+
 func closeValidatedSQLiteBundleFiles(parts []validatedSQLiteBundlePartFile) {
+	tempDirs := map[string]struct{}{}
 	for _, part := range parts {
 		_ = part.file.Close()
+		if part.tempDir != "" {
+			tempDirs[part.tempDir] = struct{}{}
+		}
+	}
+	for tempDir := range tempDirs {
+		_ = os.RemoveAll(tempDir)
 	}
 }
 

@@ -6,15 +6,19 @@
   interrupted snapshot publication can resume without reader credentials.
 - Add a snapshot-scoped publisher status client helper so resumable publishers
   verify the exact immutable candidate instead of trusting an unrelated
-  completed candidate from the unscoped status route.
+  completed candidate from the unscoped status route, and reject successful
+  responses that omit or return a different snapshot.
 - Add a 64 MiB mutable SQLite bundle default and preserve exact request content
   lengths for bounded remote uploads. The shipped
   `DefaultSQLiteBundleChunkSize` constant and immutable snapshot default remain
   256 MiB for caller and retry compatibility, including explicitly configured
-  legacy mutable bundles. Bundle construction now rejects empty sources, caps
-  compressed output at 512 MiB and eight parts, removes partial temp artifacts
-  on failure, rejects source identity/content drift, and uploads hash and retain
-  validated part handles while rejecting invalid or oversized 64 KiB manifests
+  legacy mutable bundles. Mutable bundles retain their legacy part-count and
+  aggregate-size compatibility, while immutable snapshots enforce the
+  negotiated 512 MiB and eight-part bounds. Bundle construction now rejects
+  empty sources, removes partial temp artifacts on failure, and rejects source
+  identity/content drift. Uploads use private validated part snapshots and
+  verify immutable snapshot compressed and decompressed digests before any
+  remote write, while invalid or oversized 64 KiB manifests are also rejected
   before writing any remote parts.
 
 ## v0.14.0 - 2026-07-12
