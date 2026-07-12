@@ -7,8 +7,10 @@
 - Add a 64 MiB mutable SQLite bundle default and preserve exact request content
   lengths for bounded remote uploads. The shipped
   `DefaultSQLiteBundleChunkSize` constant and immutable snapshot default remain
-  256 MiB for caller and retry compatibility. Bundle uploads now reject part,
-  count, and total-size violations before writing any remote parts.
+  256 MiB for caller and retry compatibility. Bundle construction now caps
+  compressed output at 512 MiB and eight parts, removes partial temp artifacts
+  on failure, and uploads reject invalid or oversized 64 KiB manifests before
+  writing any remote parts.
 
 ## v0.14.0 - 2026-07-12
 
