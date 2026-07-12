@@ -197,10 +197,10 @@ func TestClientArchiveOperations(t *testing.T) {
 				t.Fatalf("decode cutover: %v", err)
 			}
 			_ = json.NewEncoder(w).Encode(CutoverResult{
-				ArchiveID:  "gitcrawl/openclaw",
-				SnapshotID: body.SnapshotID,
-				Status:     "active",
-				CutoverAt:  "2026-07-12T08:00:00Z",
+				Archive:      "gitcrawl/openclaw",
+				SnapshotID:   body.SnapshotID,
+				SnapshotMode: "explicit",
+				CutoverAt:    "2026-07-12T08:00:00Z",
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/github/start":
 			var req LoginStartRequest
@@ -286,7 +286,9 @@ func TestClientArchiveOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cutover: %v", err)
 	}
-	if cutover.SnapshotID != manifest.SnapshotID || cutover.Status != "active" {
+	if cutover.Archive != "gitcrawl/openclaw" ||
+		cutover.SnapshotID != manifest.SnapshotID ||
+		cutover.SnapshotMode != "explicit" {
 		t.Fatalf("cutover result = %#v", cutover)
 	}
 	start, err := client.StartGitHubLogin(context.Background(), "hash")

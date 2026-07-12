@@ -326,10 +326,10 @@ type IngestResult struct {
 }
 
 type CutoverResult struct {
-	ArchiveID  string `json:"archive_id,omitempty"`
-	SnapshotID string `json:"snapshot_id"`
-	Status     string `json:"status,omitempty"`
-	CutoverAt  string `json:"cutover_at,omitempty"`
+	Archive      string `json:"archive,omitempty"`
+	SnapshotID   string `json:"snapshot_id"`
+	SnapshotMode string `json:"snapshot_mode,omitempty"`
+	CutoverAt    string `json:"cutover_at,omitempty"`
 }
 
 type SQLiteUploadRequest struct {
