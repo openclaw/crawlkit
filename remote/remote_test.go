@@ -1667,6 +1667,19 @@ func TestOpenValidatedSQLiteBundleFilesRetainsValidatedHandles(t *testing.T) {
 	if err := os.WriteFile(replacementPath, replacement, 0o600); err != nil {
 		t.Fatalf("write replacement: %v", err)
 	}
+	if runtime.GOOS == "windows" {
+		if err := os.Remove(partPath); err == nil {
+			t.Fatal("Windows replaced a part while its validated handle was retained")
+		}
+		body, err := io.ReadAll(parts[0].file)
+		if err != nil {
+			t.Fatalf("read retained part: %v", err)
+		}
+		if !bytes.Equal(body, original) {
+			t.Fatalf("retained part = %q, want %q", body, original)
+		}
+		return
+	}
 	if err := os.Remove(partPath); err != nil {
 		t.Fatalf("remove original path: %v", err)
 	}
