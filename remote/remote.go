@@ -512,6 +512,9 @@ func (c *Client) UploadSQLiteBundlePart(ctx context.Context, app, archive string
 	if part.SnapshotID != "" && !validSQLiteSnapshotID(part.SnapshotID) {
 		return SQLiteUploadResult{}, errors.New("sqlite bundle snapshot id must be empty or a lowercase sha256 digest")
 	}
+	if err := validateSQLiteBundlePartLimit(part.Index, part.Size, part.SnapshotID != ""); err != nil {
+		return SQLiteUploadResult{}, err
+	}
 	headers := http.Header{}
 	headers.Set("content-type", "application/gzip")
 	headers.Set("x-crawl-sqlite-upload", "bundle-part")
@@ -527,6 +530,9 @@ func (c *Client) UploadSQLiteBundlePart(ctx context.Context, app, archive string
 func (c *Client) UploadSQLiteBundleFiles(ctx context.Context, app, archive string, manifest SQLiteBundleManifest, parts []SQLiteBundlePartFile) (SQLiteBundleUploadResult, error) {
 	if manifest.SnapshotID != "" && !validSQLiteSnapshotID(manifest.SnapshotID) {
 		return SQLiteBundleUploadResult{}, errors.New("sqlite bundle snapshot id must be empty or a lowercase sha256 digest")
+	}
+	if err := validateSQLiteBundleFiles(manifest, parts); err != nil {
+		return SQLiteBundleUploadResult{}, err
 	}
 	for _, part := range parts {
 		file, err := os.Open(part.Path)
@@ -553,6 +559,9 @@ func (c *Client) UploadSQLiteBundleManifest(ctx context.Context, app, archive st
 	if manifest.SnapshotID != "" && !validSQLiteSnapshotID(manifest.SnapshotID) {
 		return SQLiteBundleUploadResult{}, errors.New("sqlite bundle snapshot id must be empty or a lowercase sha256 digest")
 	}
+	if err := validateSQLiteBundleManifestLimits(manifest); err != nil {
+		return SQLiteBundleUploadResult{}, err
+	}
 	if strings.TrimSpace(manifest.App) == "" {
 		manifest.App = strings.TrimSpace(app)
 	}
@@ -569,6 +578,76 @@ func (c *Client) UploadSQLiteBundleManifest(ctx context.Context, app, archive st
 	var out SQLiteBundleUploadResult
 	err := c.doRaw(ctx, http.MethodPut, archivePath(app, archive, "sqlite"), &buf, int64(buf.Len()), headers, &out, true)
 	return out, err
+}
+
+func validateSQLiteBundlePartLimit(index int, size int64, snapshotScoped bool) error {
+	if index < 0 || index >= maxSQLiteBundleParts {
+		return fmt.Errorf("sqlite bundle part index must be between 0 and %d", maxSQLiteBundleParts-1)
+	}
+	maxSize := DefaultMutableSQLiteBundleChunkSize
+	if snapshotScoped {
+		maxSize = DefaultSQLiteBundleChunkSize
+	}
+	if size <= 0 || size > maxSize {
+		return fmt.Errorf("sqlite bundle part %d size must be between 1 and %d bytes", index, maxSize)
+	}
+	return nil
+}
+
+func validateSQLiteBundleManifestLimits(manifest SQLiteBundleManifest) error {
+	if len(manifest.Parts) == 0 || len(manifest.Parts) > maxSQLiteBundleParts {
+		return fmt.Errorf("sqlite bundle manifest must contain between 1 and %d parts", maxSQLiteBundleParts)
+	}
+	if manifest.Object.Size <= 0 || manifest.Object.Size > maxSQLiteBundleObjectSize {
+		return fmt.Errorf("sqlite bundle object size must be between 1 and %d bytes", maxSQLiteBundleObjectSize)
+	}
+	if manifest.CompressedObject.Size <= 0 || manifest.CompressedObject.Size > maxSQLiteBundleCompressedSize {
+		return fmt.Errorf("sqlite bundle compressed size must be between 1 and %d bytes", maxSQLiteBundleCompressedSize)
+	}
+	var total int64
+	for index, part := range manifest.Parts {
+		if part.Index != index {
+			return fmt.Errorf("sqlite bundle manifest part %d has index %d", index, part.Index)
+		}
+		if err := validateSQLiteBundlePartLimit(part.Index, part.Size, manifest.SnapshotID != ""); err != nil {
+			return err
+		}
+		if total > maxSQLiteBundleCompressedSize-part.Size {
+			return fmt.Errorf("sqlite bundle parts exceed %d compressed bytes", maxSQLiteBundleCompressedSize)
+		}
+		total += part.Size
+	}
+	if total != manifest.CompressedObject.Size {
+		return fmt.Errorf(
+			"sqlite bundle part sizes total %d bytes, want compressed size %d",
+			total,
+			manifest.CompressedObject.Size,
+		)
+	}
+	return nil
+}
+
+func validateSQLiteBundleFiles(manifest SQLiteBundleManifest, parts []SQLiteBundlePartFile) error {
+	if err := validateSQLiteBundleManifestLimits(manifest); err != nil {
+		return err
+	}
+	if len(parts) != len(manifest.Parts) {
+		return fmt.Errorf("sqlite bundle has %d part files, want %d", len(parts), len(manifest.Parts))
+	}
+	for index, part := range parts {
+		expected := manifest.Parts[index]
+		if part.SQLiteBundlePart != expected {
+			return fmt.Errorf("sqlite bundle part file %d does not match the manifest", index)
+		}
+		info, err := os.Stat(part.Path)
+		if err != nil {
+			return fmt.Errorf("stat sqlite bundle part %d: %w", index, err)
+		}
+		if !info.Mode().IsRegular() || info.Size() != part.Size {
+			return fmt.Errorf("sqlite bundle part file %d must be a %d-byte regular file", index, part.Size)
+		}
+	}
+	return nil
 }
 
 func (c *Client) StartGitHubLogin(ctx context.Context, pollSecretHash string) (LoginStartResult, error) {
