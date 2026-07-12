@@ -13,11 +13,10 @@ import (
 )
 
 const (
-	SQLiteGzipChunkedBundleFormat = "sqlite-gzip-chunked-v1"
-	SQLiteGzipCompression         = "gzip"
-	DefaultSQLiteBundleChunkSize  = int64(64 * 1024 * 1024)
-
-	releasedSnapshotSQLiteBundleChunkSize = int64(256 * 1024 * 1024)
+	SQLiteGzipChunkedBundleFormat       = "sqlite-gzip-chunked-v1"
+	SQLiteGzipCompression               = "gzip"
+	DefaultSQLiteBundleChunkSize        = int64(256 * 1024 * 1024)
+	DefaultMutableSQLiteBundleChunkSize = int64(64 * 1024 * 1024)
 )
 
 type SQLiteBundleObject struct {
@@ -198,9 +197,9 @@ func sqliteBundleChunkSize(requested int64, snapshotScoped bool) int64 {
 		return requested
 	}
 	if snapshotScoped {
-		return releasedSnapshotSQLiteBundleChunkSize
+		return DefaultSQLiteBundleChunkSize
 	}
-	return DefaultSQLiteBundleChunkSize
+	return DefaultMutableSQLiteBundleChunkSize
 }
 
 func SQLiteObjectKey(app, archive string) string {

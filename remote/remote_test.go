@@ -477,7 +477,10 @@ func TestBuildGzipSQLiteBundlePreservesCurrentKeyLayout(t *testing.T) {
 }
 
 func TestDefaultSQLiteBundleChunkSizeMatchesRemoteUploadLimit(t *testing.T) {
-	if got, want := DefaultSQLiteBundleChunkSize, int64(64*1024*1024); got != want {
+	if got, want := DefaultSQLiteBundleChunkSize, int64(256*1024*1024); got != want {
+		t.Fatalf("legacy sqlite bundle chunk size = %d, want %d", got, want)
+	}
+	if got, want := DefaultMutableSQLiteBundleChunkSize, int64(64*1024*1024); got != want {
 		t.Fatalf("default sqlite bundle chunk size = %d, want %d", got, want)
 	}
 	if got, want := sqliteBundleChunkSize(0, false), int64(64*1024*1024); got != want {
@@ -488,6 +491,9 @@ func TestDefaultSQLiteBundleChunkSizeMatchesRemoteUploadLimit(t *testing.T) {
 	}
 	if got, want := sqliteBundleChunkSize(32*1024*1024, true), int64(32*1024*1024); got != want {
 		t.Fatalf("explicit snapshot sqlite bundle chunk size = %d, want %d", got, want)
+	}
+	if got, want := sqliteBundleChunkSize(DefaultSQLiteBundleChunkSize, true), int64(256*1024*1024); got != want {
+		t.Fatalf("legacy explicit snapshot sqlite bundle chunk size = %d, want %d", got, want)
 	}
 }
 
