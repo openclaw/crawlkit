@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestConfigNormalizeAndEnabled(t *testing.T) {
@@ -380,16 +382,18 @@ func TestBuildGzipSQLiteBundlePreservesCurrentKeyLayout(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "archive.db")
 	payload := strings.Repeat("SQLite format 3\n", 100)
+	generatedAt := time.Date(2026, time.July, 12, 8, 0, 0, 123, time.UTC)
 	if err := os.WriteFile(source, []byte(payload), 0o600); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
 	bundle, err := BuildGzipSQLiteBundle(context.Background(), SQLiteBundleBuildOptions{
-		App:        "gitcrawl",
-		Archive:    "gitcrawl/openclaw__openclaw",
-		SourcePath: source,
-		WorkDir:    dir,
-		ChunkSize:  64,
-		Counts:     map[string]int64{"threads": 3},
+		App:         "gitcrawl",
+		Archive:     "gitcrawl/openclaw__openclaw",
+		SourcePath:  source,
+		WorkDir:     dir,
+		ChunkSize:   64,
+		GeneratedAt: generatedAt,
+		Counts:      map[string]int64{"threads": 3},
 	})
 	if err != nil {
 		t.Fatalf("build bundle: %v", err)
@@ -406,6 +410,9 @@ func TestBuildGzipSQLiteBundlePreservesCurrentKeyLayout(t *testing.T) {
 	}
 	if bundle.Manifest.SnapshotID != "" {
 		t.Fatalf("snapshot id = %q", bundle.Manifest.SnapshotID)
+	}
+	if got, want := bundle.Manifest.GeneratedAt, generatedAt.Format(time.RFC3339Nano); got != want {
+		t.Fatalf("generated_at = %q, want %q", got, want)
 	}
 	if bundle.Manifest.Object.Key != SQLiteObjectKey("gitcrawl", "gitcrawl/openclaw__openclaw") {
 		t.Fatalf("object key = %q", bundle.Manifest.Object.Key)
@@ -493,7 +500,87 @@ func TestBuildSnapshotGzipSQLiteBundleUsesSnapshotKeyLayout(t *testing.T) {
 	}
 }
 
-func TestBuildSnapshotGzipSQLiteBundleIsolatesEncodedRepresentations(t *testing.T) {
+func TestBuildSnapshotGzipSQLiteBundleIsDeterministicAcrossGeneratedAt(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "archive.db")
+	payload := strings.Repeat("deterministic snapshot payload\n", 256)
+	if err := os.WriteFile(source, []byte(payload), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	build := func(t *testing.T, generatedAt time.Time) SQLiteBundleBuild {
+		t.Helper()
+		bundle, err := BuildSnapshotGzipSQLiteBundle(context.Background(), SQLiteBundleBuildOptions{
+			App:              "gitcrawl",
+			Archive:          "gitcrawl/openclaw__openclaw",
+			SourcePath:       source,
+			WorkDir:          dir,
+			CompressionLevel: gzip.BestCompression,
+			ChunkSize:        128,
+			GeneratedAt:      generatedAt,
+			ContentType:      "application/vnd.sqlite3",
+			Privacy:          map[string]any{"scrubbed": true, "policy": "public-only"},
+			Counts:           map[string]int64{"threads": 256},
+		})
+		if err != nil {
+			t.Fatalf("build snapshot bundle: %v", err)
+		}
+		t.Cleanup(bundle.Cleanup)
+		return bundle
+	}
+	first := build(t, time.Date(2026, time.July, 12, 8, 0, 0, 0, time.UTC))
+	second := build(t, time.Date(2036, time.July, 12, 8, 0, 0, 0, time.UTC))
+	if first.Manifest.GeneratedAt != "" || second.Manifest.GeneratedAt != "" {
+		t.Fatalf("snapshot generated_at must be omitted: first=%q second=%q", first.Manifest.GeneratedAt, second.Manifest.GeneratedAt)
+	}
+	firstManifest, err := json.Marshal(first.Manifest)
+	if err != nil {
+		t.Fatalf("marshal first manifest: %v", err)
+	}
+	secondManifest, err := json.Marshal(second.Manifest)
+	if err != nil {
+		t.Fatalf("marshal second manifest: %v", err)
+	}
+	if !bytes.Equal(firstManifest, secondManifest) {
+		t.Fatalf("snapshot manifests differ:\nfirst:  %s\nsecond: %s", firstManifest, secondManifest)
+	}
+	firstManifestKey := SQLiteSnapshotBundleManifestKey(first.Manifest.App, first.Manifest.Archive, first.Manifest.SnapshotID)
+	secondManifestKey := SQLiteSnapshotBundleManifestKey(second.Manifest.App, second.Manifest.Archive, second.Manifest.SnapshotID)
+	if firstManifestKey != secondManifestKey {
+		t.Fatalf("manifest keys differ: first=%q second=%q", firstManifestKey, secondManifestKey)
+	}
+	firstCompressed, err := os.ReadFile(first.CompressedPath)
+	if err != nil {
+		t.Fatalf("read first compressed object: %v", err)
+	}
+	secondCompressed, err := os.ReadFile(second.CompressedPath)
+	if err != nil {
+		t.Fatalf("read second compressed object: %v", err)
+	}
+	if !bytes.Equal(firstCompressed, secondCompressed) {
+		t.Fatal("compressed snapshot objects differ")
+	}
+	if len(first.Parts) != len(second.Parts) {
+		t.Fatalf("part counts differ: first=%d second=%d", len(first.Parts), len(second.Parts))
+	}
+	for i := range first.Parts {
+		if first.Parts[i].SQLiteBundlePart != second.Parts[i].SQLiteBundlePart {
+			t.Fatalf("part %d metadata differs: first=%#v second=%#v", i, first.Parts[i], second.Parts[i])
+		}
+		firstPart, err := os.ReadFile(first.Parts[i].Path)
+		if err != nil {
+			t.Fatalf("read first part %d: %v", i, err)
+		}
+		secondPart, err := os.ReadFile(second.Parts[i].Path)
+		if err != nil {
+			t.Fatalf("read second part %d: %v", i, err)
+		}
+		if !bytes.Equal(firstPart, secondPart) {
+			t.Fatalf("part %d bytes differ", i)
+		}
+	}
+}
+
+func TestBuildSnapshotGzipSQLiteBundleRepresentationChangesConflictAtSourceManifestKey(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "archive.db")
 	payload := make([]byte, 8192)
@@ -530,11 +617,36 @@ func TestBuildSnapshotGzipSQLiteBundleIsolatesEncodedRepresentations(t *testing.
 		fastSmall.Manifest.Object.Key != fastLarge.Manifest.Object.Key {
 		t.Fatalf("source object keys differ")
 	}
+	manifestKey := func(bundle SQLiteBundleBuild) string {
+		return SQLiteSnapshotBundleManifestKey(bundle.Manifest.App, bundle.Manifest.Archive, bundle.Manifest.SnapshotID)
+	}
+	if manifestKey(fastSmall) != manifestKey(bestSmall) ||
+		manifestKey(fastSmall) != manifestKey(fastLarge) {
+		t.Fatalf("representation variants must target one immutable source manifest key")
+	}
 	if fastSmall.Manifest.CompressedObject.Key == bestSmall.Manifest.CompressedObject.Key {
 		t.Fatalf("compression variants share key %q", fastSmall.Manifest.CompressedObject.Key)
 	}
 	if fastSmall.Manifest.Parts[0].Key == fastLarge.Manifest.Parts[0].Key {
 		t.Fatalf("chunk variants share first part key %q", fastSmall.Manifest.Parts[0].Key)
+	}
+	fastSmallManifest, err := json.Marshal(fastSmall.Manifest)
+	if err != nil {
+		t.Fatalf("marshal fast-small manifest: %v", err)
+	}
+	bestSmallManifest, err := json.Marshal(bestSmall.Manifest)
+	if err != nil {
+		t.Fatalf("marshal best-small manifest: %v", err)
+	}
+	fastLargeManifest, err := json.Marshal(fastLarge.Manifest)
+	if err != nil {
+		t.Fatalf("marshal fast-large manifest: %v", err)
+	}
+	if bytes.Equal(fastSmallManifest, bestSmallManifest) {
+		t.Fatal("compression variants must produce conflicting immutable manifest bodies")
+	}
+	if bytes.Equal(fastSmallManifest, fastLargeManifest) {
+		t.Fatal("chunk variants must produce conflicting immutable manifest bodies")
 	}
 }
 
@@ -559,9 +671,11 @@ func assertSQLiteBundlePayload(t *testing.T, compressed, payload string) []byte 
 
 func TestSQLiteBundleKeyLayouts(t *testing.T) {
 	const (
-		app      = "git crawl"
-		archive  = "openclaw/crawlkit"
-		snapshot = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+		app           = "git crawl"
+		archive       = "openclaw/crawlkit"
+		snapshot      = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+		compressedSHA = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+		partSHA       = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 	)
 	if got, want := SQLiteObjectKey(app, archive), "v1/git%20crawl/openclaw%2Fcrawlkit/sqlite/current.db"; got != want {
 		t.Fatalf("object key = %q, want %q", got, want)
@@ -574,6 +688,18 @@ func TestSQLiteBundleKeyLayouts(t *testing.T) {
 	}
 	if got, want := SQLiteBundlePartKey(app, archive, 7), "v1/git%20crawl/openclaw%2Fcrawlkit/sqlite/chunks/current.db.gz.part-0007"; got != want {
 		t.Fatalf("part key = %q, want %q", got, want)
+	}
+	if got, want := SQLiteSnapshotObjectKey(app, archive, snapshot), "v1/git%20crawl/openclaw%2Fcrawlkit/sqlite/snapshots/"+snapshot+"/archive.db"; got != want {
+		t.Fatalf("snapshot object key = %q, want %q", got, want)
+	}
+	if got, want := SQLiteSnapshotCompressedObjectKey(app, archive, snapshot, compressedSHA), "v1/git%20crawl/openclaw%2Fcrawlkit/sqlite/snapshots/"+snapshot+"/objects/"+compressedSHA+"/archive.db.gz"; got != want {
+		t.Fatalf("snapshot compressed key = %q, want %q", got, want)
+	}
+	if got, want := SQLiteSnapshotBundleManifestKey(app, archive, snapshot), "v1/git%20crawl/openclaw%2Fcrawlkit/sqlite/snapshots/"+snapshot+"/manifest.json"; got != want {
+		t.Fatalf("snapshot manifest key = %q, want %q", got, want)
+	}
+	if got, want := SQLiteSnapshotBundlePartKey(app, archive, snapshot, partSHA, 7), "v1/git%20crawl/openclaw%2Fcrawlkit/sqlite/snapshots/"+snapshot+"/chunks/"+partSHA+"/archive.db.gz.part-0007"; got != want {
+		t.Fatalf("snapshot part key = %q, want %q", got, want)
 	}
 	if got := SQLiteSnapshotObjectKey(app, archive, ""); got != SQLiteObjectKey(app, archive) {
 		t.Fatalf("empty snapshot object key = %q", got)
