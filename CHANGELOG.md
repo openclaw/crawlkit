@@ -4,10 +4,10 @@
 
 - Add a publisher-authenticated archive status route and client helper so
   interrupted snapshot publication can resume without reader credentials.
-- Reduce the default mutable SQLite bundle part size from 256 MiB to 64 MiB and
-  preserve exact request content lengths for bounded remote uploads. Immutable
-  snapshot builds retain their released implicit 256 MiB representation for
-  retry compatibility and must opt into a smaller explicit chunk size.
+- Add a 64 MiB mutable SQLite bundle default and preserve exact request content
+  lengths for bounded remote uploads. The shipped
+  `DefaultSQLiteBundleChunkSize` constant and immutable snapshot default remain
+  256 MiB for caller and retry compatibility.
 
 ## v0.14.0 - 2026-07-12
 
