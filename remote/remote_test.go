@@ -3,8 +3,10 @@ package remote
 import (
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -464,6 +466,7 @@ func TestBuildSnapshotGzipSQLiteBundleUsesSnapshotKeyLayout(t *testing.T) {
 		"gitcrawl",
 		"gitcrawl/openclaw__openclaw",
 		bundle.Manifest.SnapshotID,
+		bundle.Manifest.CompressedObject.SHA256,
 	) {
 		t.Fatalf("compressed object key = %q", bundle.Manifest.CompressedObject.Key)
 	}
@@ -478,15 +481,64 @@ func TestBuildSnapshotGzipSQLiteBundleUsesSnapshotKeyLayout(t *testing.T) {
 			"gitcrawl",
 			"gitcrawl/openclaw__openclaw",
 			bundle.Manifest.SnapshotID,
+			part.SHA256,
 			part.Index,
 		) {
 			t.Fatalf("part key = %q", part.Key)
 		}
 	}
-	assertSQLiteBundlePayload(t, compressed.String(), payload)
+	decompressed := assertSQLiteBundlePayload(t, compressed.String(), payload)
+	if got, want := bundle.Manifest.SnapshotID, fmt.Sprintf("%x", sha256.Sum256(decompressed)); got != want {
+		t.Fatalf("snapshot id = %q, want digest of compressed source bytes %q", got, want)
+	}
 }
 
-func assertSQLiteBundlePayload(t *testing.T, compressed, payload string) {
+func TestBuildSnapshotGzipSQLiteBundleIsolatesEncodedRepresentations(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "archive.db")
+	payload := make([]byte, 8192)
+	for i := range payload {
+		payload[i] = byte((i*31 + i/7) % 251)
+	}
+	if err := os.WriteFile(source, payload, 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	build := func(t *testing.T, level int, chunkSize int64) SQLiteBundleBuild {
+		t.Helper()
+		bundle, err := BuildSnapshotGzipSQLiteBundle(context.Background(), SQLiteBundleBuildOptions{
+			App:              "gitcrawl",
+			Archive:          "gitcrawl/openclaw__openclaw",
+			SourcePath:       source,
+			WorkDir:          dir,
+			CompressionLevel: level,
+			ChunkSize:        chunkSize,
+		})
+		if err != nil {
+			t.Fatalf("build snapshot bundle: %v", err)
+		}
+		t.Cleanup(bundle.Cleanup)
+		return bundle
+	}
+	fastSmall := build(t, gzip.BestSpeed, 64)
+	bestSmall := build(t, gzip.BestCompression, 64)
+	fastLarge := build(t, gzip.BestSpeed, 128)
+	if fastSmall.Manifest.SnapshotID != bestSmall.Manifest.SnapshotID ||
+		fastSmall.Manifest.SnapshotID != fastLarge.Manifest.SnapshotID {
+		t.Fatalf("source snapshot ids differ")
+	}
+	if fastSmall.Manifest.Object.Key != bestSmall.Manifest.Object.Key ||
+		fastSmall.Manifest.Object.Key != fastLarge.Manifest.Object.Key {
+		t.Fatalf("source object keys differ")
+	}
+	if fastSmall.Manifest.CompressedObject.Key == bestSmall.Manifest.CompressedObject.Key {
+		t.Fatalf("compression variants share key %q", fastSmall.Manifest.CompressedObject.Key)
+	}
+	if fastSmall.Manifest.Parts[0].Key == fastLarge.Manifest.Parts[0].Key {
+		t.Fatalf("chunk variants share first part key %q", fastSmall.Manifest.Parts[0].Key)
+	}
+}
+
+func assertSQLiteBundlePayload(t *testing.T, compressed, payload string) []byte {
 	t.Helper()
 	reader, err := gzip.NewReader(strings.NewReader(compressed))
 	if err != nil {
@@ -502,6 +554,7 @@ func assertSQLiteBundlePayload(t *testing.T, compressed, payload string) {
 	if string(decompressed) != payload {
 		t.Fatalf("decompressed payload mismatch")
 	}
+	return decompressed
 }
 
 func TestSQLiteBundleKeyLayouts(t *testing.T) {
@@ -525,17 +578,23 @@ func TestSQLiteBundleKeyLayouts(t *testing.T) {
 	if got := SQLiteSnapshotObjectKey(app, archive, ""); got != SQLiteObjectKey(app, archive) {
 		t.Fatalf("empty snapshot object key = %q", got)
 	}
-	if got := SQLiteSnapshotCompressedObjectKey(app, archive, ""); got != SQLiteCompressedObjectKey(app, archive) {
+	if got := SQLiteSnapshotCompressedObjectKey(app, archive, "", ""); got != SQLiteCompressedObjectKey(app, archive) {
 		t.Fatalf("empty snapshot compressed key = %q", got)
 	}
 	if got := SQLiteSnapshotBundleManifestKey(app, archive, ""); got != SQLiteBundleManifestKey(app, archive) {
 		t.Fatalf("empty snapshot manifest key = %q", got)
 	}
-	if got := SQLiteSnapshotBundlePartKey(app, archive, "", 7); got != SQLiteBundlePartKey(app, archive, 7) {
+	if got := SQLiteSnapshotBundlePartKey(app, archive, "", "", 7); got != SQLiteBundlePartKey(app, archive, 7) {
 		t.Fatalf("empty snapshot part key = %q", got)
 	}
 	if got := SQLiteSnapshotObjectKey(app, archive, "not-a-digest"); got != "" {
 		t.Fatalf("invalid snapshot object key = %q", got)
+	}
+	if got := SQLiteSnapshotCompressedObjectKey(app, archive, snapshot, "not-a-digest"); got != "" {
+		t.Fatalf("invalid compressed object key = %q", got)
+	}
+	if got := SQLiteSnapshotBundlePartKey(app, archive, snapshot, "not-a-digest", 7); got != "" {
+		t.Fatalf("invalid snapshot part key = %q", got)
 	}
 	if got := SQLiteSnapshotBundleManifestKey(app, archive, strings.ToUpper(snapshot)); got != "" {
 		t.Fatalf("non-canonical snapshot manifest key = %q", got)
@@ -575,11 +634,15 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 				case "bundle-part":
 					if r.Header.Get("x-crawl-bundle-part-index") != "0" ||
 						r.Header.Get("content-type") != "application/gzip" ||
+						r.Header.Get("x-crawl-content-sha256") != strings.Repeat("d", 64) ||
+						r.Header.Get("x-crawl-compression") != SQLiteGzipCompression ||
 						r.Header.Get("x-crawl-snapshot-id") != tc.snapshotID {
 						t.Fatalf(
-							"part headers index=%q content-type=%q snapshot=%q",
+							"part headers index=%q content-type=%q sha=%q compression=%q snapshot=%q",
 							r.Header.Get("x-crawl-bundle-part-index"),
 							r.Header.Get("content-type"),
+							r.Header.Get("x-crawl-content-sha256"),
+							r.Header.Get("x-crawl-compression"),
 							r.Header.Get("x-crawl-snapshot-id"),
 						)
 					}
@@ -623,7 +686,7 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 				Archive:    "gitcrawl/openclaw__openclaw",
 				SnapshotID: tc.snapshotID,
 			}, []SQLiteBundlePartFile{{
-				SQLiteBundlePart: SQLiteBundlePart{Index: 0, Size: int64(len("compressed")), SHA256: "part-sha"},
+				SQLiteBundlePart: SQLiteBundlePart{Index: 0, Size: int64(len("compressed")), SHA256: strings.Repeat("d", 64)},
 				Path:             partPath,
 			}})
 			if err != nil {
