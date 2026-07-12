@@ -140,8 +140,18 @@ func TestClientArchiveOperations(t *testing.T) {
 					Capabilities: []string{"gitcrawl.observation-order.v1"},
 				},
 			}}})
-		case r.Method == http.MethodGet && (strings.HasSuffix(r.URL.Path, "/status") ||
-			strings.HasSuffix(r.URL.Path, "/publish-status")):
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/publish-status"):
+			_ = json.NewEncoder(w).Encode(PublisherStatus{
+				App:              "gitcrawl",
+				Archive:          "gitcrawl/openclaw",
+				ActiveSnapshotID: strings.Repeat("b", 64),
+				CoverageComplete: true,
+				Snapshot: &ArchiveSnapshot{
+					ID:           strings.Repeat("b", 64),
+					Capabilities: []string{"gitcrawl.observation-order.v1"},
+				},
+			})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status"):
 			_ = json.NewEncoder(w).Encode(Status{
 				App:                "gitcrawl",
 				Archive:            "gitcrawl/openclaw",
@@ -149,7 +159,7 @@ func TestClientArchiveOperations(t *testing.T) {
 				SchemaVersion:      8,
 				SnapshotMode:       "snapshot",
 				SnapshotCutoverAt:  "2026-07-12T08:00:00Z",
-				ActiveSnapshotID:   strings.Repeat("b", 64),
+				ActiveSnapshotID:   strings.Repeat("a", 64),
 				SourceSyncAt:       "2026-07-12T07:55:00Z",
 				DatasetGeneratedAt: "2026-07-12T07:56:00Z",
 				CoverageComplete:   true,
@@ -159,7 +169,7 @@ func TestClientArchiveOperations(t *testing.T) {
 					Complete: true,
 				}},
 				Snapshot: &ArchiveSnapshot{
-					ID:           strings.Repeat("b", 64),
+					ID:           strings.Repeat("a", 64),
 					Capabilities: []string{"gitcrawl.observation-order.v1"},
 				},
 				Publish: &ArchivePublish{Status: "complete"},
@@ -263,10 +273,11 @@ func TestClientArchiveOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("publish status: %v", err)
 	}
-	if publishStatus.ActiveSnapshotID != status.ActiveSnapshotID ||
+	if publishStatus.ActiveSnapshotID == status.ActiveSnapshotID ||
 		publishStatus.Snapshot == nil ||
-		publishStatus.Snapshot.ID != status.Snapshot.ID {
-		t.Fatalf("publish status = %#v, want snapshot %#v", publishStatus, status.Snapshot)
+		publishStatus.Snapshot.ID != strings.Repeat("b", 64) ||
+		publishStatus.CoverageComplete != true {
+		t.Fatalf("publish status = %#v, reader status = %#v", publishStatus, status)
 	}
 	results, err := client.BatchRead(context.Background(), "gitcrawl", "gitcrawl/openclaw", []QueryRequest{{Name: "threads"}})
 	if err != nil {
