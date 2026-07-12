@@ -476,6 +476,13 @@ func (c *Client) publishStatus(ctx context.Context, app, archive, snapshotID str
 		return out, err
 	}
 	err = c.doRequest(ctx, req, false, &out, true)
+	if err == nil && snapshotID != "" && out.Snapshot != nil && out.Snapshot.ID != snapshotID {
+		return PublisherStatus{}, fmt.Errorf(
+			"publish status returned snapshot %q, want %q",
+			out.Snapshot.ID,
+			snapshotID,
+		)
+	}
 	return out, err
 }
 
@@ -561,23 +568,20 @@ func (c *Client) UploadSQLiteBundleFiles(ctx context.Context, app, archive strin
 	if err != nil {
 		return SQLiteBundleUploadResult{}, err
 	}
-	if err := validateSQLiteBundleFiles(preparedManifest, parts); err != nil {
+	validatedParts, err := openValidatedSQLiteBundleFiles(ctx, preparedManifest, parts)
+	if err != nil {
 		return SQLiteBundleUploadResult{}, err
 	}
-	for _, part := range parts {
-		file, err := os.Open(part.Path)
-		if err != nil {
-			return SQLiteBundleUploadResult{}, fmt.Errorf("open sqlite bundle part %d: %w", part.Index, err)
-		}
+	defer closeValidatedSQLiteBundleFiles(validatedParts)
+	for _, part := range validatedParts {
 		_, uploadErr := c.UploadSQLiteBundlePart(ctx, app, archive, SQLiteBundlePartUpload{
-			Index:       part.Index,
-			Body:        file,
-			Size:        part.Size,
-			SHA256:      part.SHA256,
+			Index:       part.part.Index,
+			Body:        part.file,
+			Size:        part.part.Size,
+			SHA256:      part.part.SHA256,
 			Compression: SQLiteGzipCompression,
 			SnapshotID:  preparedManifest.SnapshotID,
 		})
-		_ = file.Close()
 		if uploadErr != nil {
 			return SQLiteBundleUploadResult{}, uploadErr
 		}
@@ -650,6 +654,9 @@ func validateSQLiteBundleManifest(manifest SQLiteBundleManifest, app, archive st
 	}
 	if manifest.ContentType != "" && manifest.ContentType != "application/vnd.sqlite3" {
 		return errors.New("sqlite bundle content type must be application/vnd.sqlite3 when set")
+	}
+	if snapshotScoped && manifest.GeneratedAt != "" {
+		return errors.New("snapshot sqlite bundle generated_at must be omitted")
 	}
 	if manifest.GeneratedAt != "" {
 		if err := validateSQLiteBundleMetadata(manifest.GeneratedAt, "sqlite bundle generated_at"); err != nil {
@@ -808,27 +815,75 @@ func validateSQLiteBundleManifestLimits(manifest SQLiteBundleManifest) error {
 	return nil
 }
 
-func validateSQLiteBundleFiles(manifest SQLiteBundleManifest, parts []SQLiteBundlePartFile) error {
+type validatedSQLiteBundlePartFile struct {
+	part SQLiteBundlePart
+	file *os.File
+}
+
+func openValidatedSQLiteBundleFiles(
+	ctx context.Context,
+	manifest SQLiteBundleManifest,
+	parts []SQLiteBundlePartFile,
+) (_ []validatedSQLiteBundlePartFile, err error) {
 	if err := validateSQLiteBundleManifest(manifest, manifest.App, manifest.Archive); err != nil {
-		return err
+		return nil, err
 	}
 	if len(parts) != len(manifest.Parts) {
-		return fmt.Errorf("sqlite bundle has %d part files, want %d", len(parts), len(manifest.Parts))
+		return nil, fmt.Errorf("sqlite bundle has %d part files, want %d", len(parts), len(manifest.Parts))
 	}
+	validated := make([]validatedSQLiteBundlePartFile, 0, len(parts))
+	defer func() {
+		if err != nil {
+			closeValidatedSQLiteBundleFiles(validated)
+		}
+	}()
 	for index, part := range parts {
 		expected := manifest.Parts[index]
 		if part.SQLiteBundlePart != expected {
-			return fmt.Errorf("sqlite bundle part file %d does not match the manifest", index)
+			return nil, fmt.Errorf("sqlite bundle part file %d does not match the manifest", index)
 		}
-		info, err := os.Stat(part.Path)
+		file, err := os.Open(part.Path)
 		if err != nil {
-			return fmt.Errorf("stat sqlite bundle part %d: %w", index, err)
+			return nil, fmt.Errorf("open sqlite bundle part %d: %w", index, err)
 		}
-		if !info.Mode().IsRegular() || info.Size() != part.Size {
-			return fmt.Errorf("sqlite bundle part file %d must be a %d-byte regular file", index, part.Size)
+		validated = append(validated, validatedSQLiteBundlePartFile{
+			part: expected,
+			file: file,
+		})
+		infoBefore, err := file.Stat()
+		if err != nil {
+			return nil, fmt.Errorf("stat sqlite bundle part %d: %w", index, err)
+		}
+		if !infoBefore.Mode().IsRegular() || infoBefore.Size() != part.Size {
+			return nil, fmt.Errorf("sqlite bundle part file %d must be a %d-byte regular file", index, part.Size)
+		}
+		hash := sha256.New()
+		size, err := copyWithContext(ctx, hash, file)
+		if err != nil {
+			return nil, fmt.Errorf("hash sqlite bundle part %d: %w", index, err)
+		}
+		infoAfter, err := file.Stat()
+		if err != nil {
+			return nil, fmt.Errorf("restat sqlite bundle part %d: %w", index, err)
+		}
+		if !os.SameFile(infoBefore, infoAfter) || infoAfter.Size() != part.Size || size != part.Size {
+			return nil, fmt.Errorf("sqlite bundle part file %d changed during validation", index)
+		}
+		actualSHA256 := fmt.Sprintf("%x", hash.Sum(nil))
+		if !strings.EqualFold(actualSHA256, part.SHA256) {
+			return nil, fmt.Errorf("sqlite bundle part file %d sha256 does not match the manifest", index)
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("rewind sqlite bundle part %d: %w", index, err)
 		}
 	}
-	return nil
+	return validated, nil
+}
+
+func closeValidatedSQLiteBundleFiles(parts []validatedSQLiteBundlePartFile) {
+	for _, part := range parts {
+		_ = part.file.Close()
+	}
 }
 
 func (c *Client) StartGitHubLogin(ctx context.Context, pollSecretHash string) (LoginStartResult, error) {
