@@ -193,6 +193,9 @@ func SQLiteBundlePartKey(app, archive string, index int) string {
 }
 
 func SQLiteSnapshotObjectKey(app, archive, snapshotID string) string {
+	if snapshotID == "" {
+		return SQLiteObjectKey(app, archive)
+	}
 	return fmt.Sprintf(
 		"v1/%s/%s/sqlite/snapshots/%s/archive.db",
 		url.PathEscape(app),
@@ -202,6 +205,9 @@ func SQLiteSnapshotObjectKey(app, archive, snapshotID string) string {
 }
 
 func SQLiteSnapshotCompressedObjectKey(app, archive, snapshotID string) string {
+	if snapshotID == "" {
+		return SQLiteCompressedObjectKey(app, archive)
+	}
 	return fmt.Sprintf(
 		"v1/%s/%s/sqlite/snapshots/%s/archive.db.gz",
 		url.PathEscape(app),
@@ -211,6 +217,9 @@ func SQLiteSnapshotCompressedObjectKey(app, archive, snapshotID string) string {
 }
 
 func SQLiteSnapshotBundleManifestKey(app, archive, snapshotID string) string {
+	if snapshotID == "" {
+		return SQLiteBundleManifestKey(app, archive)
+	}
 	return fmt.Sprintf(
 		"v1/%s/%s/sqlite/snapshots/%s/manifest.json",
 		url.PathEscape(app),
@@ -220,6 +229,9 @@ func SQLiteSnapshotBundleManifestKey(app, archive, snapshotID string) string {
 }
 
 func SQLiteSnapshotBundlePartKey(app, archive, snapshotID string, index int) string {
+	if snapshotID == "" {
+		return SQLiteBundlePartKey(app, archive, index)
+	}
 	return fmt.Sprintf(
 		"v1/%s/%s/sqlite/snapshots/%s/chunks/archive.db.gz.part-%04d",
 		url.PathEscape(app),
