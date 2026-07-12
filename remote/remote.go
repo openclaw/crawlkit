@@ -16,6 +16,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openclaw/crawlkit/control"
 )
@@ -27,7 +28,10 @@ const (
 	ModeHybrid    = "hybrid"
 	ModePublisher = "publisher"
 
-	DefaultTokenEnv = "CRAWL_REMOTE_TOKEN"
+	DefaultTokenEnv                = "CRAWL_REMOTE_TOKEN"
+	maxSQLiteBundleMetadataBytes   = 1024
+	maxSQLiteBundleSafeInteger     = int64(1<<53 - 1)
+	snapshotSQLiteReconstructSteps = "concatenate parts in index order to archive.db.gz, then gzip-decompress to archive.db"
 )
 
 type Config struct {
@@ -445,8 +449,33 @@ func (c *Client) Status(ctx context.Context, app, archive string) (Status, error
 }
 
 func (c *Client) PublishStatus(ctx context.Context, app, archive string) (PublisherStatus, error) {
+	return c.publishStatus(ctx, app, archive, "")
+}
+
+func (c *Client) PublishStatusForSnapshot(ctx context.Context, app, archive, snapshotID string) (PublisherStatus, error) {
+	snapshotID = strings.TrimSpace(snapshotID)
+	if snapshotID == "" {
+		return PublisherStatus{}, errors.New("publish status snapshot id is required")
+	}
+	return c.publishStatus(ctx, app, archive, snapshotID)
+}
+
+func (c *Client) publishStatus(ctx context.Context, app, archive, snapshotID string) (PublisherStatus, error) {
 	var out PublisherStatus
-	err := c.do(ctx, http.MethodGet, archivePath(app, archive, "publish-status"), nil, &out, true)
+	endpoint, err := url.Parse(c.url(archivePath(app, archive, "publish-status")))
+	if err != nil {
+		return out, fmt.Errorf("build publish status URL: %w", err)
+	}
+	if snapshotID != "" {
+		query := endpoint.Query()
+		query.Set("snapshot_id", snapshotID)
+		endpoint.RawQuery = query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return out, err
+	}
+	err = c.doRequest(ctx, req, false, &out, true)
 	return out, err
 }
 
@@ -622,8 +651,23 @@ func validateSQLiteBundleManifest(manifest SQLiteBundleManifest, app, archive st
 	if manifest.ContentType != "" && manifest.ContentType != "application/vnd.sqlite3" {
 		return errors.New("sqlite bundle content type must be application/vnd.sqlite3 when set")
 	}
+	if manifest.GeneratedAt != "" {
+		if err := validateSQLiteBundleMetadata(manifest.GeneratedAt, "sqlite bundle generated_at"); err != nil {
+			return err
+		}
+	}
 	if manifest.Compression.Algorithm != SQLiteGzipCompression {
 		return fmt.Errorf("sqlite bundle compression must be %q", SQLiteGzipCompression)
+	}
+	if snapshotScoped {
+		if manifest.Reconstruct != "" && manifest.Reconstruct != snapshotSQLiteReconstructSteps {
+			return fmt.Errorf("sqlite bundle reconstruct must be %q", snapshotSQLiteReconstructSteps)
+		}
+		for name := range manifest.Privacy {
+			if err := validateSQLiteBundleMapKey(name, "sqlite bundle privacy key"); err != nil {
+				return err
+			}
+		}
 	}
 	if err := validateSQLiteBundleManifestLimits(manifest); err != nil {
 		return err
@@ -663,12 +707,40 @@ func validateSQLiteBundleManifest(manifest SQLiteBundleManifest, app, archive st
 		}
 	}
 	for name, count := range manifest.Counts {
-		if strings.TrimSpace(name) == "" {
+		if name == "" {
 			return errors.New("sqlite bundle count names must not be empty")
 		}
 		if count < 0 {
 			return fmt.Errorf("sqlite bundle count %q must not be negative", name)
 		}
+		if snapshotScoped {
+			if err := validateSQLiteBundleMapKey(name, "sqlite bundle count name"); err != nil {
+				return err
+			}
+			if count > maxSQLiteBundleSafeInteger {
+				return fmt.Errorf(
+					"sqlite bundle count %q must be a non-negative safe integer",
+					name,
+				)
+			}
+		}
+	}
+	return nil
+}
+
+func validateSQLiteBundleMapKey(value, label string) error {
+	if value == "" {
+		return fmt.Errorf("%s must not be empty", label)
+	}
+	return validateSQLiteBundleMetadata(value, label)
+}
+
+func validateSQLiteBundleMetadata(value, label string) error {
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("%s must be valid UTF-8", label)
+	}
+	if len(value) > maxSQLiteBundleMetadataBytes {
+		return fmt.Errorf("%s must not exceed %d UTF-8 bytes", label, maxSQLiteBundleMetadataBytes)
 	}
 	return nil
 }

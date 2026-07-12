@@ -124,6 +124,101 @@ func TestClientRejectsBearerTokenOverRemoteHTTP(t *testing.T) {
 	}
 }
 
+func TestClientPublishStatusForSnapshotUsesEncodedQuery(t *testing.T) {
+	const snapshotID = "immutable id/+?&"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.URL.EscapedPath(), "/v1/apps/gitcrawl/archives/gitcrawl%2Fopenclaw/publish-status"; got != want {
+			t.Fatalf("path = %q, want %q", got, want)
+		}
+		if got, want := r.URL.RawQuery, "snapshot_id=immutable+id%2F%2B%3F%26"; got != want {
+			t.Fatalf("query = %q, want %q", got, want)
+		}
+		if got := r.URL.Query().Get("snapshot_id"); got != snapshotID {
+			t.Fatalf("snapshot id = %q, want %q", got, snapshotID)
+		}
+		_ = json.NewEncoder(w).Encode(PublisherStatus{
+			App:      "gitcrawl",
+			Archive:  "gitcrawl/openclaw",
+			Snapshot: &ArchiveSnapshot{ID: snapshotID},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	status, err := client.PublishStatusForSnapshot(
+		context.Background(),
+		"gitcrawl",
+		"gitcrawl/openclaw",
+		" "+snapshotID+" ",
+	)
+	if err != nil {
+		t.Fatalf("publish status for snapshot: %v", err)
+	}
+	if status.Snapshot == nil || status.Snapshot.ID != snapshotID {
+		t.Fatalf("publish status = %#v", status)
+	}
+}
+
+func TestClientPublishStatusForSnapshotRejectsBlankIDBeforeRequest(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests++
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	_, err = client.PublishStatusForSnapshot(
+		context.Background(),
+		"gitcrawl",
+		"gitcrawl/openclaw",
+		" \t\n",
+	)
+	if err == nil || !strings.Contains(err.Error(), "snapshot id is required") {
+		t.Fatalf("publish status error = %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("requests = %d", requests)
+	}
+}
+
+func TestClientPublishStatusForSnapshotReturnsRemoteError(t *testing.T) {
+	const snapshotID = "missing/snapshot"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("snapshot_id"); got != snapshotID {
+			t.Fatalf("snapshot id = %q, want %q", got, snapshotID)
+		}
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"code":    "snapshot_mismatch",
+			"message": "requested snapshot is not complete",
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	_, err = client.PublishStatusForSnapshot(
+		context.Background(),
+		"gitcrawl",
+		"gitcrawl/openclaw",
+		snapshotID,
+	)
+	var remoteErr *Error
+	if !errors.As(err, &remoteErr) ||
+		remoteErr.Status != http.StatusConflict ||
+		remoteErr.Code != "snapshot_mismatch" {
+		t.Fatalf("publish status error = %#v", err)
+	}
+}
+
 func TestClientArchiveOperations(t *testing.T) {
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1344,9 +1439,10 @@ func TestClientPreflightsCompleteSQLiteBundleManifestBeforePartUploads(t *testin
 	}
 
 	for _, tc := range []struct {
-		name    string
-		mutate  func(*SQLiteBundleManifest)
-		wantErr string
+		name       string
+		snapshotID string
+		mutate     func(*SQLiteBundleManifest)
+		wantErr    string
 	}{
 		{
 			name: "invalid-privacy-json",
@@ -1369,12 +1465,60 @@ func TestClientPreflightsCompleteSQLiteBundleManifestBeforePartUploads(t *testin
 			},
 			wantErr: "must not exceed 65536 bytes",
 		},
+		{
+			name:       "invalid-snapshot-reconstruct",
+			snapshotID: strings.Repeat("c", 64),
+			mutate: func(manifest *SQLiteBundleManifest) {
+				manifest.Reconstruct = "concatenate the parts somehow"
+			},
+			wantErr: "sqlite bundle reconstruct must be",
+		},
+		{
+			name:       "empty-snapshot-privacy-key",
+			snapshotID: strings.Repeat("c", 64),
+			mutate: func(manifest *SQLiteBundleManifest) {
+				manifest.Privacy[""] = true
+			},
+			wantErr: "sqlite bundle privacy key must not be empty",
+		},
+		{
+			name:       "oversized-snapshot-privacy-key",
+			snapshotID: strings.Repeat("c", 64),
+			mutate: func(manifest *SQLiteBundleManifest) {
+				manifest.Privacy[strings.Repeat("\u00e9", maxSQLiteBundleMetadataBytes/2+1)] = true
+			},
+			wantErr: "sqlite bundle privacy key must not exceed 1024 UTF-8 bytes",
+		},
+		{
+			name:       "invalid-utf8-snapshot-privacy-key",
+			snapshotID: strings.Repeat("c", 64),
+			mutate: func(manifest *SQLiteBundleManifest) {
+				manifest.Privacy[string([]byte{0xff})] = true
+			},
+			wantErr: "sqlite bundle privacy key must be valid UTF-8",
+		},
+		{
+			name:       "oversized-snapshot-count-name",
+			snapshotID: strings.Repeat("c", 64),
+			mutate: func(manifest *SQLiteBundleManifest) {
+				manifest.Counts[strings.Repeat("\u00e9", maxSQLiteBundleMetadataBytes/2+1)] = 1
+			},
+			wantErr: "sqlite bundle count name must not exceed 1024 UTF-8 bytes",
+		},
+		{
+			name:       "unsafe-snapshot-count",
+			snapshotID: strings.Repeat("c", 64),
+			mutate: func(manifest *SQLiteBundleManifest) {
+				manifest.Counts["rows"] = maxSQLiteBundleSafeInteger + 1
+			},
+			wantErr: `sqlite bundle count "rows" must be a non-negative safe integer`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			manifest := testSQLiteBundleManifest(
 				"gitcrawl",
 				"gitcrawl/openclaw__openclaw",
-				"",
+				tc.snapshotID,
 				int64(len("compressed")),
 			)
 			tc.mutate(&manifest)
