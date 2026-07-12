@@ -39,6 +39,7 @@ type SQLiteBundleManifest struct {
 	Format           string                  `json:"format"`
 	App              string                  `json:"app"`
 	Archive          string                  `json:"archive"`
+	SnapshotID       string                  `json:"snapshot_id,omitempty"`
 	GeneratedAt      string                  `json:"generated_at,omitempty"`
 	ContentType      string                  `json:"content_type,omitempty"`
 	Compression      SQLiteBundleCompression `json:"compression,omitempty"`
@@ -145,6 +146,7 @@ func BuildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions) (
 		Format:      SQLiteGzipChunkedBundleFormat,
 		App:         opts.App,
 		Archive:     opts.Archive,
+		SnapshotID:  sourceSHA,
 		GeneratedAt: generatedAt.Format(time.RFC3339Nano),
 		ContentType: contentType,
 		Compression: SQLiteBundleCompression{
