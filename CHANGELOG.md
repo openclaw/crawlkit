@@ -13,8 +13,9 @@
   256 MiB for caller and retry compatibility, including explicitly configured
   legacy mutable bundles. Bundle construction now rejects empty sources, caps
   compressed output at 512 MiB and eight parts, removes partial temp artifacts
-  on failure, and uploads reject invalid or oversized 64 KiB manifests before
-  writing any remote parts.
+  on failure, rejects source identity/content drift, and uploads hash and retain
+  validated part handles while rejecting invalid or oversized 64 KiB manifests
+  before writing any remote parts.
 
 ## v0.14.0 - 2026-07-12
 
