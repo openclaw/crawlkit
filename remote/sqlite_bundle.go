@@ -128,23 +128,19 @@ func buildGzipSQLiteBundleWithLimits(
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle build limits must be positive")
 	}
 	chunkSize := sqliteBundleChunkSize(opts.ChunkSize, snapshotScoped)
-	maxPartSize := DefaultMutableSQLiteBundleChunkSize
-	if snapshotScoped {
-		maxPartSize = DefaultSQLiteBundleChunkSize
-	}
-	if chunkSize > maxPartSize {
+	if chunkSize > DefaultSQLiteBundleChunkSize {
 		return SQLiteBundleBuild{}, fmt.Errorf(
 			"sqlite bundle chunk size must not exceed %d bytes",
-			maxPartSize,
+			DefaultSQLiteBundleChunkSize,
 		)
 	}
 	sourceInfo, err := os.Stat(opts.SourcePath)
 	if err != nil {
 		return SQLiteBundleBuild{}, fmt.Errorf("stat sqlite bundle source: %w", err)
 	}
-	if sourceInfo.Size() > maxSQLiteBundleObjectSize {
+	if sourceInfo.Size() <= 0 || sourceInfo.Size() > maxSQLiteBundleObjectSize {
 		return SQLiteBundleBuild{}, fmt.Errorf(
-			"sqlite bundle object size must not exceed %d bytes",
+			"sqlite bundle object size must be between 1 and %d bytes",
 			maxSQLiteBundleObjectSize,
 		)
 	}

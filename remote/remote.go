@@ -512,7 +512,7 @@ func (c *Client) UploadSQLiteBundlePart(ctx context.Context, app, archive string
 	if part.SnapshotID != "" && !validSQLiteSnapshotID(part.SnapshotID) {
 		return SQLiteUploadResult{}, errors.New("sqlite bundle snapshot id must be empty or a lowercase sha256 digest")
 	}
-	if err := validateSQLiteBundlePartLimit(part.Index, part.Size, part.SnapshotID != ""); err != nil {
+	if err := validateSQLiteBundlePartLimit(part.Index, part.Size); err != nil {
 		return SQLiteUploadResult{}, err
 	}
 	headers := http.Header{}
@@ -692,14 +692,11 @@ func validSQLiteBundleSHA256(value string, canonical bool) bool {
 	return true
 }
 
-func validateSQLiteBundlePartLimit(index int, size int64, snapshotScoped bool) error {
+func validateSQLiteBundlePartLimit(index int, size int64) error {
 	if index < 0 || index >= maxSQLiteBundleParts {
 		return fmt.Errorf("sqlite bundle part index must be between 0 and %d", maxSQLiteBundleParts-1)
 	}
-	maxSize := DefaultMutableSQLiteBundleChunkSize
-	if snapshotScoped {
-		maxSize = DefaultSQLiteBundleChunkSize
-	}
+	maxSize := DefaultSQLiteBundleChunkSize
 	if size <= 0 || size > maxSize {
 		return fmt.Errorf("sqlite bundle part %d size must be between 1 and %d bytes", index, maxSize)
 	}
@@ -721,7 +718,7 @@ func validateSQLiteBundleManifestLimits(manifest SQLiteBundleManifest) error {
 		if part.Index != index {
 			return fmt.Errorf("sqlite bundle manifest part %d has index %d", index, part.Index)
 		}
-		if err := validateSQLiteBundlePartLimit(part.Index, part.Size, manifest.SnapshotID != ""); err != nil {
+		if err := validateSQLiteBundlePartLimit(part.Index, part.Size); err != nil {
 			return err
 		}
 		if total > maxSQLiteBundleCompressedSize-part.Size {
