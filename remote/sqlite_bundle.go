@@ -97,10 +97,6 @@ func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, s
 	if opts.SourcePath == "" {
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source path is required")
 	}
-	sourceInfo, err := os.Stat(opts.SourcePath)
-	if err != nil {
-		return SQLiteBundleBuild{}, fmt.Errorf("stat sqlite bundle source: %w", err)
-	}
 	chunkSize := opts.ChunkSize
 	if chunkSize <= 0 {
 		chunkSize = DefaultSQLiteBundleChunkSize
@@ -123,11 +119,7 @@ func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, s
 	}
 	cleanup := func() { _ = os.RemoveAll(tmpDir) }
 	compressedPath := filepath.Join(tmpDir, "current.db.gz")
-	if err := gzipFile(ctx, opts.SourcePath, compressedPath, level); err != nil {
-		cleanup()
-		return SQLiteBundleBuild{}, err
-	}
-	sourceSHA, err := fileSHA256(ctx, opts.SourcePath)
+	sourceSHA, sourceSize, err := gzipFile(ctx, opts.SourcePath, compressedPath, level)
 	if err != nil {
 		cleanup()
 		return SQLiteBundleBuild{}, err
@@ -149,7 +141,7 @@ func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, s
 	if snapshotScoped {
 		snapshotID = sourceSHA
 		objectKey = SQLiteSnapshotObjectKey(opts.App, opts.Archive, snapshotID)
-		compressedObjectKey = SQLiteSnapshotCompressedObjectKey(opts.App, opts.Archive, snapshotID)
+		compressedObjectKey = SQLiteSnapshotCompressedObjectKey(opts.App, opts.Archive, snapshotID, compressedSHA)
 		reconstruct = "concatenate parts in index order to archive.db.gz, then gzip-decompress to archive.db"
 	}
 	parts, err := splitBundleParts(ctx, compressedPath, tmpDir, opts.App, opts.Archive, snapshotID, chunkSize)
@@ -174,7 +166,7 @@ func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, s
 		Privacy: opts.Privacy,
 		Object: SQLiteBundleObject{
 			Key:    objectKey,
-			Size:   sourceInfo.Size(),
+			Size:   sourceSize,
 			SHA256: sourceSHA,
 		},
 		CompressedObject: SQLiteBundleObject{
@@ -225,18 +217,19 @@ func SQLiteSnapshotObjectKey(app, archive, snapshotID string) string {
 	)
 }
 
-func SQLiteSnapshotCompressedObjectKey(app, archive, snapshotID string) string {
+func SQLiteSnapshotCompressedObjectKey(app, archive, snapshotID, compressedSHA string) string {
 	if snapshotID == "" {
 		return SQLiteCompressedObjectKey(app, archive)
 	}
-	if !validSQLiteSnapshotID(snapshotID) {
+	if !validSQLiteSnapshotID(snapshotID) || !validSQLiteSnapshotID(compressedSHA) {
 		return ""
 	}
 	return fmt.Sprintf(
-		"v1/%s/%s/sqlite/snapshots/%s/archive.db.gz",
+		"v1/%s/%s/sqlite/snapshots/%s/objects/%s/archive.db.gz",
 		url.PathEscape(app),
 		url.PathEscape(archive),
 		url.PathEscape(snapshotID),
+		url.PathEscape(compressedSHA),
 	)
 }
 
@@ -255,18 +248,19 @@ func SQLiteSnapshotBundleManifestKey(app, archive, snapshotID string) string {
 	)
 }
 
-func SQLiteSnapshotBundlePartKey(app, archive, snapshotID string, index int) string {
+func SQLiteSnapshotBundlePartKey(app, archive, snapshotID, partSHA string, index int) string {
 	if snapshotID == "" {
 		return SQLiteBundlePartKey(app, archive, index)
 	}
-	if !validSQLiteSnapshotID(snapshotID) {
+	if !validSQLiteSnapshotID(snapshotID) || !validSQLiteSnapshotID(partSHA) {
 		return ""
 	}
 	return fmt.Sprintf(
-		"v1/%s/%s/sqlite/snapshots/%s/chunks/archive.db.gz.part-%04d",
+		"v1/%s/%s/sqlite/snapshots/%s/chunks/%s/archive.db.gz.part-%04d",
 		url.PathEscape(app),
 		url.PathEscape(archive),
 		url.PathEscape(snapshotID),
+		url.PathEscape(partSHA),
 		index,
 	)
 }
@@ -283,29 +277,31 @@ func validSQLiteSnapshotID(snapshotID string) bool {
 	return true
 }
 
-func gzipFile(ctx context.Context, sourcePath, targetPath string, level int) error {
+func gzipFile(ctx context.Context, sourcePath, targetPath string, level int) (string, int64, error) {
 	source, err := os.Open(sourcePath)
 	if err != nil {
-		return fmt.Errorf("open sqlite bundle source: %w", err)
+		return "", 0, fmt.Errorf("open sqlite bundle source: %w", err)
 	}
 	defer func() { _ = source.Close() }()
 	target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("create compressed sqlite bundle: %w", err)
+		return "", 0, fmt.Errorf("create compressed sqlite bundle: %w", err)
 	}
 	defer func() { _ = target.Close() }()
 	gzw, err := gzip.NewWriterLevel(target, level)
 	if err != nil {
-		return fmt.Errorf("create gzip writer: %w", err)
+		return "", 0, fmt.Errorf("create gzip writer: %w", err)
 	}
-	if err := copyWithContext(ctx, gzw, source); err != nil {
+	hash := sha256.New()
+	sourceSize, err := copyWithContext(ctx, io.MultiWriter(gzw, hash), source)
+	if err != nil {
 		_ = gzw.Close()
-		return fmt.Errorf("compress sqlite bundle: %w", err)
+		return "", 0, fmt.Errorf("compress sqlite bundle: %w", err)
 	}
 	if err := gzw.Close(); err != nil {
-		return fmt.Errorf("finish compressed sqlite bundle: %w", err)
+		return "", 0, fmt.Errorf("finish compressed sqlite bundle: %w", err)
 	}
-	return nil
+	return fmt.Sprintf("%x", hash.Sum(nil)), sourceSize, nil
 }
 
 func splitBundleParts(ctx context.Context, sourcePath, dir, app, archive, snapshotID string, chunkSize int64) ([]SQLiteBundlePartFile, error) {
@@ -337,12 +333,13 @@ func splitBundleParts(ctx context.Context, sourcePath, dir, app, archive, snapsh
 			_ = os.Remove(partPath)
 			break
 		}
+		partSHA := fmt.Sprintf("%x", hash.Sum(nil))
 		parts = append(parts, SQLiteBundlePartFile{
 			SQLiteBundlePart: SQLiteBundlePart{
 				Index:  index,
-				Key:    SQLiteSnapshotBundlePartKey(app, archive, snapshotID, index),
+				Key:    SQLiteSnapshotBundlePartKey(app, archive, snapshotID, partSHA, index),
 				Size:   written,
-				SHA256: fmt.Sprintf("%x", hash.Sum(nil)),
+				SHA256: partSHA,
 			},
 			Path: partPath,
 		})
@@ -363,29 +360,35 @@ func fileSHA256(ctx context.Context, path string) (string, error) {
 	}
 	defer func() { _ = file.Close() }()
 	hash := sha256.New()
-	if err := copyWithContext(ctx, hash, file); err != nil {
+	if _, err := copyWithContext(ctx, hash, file); err != nil {
 		return "", fmt.Errorf("hash file: %w", err)
 	}
 	return fmt.Sprintf("%x", hash.Sum(nil)), nil
 }
 
-func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
+func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) (int64, error) {
 	buf := make([]byte, 1024*1024)
+	var written int64
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return written, err
 		}
 		n, readErr := src.Read(buf)
 		if n > 0 {
-			if _, err := dst.Write(buf[:n]); err != nil {
-				return err
+			count, err := dst.Write(buf[:n])
+			written += int64(count)
+			if err != nil {
+				return written, err
+			}
+			if count != n {
+				return written, io.ErrShortWrite
 			}
 		}
 		if readErr == io.EOF {
-			return nil
+			return written, nil
 		}
 		if readErr != nil {
-			return readErr
+			return written, readErr
 		}
 	}
 }
