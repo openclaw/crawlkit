@@ -500,6 +500,7 @@ func (c *Client) UploadSQLiteBundlePart(ctx context.Context, app, archive string
 	headers.Set("x-crawl-bundle-part-index", fmt.Sprintf("%d", part.Index))
 	setHeader(headers, "x-crawl-content-sha256", part.SHA256)
 	setHeader(headers, "x-crawl-compression", part.Compression)
+	setHeader(headers, "x-crawl-snapshot-id", part.SnapshotID)
 	var out SQLiteUploadResult
 	err := c.doRaw(ctx, http.MethodPut, archivePath(app, archive, "sqlite"), part.Body, part.Size, headers, &out, true)
 	return out, err
@@ -517,6 +518,7 @@ func (c *Client) UploadSQLiteBundleFiles(ctx context.Context, app, archive strin
 			Size:        part.Size,
 			SHA256:      part.SHA256,
 			Compression: SQLiteGzipCompression,
+			SnapshotID:  manifest.SnapshotID,
 		})
 		_ = file.Close()
 		if uploadErr != nil {
