@@ -15,7 +15,7 @@ import (
 const (
 	SQLiteGzipChunkedBundleFormat = "sqlite-gzip-chunked-v1"
 	SQLiteGzipCompression         = "gzip"
-	DefaultSQLiteBundleChunkSize  = int64(256 * 1024 * 1024)
+	DefaultSQLiteBundleChunkSize  = int64(64 * 1024 * 1024)
 )
 
 type SQLiteBundleObject struct {
