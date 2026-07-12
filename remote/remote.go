@@ -186,16 +186,17 @@ type Identity struct {
 }
 
 type ArchiveSnapshot struct {
-	ID                 string `json:"id"`
-	SourceSHA256       string `json:"source_sha256,omitempty"`
-	SchemaName         string `json:"schema_name,omitempty"`
-	SchemaVersion      int    `json:"schema_version,omitempty"`
-	SchemaHash         string `json:"schema_hash,omitempty"`
-	SourceSyncAt       string `json:"source_sync_at,omitempty"`
-	DatasetGeneratedAt string `json:"dataset_generated_at,omitempty"`
-	CoverageComplete   bool   `json:"coverage_complete,omitempty"`
-	PublishedAt        string `json:"published_at,omitempty"`
-	CutoverAt          string `json:"cutover_at,omitempty"`
+	ID                 string   `json:"id"`
+	SourceSHA256       string   `json:"source_sha256,omitempty"`
+	SchemaName         string   `json:"schema_name,omitempty"`
+	SchemaVersion      int      `json:"schema_version,omitempty"`
+	SchemaHash         string   `json:"schema_hash,omitempty"`
+	Capabilities       []string `json:"capabilities,omitempty"`
+	SourceSyncAt       string   `json:"source_sync_at,omitempty"`
+	DatasetGeneratedAt string   `json:"dataset_generated_at,omitempty"`
+	CoverageComplete   bool     `json:"coverage_complete,omitempty"`
+	PublishedAt        string   `json:"published_at,omitempty"`
+	CutoverAt          string   `json:"cutover_at,omitempty"`
 }
 
 type ArchivePublish struct {

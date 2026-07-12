@@ -4,6 +4,7 @@
 
 - Require notarized, single-architecture `crawlctl` release binaries bound to the repository-pinned signed tag and protected remote `main` commit, restore signing-keychain state before credential-free candidate probes, roll back partial artifact promotion, and keep naturally quarantined Gatekeeper execution plus Full Disk Access continuity as separate clean-VM gates because raw binaries and ZIP submission carriers cannot carry stapled tickets and raw-CLI `spctl` assessment is not an app-launch verdict.
 - Add immutable SQLite snapshot bundle manifests with deterministic source and representation digests, digest-scoped compressed objects and chunks, and explicit snapshot publishing helpers while preserving the legacy `current.*` bundle layout.
+- Expose immutable snapshot capabilities separately from the currently served archive capabilities so publishers can safely resume staged profiles before cutover.
 
 ## v0.13.4 - 2026-07-09
 
