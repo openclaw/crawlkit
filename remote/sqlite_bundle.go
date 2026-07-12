@@ -16,6 +16,8 @@ const (
 	SQLiteGzipChunkedBundleFormat = "sqlite-gzip-chunked-v1"
 	SQLiteGzipCompression         = "gzip"
 	DefaultSQLiteBundleChunkSize  = int64(64 * 1024 * 1024)
+
+	releasedSnapshotSQLiteBundleChunkSize = int64(256 * 1024 * 1024)
 )
 
 type SQLiteBundleObject struct {
@@ -101,10 +103,7 @@ func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, s
 	if opts.SourcePath == "" {
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source path is required")
 	}
-	chunkSize := opts.ChunkSize
-	if chunkSize <= 0 {
-		chunkSize = DefaultSQLiteBundleChunkSize
-	}
+	chunkSize := sqliteBundleChunkSize(opts.ChunkSize, snapshotScoped)
 	level := opts.CompressionLevel
 	if level == 0 {
 		level = gzip.DefaultCompression
@@ -192,6 +191,16 @@ func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, s
 		Parts:          parts,
 		Cleanup:        cleanup,
 	}, nil
+}
+
+func sqliteBundleChunkSize(requested int64, snapshotScoped bool) int64 {
+	if requested > 0 {
+		return requested
+	}
+	if snapshotScoped {
+		return releasedSnapshotSQLiteBundleChunkSize
+	}
+	return DefaultSQLiteBundleChunkSize
 }
 
 func SQLiteObjectKey(app, archive string) string {
