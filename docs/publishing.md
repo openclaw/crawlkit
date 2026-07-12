@@ -24,9 +24,9 @@ GOWORK=off go test -count=1 ./...
 6. Tag the next semver release from `main`:
 
 ```bash
-git tag -s v0.13.5
+git tag -s v0.14.0
 git push origin main
-git push origin v0.13.5
+git push origin v0.14.0
 ```
 
 7. From the clean checkout whose `HEAD` exactly matches the signed release tag,
@@ -39,11 +39,11 @@ or renamed tag is not releasable. It then uses the shared secret-safe release
 keychain helper and fails closed if any provenance or signing check differs:
 
 ```bash
-make release-artifacts VERSION=v0.13.5
-release_commit=$(scripts/verify-crawlctl-release-provenance.sh v0.13.5)
-scripts/verify-crawlctl-release.sh v0.13.5 "$release_commit" \
-  dist/crawlctl-v0.13.5-macos-arm64.tar.gz \
-  dist/crawlctl-v0.13.5-macos-x86_64.tar.gz
+make release-artifacts VERSION=v0.14.0
+release_commit=$(scripts/verify-crawlctl-release-provenance.sh v0.14.0)
+scripts/verify-crawlctl-release.sh v0.14.0 "$release_commit" \
+  dist/crawlctl-v0.14.0-macos-arm64.tar.gz \
+  dist/crawlctl-v0.14.0-macos-x86_64.tar.gz
 ```
 
 The fixed code identifier is `org.openclaw.crawlctl`. The required signing
@@ -110,14 +110,14 @@ separately:
 9. Prime and verify module proxy visibility:
 
 ```bash
-GOPROXY=https://proxy.golang.org GONOSUMDB= go list -m github.com/openclaw/crawlkit@v0.13.5
-GOPROXY=https://proxy.golang.org go list -m github.com/openclaw/crawlkit@v0.13.5
+GOPROXY=https://proxy.golang.org GONOSUMDB= go list -m github.com/openclaw/crawlkit@v0.14.0
+GOPROXY=https://proxy.golang.org go list -m github.com/openclaw/crawlkit@v0.14.0
 ```
 
 10. Bump downstream apps to the new tag and commit their `go.mod`/`go.sum` updates:
 
 ```bash
-go get github.com/openclaw/crawlkit@v0.13.5
+go get github.com/openclaw/crawlkit@v0.14.0
 GOWORK=off go mod tidy
 ```
 
