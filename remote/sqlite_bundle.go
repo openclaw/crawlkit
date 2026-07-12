@@ -19,10 +19,11 @@ const (
 	DefaultSQLiteBundleChunkSize        = int64(256 * 1024 * 1024)
 	DefaultMutableSQLiteBundleChunkSize = int64(64 * 1024 * 1024)
 
-	maxSQLiteBundleManifestBytes  = int64(64 * 1024)
-	maxSQLiteBundleCompressedSize = int64(512 * 1024 * 1024)
-	maxSQLiteBundleObjectSize     = int64(4 * 1024 * 1024 * 1024)
-	maxSQLiteBundleParts          = 8
+	maxSQLiteSnapshotBundleManifestBytes = int64(64 * 1024)
+	maxSQLiteMutableBundleManifestBytes  = int64(1024 * 1024)
+	maxSQLiteBundleCompressedSize        = int64(512 * 1024 * 1024)
+	maxSQLiteBundleObjectSize            = int64(4 * 1024 * 1024 * 1024)
+	maxSQLiteBundleParts                 = 8
 )
 
 type SQLiteBundleObject struct {
@@ -153,7 +154,7 @@ func buildGzipSQLiteBundleWithSourceCopy(
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source copier is required")
 	}
 	chunkSize := sqliteBundleChunkSize(opts.ChunkSize, snapshotScoped)
-	if chunkSize > DefaultSQLiteBundleChunkSize {
+	if snapshotScoped && chunkSize > DefaultSQLiteBundleChunkSize {
 		return SQLiteBundleBuild{}, fmt.Errorf(
 			"sqlite bundle chunk size must not exceed %d bytes",
 			DefaultSQLiteBundleChunkSize,
@@ -178,7 +179,7 @@ func buildGzipSQLiteBundleWithSourceCopy(
 	if !os.SameFile(sourceInfo, pathInfo) {
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source changed before compression")
 	}
-	if err := validateSQLiteBundleSourceSize(sourceInfo.Size()); err != nil {
+	if err := validateSQLiteBundleSourceSize(sourceInfo.Size(), snapshotScoped); err != nil {
 		return SQLiteBundleBuild{}, err
 	}
 	level := opts.CompressionLevel
@@ -316,8 +317,11 @@ func buildGzipSQLiteBundleWithSourceCopy(
 	}, nil
 }
 
-func validateSQLiteBundleSourceSize(size int64) error {
-	if size <= 0 || size > maxSQLiteBundleObjectSize {
+func validateSQLiteBundleSourceSize(size int64, snapshotScoped bool) error {
+	if size <= 0 {
+		return fmt.Errorf("sqlite bundle object size must be positive")
+	}
+	if snapshotScoped && size > maxSQLiteBundleObjectSize {
 		return fmt.Errorf(
 			"sqlite bundle object size must be between 1 and %d bytes",
 			maxSQLiteBundleObjectSize,
