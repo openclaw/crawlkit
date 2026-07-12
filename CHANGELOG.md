@@ -13,13 +13,16 @@
   `DefaultSQLiteBundleChunkSize` constant and immutable snapshot default remain
   256 MiB for caller and retry compatibility, including explicitly configured
   legacy mutable bundles. Mutable bundles retain their legacy part-count and
-  aggregate-size compatibility, while immutable snapshots enforce the
-  negotiated 512 MiB and eight-part bounds. Bundle construction now rejects
-  empty sources, removes partial temp artifacts on failure, and rejects source
-  identity/content drift. Uploads use private validated part snapshots and
-  verify immutable snapshot compressed and decompressed digests before any
-  remote write, while invalid or oversized 64 KiB manifests are also rejected
-  before writing any remote parts.
+  aggregate-size, chunk-size, and object-size compatibility, while immutable
+  snapshots enforce the negotiated 256 MiB part, 4 GiB object, 512 MiB
+  compressed, and eight-part bounds. Bundle construction now rejects empty
+  sources, removes partial temp artifacts on failure, and rejects source
+  identity/content drift. Immutable uploads use private validated part
+  snapshots and verify compressed and decompressed digests before any remote
+  write. Mutable uploads retain bounded sequential file handling, verify exact
+  streamed bytes, and avoid duplicate temporary staging. Snapshot manifests are
+  capped at 64 KiB while legacy mutable manifests retain the service-compatible
+  1 MiB ceiling.
 
 ## v0.14.0 - 2026-07-12
 
