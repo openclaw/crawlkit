@@ -677,9 +677,13 @@ func (c *Client) uploadMutableSQLiteBundleFiles(
 			_ = file.Close()
 			return SQLiteBundleUploadResult{}, err
 		}
+		uploadBody := &io.LimitedReader{
+			R: bounded,
+			N: validated.localSize,
+		}
 		hash := sha256.New()
 		var streamed byteCounter
-		body := io.TeeReader(bounded, io.MultiWriter(hash, &streamed))
+		body := io.TeeReader(uploadBody, io.MultiWriter(hash, &streamed))
 		_, uploadErr := c.UploadSQLiteBundlePart(ctx, app, archive, SQLiteBundlePartUpload{
 			Index:       expected.Index,
 			Body:        body,
@@ -688,8 +692,12 @@ func (c *Client) uploadMutableSQLiteBundleFiles(
 			Compression: SQLiteGzipCompression,
 		})
 		var drainErr error
+		var growthProbeSize int64
 		if uploadErr == nil {
 			_, drainErr = copyWithContext(ctx, io.Discard, body)
+			if drainErr == nil {
+				growthProbeSize, drainErr = copyWithContext(ctx, io.Discard, bounded)
+			}
 		}
 		infoAfter, statErr := file.Stat()
 		closeErr := file.Close()
@@ -716,6 +724,7 @@ func (c *Client) uploadMutableSQLiteBundleFiles(
 			infoBefore.Size() != validated.localSize ||
 			infoAfter.Size() != validated.localSize ||
 			int64(streamed) != validated.localSize ||
+			growthProbeSize != 0 ||
 			digestChanged {
 			return SQLiteBundleUploadResult{}, fmt.Errorf(
 				"sqlite bundle part file %d changed during upload",

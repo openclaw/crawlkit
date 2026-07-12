@@ -2593,6 +2593,85 @@ func TestClientBoundsMutablePartGrowthDuringUpload(t *testing.T) {
 	}
 }
 
+func TestClientKeepsUnknownLengthGrowthProbeOutOfMutableBundleUpload(t *testing.T) {
+	content := []byte("compressed")
+	partPath := filepath.Join(t.TempDir(), "part")
+	if err := os.WriteFile(partPath, content, 0o600); err != nil {
+		t.Fatalf("write part: %v", err)
+	}
+	part := SQLiteBundlePartFile{
+		SQLiteBundlePart: SQLiteBundlePart{
+			Index: 0,
+			Size:  -1,
+		},
+		Path: partPath,
+	}
+
+	var requests int
+	var uploaded []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if got := r.Header.Get("x-crawl-sqlite-upload"); got != "bundle-part" {
+			t.Fatalf("unexpected upload kind %q", got)
+		}
+		if r.ContentLength != -1 {
+			t.Fatalf("content length = %d, want unknown", r.ContentLength)
+		}
+		if !slices.Contains(r.TransferEncoding, "chunked") {
+			t.Fatalf("transfer encoding = %#v", r.TransferEncoding)
+		}
+		var err error
+		uploaded, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read part: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
+	}))
+	defer server.Close()
+
+	appended := false
+	client, err := NewClient(Options{
+		Endpoint: server.URL,
+		TokenProvider: tokenProviderFunc(func(context.Context) (string, error) {
+			if !appended {
+				appended = true
+				file, err := os.OpenFile(partPath, os.O_WRONLY|os.O_APPEND, 0)
+				if err != nil {
+					return "", err
+				}
+				_, writeErr := file.Write(bytes.Repeat([]byte("tail"), 1024*1024))
+				closeErr := file.Close()
+				if writeErr != nil {
+					return "", writeErr
+				}
+				if closeErr != nil {
+					return "", closeErr
+				}
+			}
+			return "secret", nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	_, err = client.UploadSQLiteBundleFiles(
+		context.Background(),
+		"gitcrawl",
+		"gitcrawl/openclaw__openclaw",
+		SQLiteBundleManifest{},
+		[]SQLiteBundlePartFile{part},
+	)
+	if err == nil || !strings.Contains(err.Error(), "changed during upload") {
+		t.Fatalf("upload error = %v", err)
+	}
+	if !bytes.Equal(uploaded, content) {
+		t.Fatalf("uploaded part = %q, want original content only", uploaded)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want part only", requests)
+	}
+}
+
 func setTestSQLiteBundlePartContent(manifest *SQLiteBundleManifest, index int, content []byte) string {
 	sum := sha256.Sum256(content)
 	value := fmt.Sprintf("%x", sum)
