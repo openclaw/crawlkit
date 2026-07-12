@@ -245,6 +245,14 @@ type Status struct {
 	Warnings           []string          `json:"warnings,omitempty"`
 }
 
+type PublisherStatus struct {
+	App              string           `json:"app"`
+	Archive          string           `json:"archive"`
+	ActiveSnapshotID string           `json:"active_snapshot_id,omitempty"`
+	CoverageComplete bool             `json:"coverage_complete,omitempty"`
+	Snapshot         *ArchiveSnapshot `json:"snapshot,omitempty"`
+}
+
 type DatasetCoverage struct {
 	Dataset            string `json:"dataset"`
 	RowCount           int64  `json:"row_count,omitempty"`
@@ -436,8 +444,8 @@ func (c *Client) Status(ctx context.Context, app, archive string) (Status, error
 	return out, err
 }
 
-func (c *Client) PublishStatus(ctx context.Context, app, archive string) (Status, error) {
-	var out Status
+func (c *Client) PublishStatus(ctx context.Context, app, archive string) (PublisherStatus, error) {
+	var out PublisherStatus
 	err := c.do(ctx, http.MethodGet, archivePath(app, archive, "publish-status"), nil, &out, true)
 	return out, err
 }
