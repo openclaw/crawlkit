@@ -405,6 +405,13 @@ func TestBuildGzipSQLiteBundleSplitsAndDescribesParts(t *testing.T) {
 	if bundle.Manifest.SnapshotID != bundle.Manifest.Object.SHA256 {
 		t.Fatalf("snapshot id = %q object sha = %q", bundle.Manifest.SnapshotID, bundle.Manifest.Object.SHA256)
 	}
+	if bundle.Manifest.Object.Key != SQLiteSnapshotObjectKey(
+		"gitcrawl",
+		"gitcrawl/openclaw__openclaw",
+		bundle.Manifest.SnapshotID,
+	) {
+		t.Fatalf("object key = %q", bundle.Manifest.Object.Key)
+	}
 	if bundle.Manifest.CompressedObject.Size <= 0 || bundle.Manifest.CompressedObject.SHA256 == "" {
 		t.Fatalf("compressed object = %#v", bundle.Manifest.CompressedObject)
 	}
@@ -418,7 +425,7 @@ func TestBuildGzipSQLiteBundleSplitsAndDescribesParts(t *testing.T) {
 			t.Fatalf("read part: %v", err)
 		}
 		compressed.Write(bytes)
-		if !strings.Contains(part.Key, "current.db.gz.part-") {
+		if !strings.Contains(part.Key, "/sqlite/snapshots/"+bundle.Manifest.SnapshotID+"/chunks/archive.db.gz.part-") {
 			t.Fatalf("part key = %q", part.Key)
 		}
 	}
@@ -453,6 +460,9 @@ func TestClientUploadSQLiteBundleFilesUploadsPartsThenManifest(t *testing.T) {
 			if r.Header.Get("x-crawl-bundle-part-index") != "0" || r.Header.Get("content-type") != "application/gzip" {
 				t.Fatalf("part headers index=%q content-type=%q", r.Header.Get("x-crawl-bundle-part-index"), r.Header.Get("content-type"))
 			}
+			if r.Header.Get("x-crawl-snapshot-id") != strings.Repeat("c", 64) {
+				t.Fatalf("snapshot header = %q", r.Header.Get("x-crawl-snapshot-id"))
+			}
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Fatalf("read part body: %v", err)
@@ -477,7 +487,14 @@ func TestClientUploadSQLiteBundleFilesUploadsPartsThenManifest(t *testing.T) {
 				App:      "gitcrawl",
 				Archive:  "gitcrawl/openclaw__openclaw",
 				Complete: true,
-				Bundle:   &SQLiteBundle{Key: SQLiteBundleManifestKey("gitcrawl", "gitcrawl/openclaw__openclaw"), Manifest: &manifest},
+				Bundle: &SQLiteBundle{
+					Key: SQLiteSnapshotBundleManifestKey(
+						"gitcrawl",
+						"gitcrawl/openclaw__openclaw",
+						manifest.SnapshotID,
+					),
+					Manifest: &manifest,
+				},
 			})
 		default:
 			t.Fatalf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
