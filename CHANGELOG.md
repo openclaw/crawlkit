@@ -4,6 +4,8 @@
 
 - Add a publisher-authenticated archive status route and client helper so
   interrupted snapshot publication can resume without reader credentials.
+- Reduce the default SQLite bundle part size from 256 MiB to 64 MiB and preserve
+  exact request content lengths for bounded remote uploads.
 
 ## v0.14.0 - 2026-07-12
 
