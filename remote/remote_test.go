@@ -480,6 +480,77 @@ func TestDefaultSQLiteBundleChunkSizeMatchesRemoteUploadLimit(t *testing.T) {
 	if got, want := DefaultSQLiteBundleChunkSize, int64(64*1024*1024); got != want {
 		t.Fatalf("default sqlite bundle chunk size = %d, want %d", got, want)
 	}
+	if got, want := sqliteBundleChunkSize(0, false), int64(64*1024*1024); got != want {
+		t.Fatalf("implicit mutable sqlite bundle chunk size = %d, want %d", got, want)
+	}
+	if got, want := sqliteBundleChunkSize(0, true), int64(256*1024*1024); got != want {
+		t.Fatalf("implicit snapshot sqlite bundle chunk size = %d, want released %d", got, want)
+	}
+	if got, want := sqliteBundleChunkSize(32*1024*1024, true), int64(32*1024*1024); got != want {
+		t.Fatalf("explicit snapshot sqlite bundle chunk size = %d, want %d", got, want)
+	}
+}
+
+func TestBuildSnapshotGzipSQLiteBundlePreservesReleasedImplicitRepresentation(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "archive.db")
+	payload := make([]byte, 1024*1024)
+	for i := range payload {
+		payload[i] = byte((i*31 + i/7) % 251)
+	}
+	if err := os.WriteFile(source, payload, 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	build := func(t *testing.T, chunkSize int64) SQLiteBundleBuild {
+		t.Helper()
+		bundle, err := BuildSnapshotGzipSQLiteBundle(context.Background(), SQLiteBundleBuildOptions{
+			App:         "gitcrawl",
+			Archive:     "gitcrawl/openclaw__openclaw",
+			SourcePath:  source,
+			WorkDir:     dir,
+			ChunkSize:   chunkSize,
+			ContentType: "application/vnd.sqlite3",
+		})
+		if err != nil {
+			t.Fatalf("build snapshot bundle: %v", err)
+		}
+		t.Cleanup(bundle.Cleanup)
+		return bundle
+	}
+	implicit := build(t, 0)
+	released := build(t, 256*1024*1024)
+	implicitManifest, err := json.Marshal(implicit.Manifest)
+	if err != nil {
+		t.Fatalf("marshal implicit manifest: %v", err)
+	}
+	releasedManifest, err := json.Marshal(released.Manifest)
+	if err != nil {
+		t.Fatalf("marshal released manifest: %v", err)
+	}
+	if !bytes.Equal(implicitManifest, releasedManifest) {
+		t.Fatalf(
+			"implicit snapshot representation changed:\nimplicit: %s\nreleased: %s",
+			implicitManifest,
+			releasedManifest,
+		)
+	}
+	if len(implicit.Parts) != len(released.Parts) {
+		t.Fatalf("part counts differ: implicit=%d released=%d", len(implicit.Parts), len(released.Parts))
+	}
+	for index := range implicit.Parts {
+		implicitPart, err := os.ReadFile(implicit.Parts[index].Path)
+		if err != nil {
+			t.Fatalf("read implicit part %d: %v", index, err)
+		}
+		releasedPart, err := os.ReadFile(released.Parts[index].Path)
+		if err != nil {
+			t.Fatalf("read released part %d: %v", index, err)
+		}
+		if implicit.Parts[index].SQLiteBundlePart != released.Parts[index].SQLiteBundlePart ||
+			!bytes.Equal(implicitPart, releasedPart) {
+			t.Fatalf("snapshot part %d changed across the default upgrade", index)
+		}
+	}
 }
 
 func TestBuildSnapshotGzipSQLiteBundleUsesSnapshotKeyLayout(t *testing.T) {
