@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -669,6 +670,136 @@ func TestValidateSQLiteBundleSourceSizeBounds(t *testing.T) {
 		if err := validateSQLiteBundleSourceSize(size); err != nil {
 			t.Fatalf("validate size %d: %v", size, err)
 		}
+	}
+}
+
+func TestBuildGzipSQLiteBundleRejectsSourceDriftAndCleansArtifacts(t *testing.T) {
+	payload := bytes.Repeat([]byte("sqlite-source-block-"), 512)
+	for _, tc := range []struct {
+		name          string
+		skipOnWindows bool
+		mutate        func(path string) error
+	}{
+		{
+			name: "truncate",
+			mutate: func(path string) error {
+				return os.Truncate(path, int64(len(payload)/2))
+			},
+		},
+		{
+			name: "append",
+			mutate: func(path string) error {
+				file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+				if err != nil {
+					return err
+				}
+				if _, err := file.Write([]byte("appended")); err != nil {
+					_ = file.Close()
+					return err
+				}
+				return file.Close()
+			},
+		},
+		{
+			name: "same-size-rewrite",
+			mutate: func(path string) error {
+				return os.WriteFile(path, bytes.Repeat([]byte("x"), len(payload)), 0o600)
+			},
+		},
+		{
+			name:          "replacement",
+			skipOnWindows: true,
+			mutate: func(path string) error {
+				replacement := path + ".replacement"
+				if err := os.WriteFile(
+					replacement,
+					bytes.Repeat([]byte("r"), len(payload)),
+					0o600,
+				); err != nil {
+					return err
+				}
+				if err := os.Remove(path); err != nil {
+					return err
+				}
+				return os.Rename(replacement, path)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.skipOnWindows && runtime.GOOS == "windows" {
+				t.Skip("Windows does not atomically replace an open file path")
+			}
+			sourceDir := t.TempDir()
+			sourcePath := filepath.Join(sourceDir, "archive.db")
+			if err := os.WriteFile(sourcePath, payload, 0o600); err != nil {
+				t.Fatalf("write source: %v", err)
+			}
+			workDir := t.TempDir()
+			mutated := false
+			copySource := func(
+				ctx context.Context,
+				dst io.Writer,
+				src io.Reader,
+			) (int64, error) {
+				first := make([]byte, 64)
+				n, readErr := src.Read(first)
+				var written int64
+				if n > 0 {
+					count, err := dst.Write(first[:n])
+					written += int64(count)
+					if err != nil {
+						return written, err
+					}
+					if count != n {
+						return written, io.ErrShortWrite
+					}
+				}
+				if !mutated {
+					mutated = true
+					if err := tc.mutate(sourcePath); err != nil {
+						return written, fmt.Errorf("mutate source: %w", err)
+					}
+				}
+				if readErr == io.EOF {
+					return written, nil
+				}
+				if readErr != nil {
+					return written, readErr
+				}
+				rest, err := copyWithContext(ctx, dst, src)
+				return written + rest, err
+			}
+			_, err := buildGzipSQLiteBundleWithSourceCopy(
+				context.Background(),
+				SQLiteBundleBuildOptions{
+					App:              "gitcrawl",
+					Archive:          "gitcrawl/openclaw__openclaw",
+					SourcePath:       sourcePath,
+					WorkDir:          workDir,
+					ChunkSize:        64 * 1024,
+					CompressionLevel: gzip.NoCompression,
+				},
+				true,
+				sqliteBundleBuildLimits{
+					maxCompressedSize: maxSQLiteBundleCompressedSize,
+					maxParts:          maxSQLiteBundleParts,
+				},
+				copySource,
+			)
+			if err == nil || !strings.Contains(err.Error(), "source changed during bundle construction") {
+				t.Fatalf("build error = %v", err)
+			}
+			entries, readErr := os.ReadDir(workDir)
+			if readErr != nil {
+				t.Fatalf("read work dir: %v", readErr)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("partial bundle artifacts remain: %#v", entries)
+			}
+			if err := os.Rename(sourcePath, sourcePath+".closed"); err != nil {
+				t.Fatalf("source remained open after failed build: %v", err)
+			}
+		})
 	}
 }
 
