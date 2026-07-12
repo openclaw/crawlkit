@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add a publisher-authenticated archive status route and client helper so
+  interrupted snapshot publication can resume without reader credentials.
+
 ## v0.14.0 - 2026-07-12
 
 - Require notarized, single-architecture `crawlctl` release binaries bound to the repository-pinned signed tag and protected remote `main` commit, restore signing-keychain state before credential-free candidate probes, roll back partial artifact promotion, and keep naturally quarantined Gatekeeper execution plus Full Disk Access continuity as separate clean-VM gates because raw binaries and ZIP submission carriers cannot carry stapled tickets and raw-CLI `spctl` assessment is not an app-launch verdict.

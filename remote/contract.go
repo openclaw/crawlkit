@@ -72,6 +72,7 @@ func BaseContract() Contract {
 			{Method: http.MethodGet, Path: "/v1/whoami", Auth: AuthReader},
 			{Method: http.MethodGet, Path: "/v1/archives", Auth: AuthReader},
 			{Method: http.MethodGet, Path: "/v1/apps/:app/archives/:archive/status", Auth: AuthReader},
+			{Method: http.MethodGet, Path: "/v1/apps/:app/archives/:archive/publish-status", Auth: AuthPublisher},
 			{Method: http.MethodPost, Path: "/v1/apps/:app/archives/:archive/query", Auth: AuthReader},
 			{Method: http.MethodPost, Path: "/v1/apps/:app/archives/:archive/batch-read", Auth: AuthReader},
 			{Method: http.MethodPost, Path: "/v1/apps/:app/archives/:archive/ingest", Auth: AuthPublisher},

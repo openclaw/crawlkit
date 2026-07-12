@@ -37,6 +37,8 @@ Worker APIs and receive rows/pages, not `.db`, WAL, SHM, or Git snapshot files.
   browser-login plus bearer-session pattern.
 - Let publishers update remote archives without forcing readers to have
   GitHub, Discord, Cloudflare, or bot credentials.
+- Let publisher-only credentials inspect the minimal publication state needed
+  to resume an interrupted snapshot without granting reader access.
 - Preserve `discrawl` privacy boundaries: local wiretap DMs and `@me` data stay
   out of shared remote archives by default.
 - Leave room for later Worker-native sync, R2-backed content-addressed shards,

@@ -436,6 +436,12 @@ func (c *Client) Status(ctx context.Context, app, archive string) (Status, error
 	return out, err
 }
 
+func (c *Client) PublishStatus(ctx context.Context, app, archive string) (Status, error) {
+	var out Status
+	err := c.do(ctx, http.MethodGet, archivePath(app, archive, "publish-status"), nil, &out, true)
+	return out, err
+}
+
 func (c *Client) Query(ctx context.Context, app, archive string, req QueryRequest) (QueryResult, error) {
 	req.App = strings.TrimSpace(app)
 	req.Archive = strings.TrimSpace(archive)
