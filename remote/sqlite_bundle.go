@@ -89,6 +89,10 @@ func BuildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions) (
 	return buildGzipSQLiteBundle(ctx, opts, false)
 }
 
+// BuildSnapshotGzipSQLiteBundle builds an immutable, content-addressed bundle.
+// Its manifest omits GeneratedAt so identical source bytes and options produce
+// identical JSON. Callers must treat a different representation for the same
+// source snapshot as a conflict at the immutable source manifest key.
 func BuildSnapshotGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions) (SQLiteBundleBuild, error) {
 	return buildGzipSQLiteBundle(ctx, opts, true)
 }
@@ -105,9 +109,13 @@ func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, s
 	if level == 0 {
 		level = gzip.DefaultCompression
 	}
-	generatedAt := opts.GeneratedAt
-	if generatedAt.IsZero() {
-		generatedAt = time.Now().UTC()
+	generatedAt := ""
+	if !snapshotScoped {
+		value := opts.GeneratedAt
+		if value.IsZero() {
+			value = time.Now().UTC()
+		}
+		generatedAt = value.Format(time.RFC3339Nano)
 	}
 	contentType := opts.ContentType
 	if contentType == "" {
@@ -158,7 +166,7 @@ func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, s
 		App:         opts.App,
 		Archive:     opts.Archive,
 		SnapshotID:  snapshotID,
-		GeneratedAt: generatedAt.Format(time.RFC3339Nano),
+		GeneratedAt: generatedAt,
 		ContentType: contentType,
 		Compression: SQLiteBundleCompression{
 			Algorithm: SQLiteGzipCompression,
