@@ -429,6 +429,7 @@ GET  /v1/whoami
 
 GET  /v1/archives
 GET  /v1/apps/:app/archives/:archive/status
+GET  /v1/apps/:app/archives/:archive/publish-status
 POST /v1/apps/:app/archives/:archive/query
 POST /v1/apps/:app/archives/:archive/batch-read
 POST /v1/apps/:app/archives/:archive/ingest
