@@ -185,30 +185,48 @@ type Identity struct {
 	Roles []string `json:"roles,omitempty"`
 }
 
+type ArchiveSnapshot struct {
+	ID           string `json:"id"`
+	SourceSHA256 string `json:"source_sha256,omitempty"`
+	SchemaHash   string `json:"schema_hash,omitempty"`
+	SourceSyncAt string `json:"source_sync_at,omitempty"`
+	PublishedAt  string `json:"published_at,omitempty"`
+}
+
+type ArchivePublish struct {
+	Status     string `json:"status"`
+	SnapshotID string `json:"snapshot_id,omitempty"`
+	StartedAt  string `json:"started_at,omitempty"`
+}
+
 type Archive struct {
-	ID            string   `json:"id"`
-	App           string   `json:"app"`
-	Slug          string   `json:"slug"`
-	SchemaName    string   `json:"schema_name,omitempty"`
-	SchemaVersion int      `json:"schema_version,omitempty"`
-	SchemaHash    string   `json:"schema_hash,omitempty"`
-	Capabilities  []string `json:"capabilities,omitempty"`
-	LastIngestAt  string   `json:"last_ingest_at,omitempty"`
-	LastSyncAt    string   `json:"last_sync_at,omitempty"`
+	ID            string           `json:"id"`
+	App           string           `json:"app"`
+	Slug          string           `json:"slug"`
+	SchemaName    string           `json:"schema_name,omitempty"`
+	SchemaVersion int              `json:"schema_version,omitempty"`
+	SchemaHash    string           `json:"schema_hash,omitempty"`
+	Capabilities  []string         `json:"capabilities,omitempty"`
+	LastIngestAt  string           `json:"last_ingest_at,omitempty"`
+	LastSyncAt    string           `json:"last_sync_at,omitempty"`
+	Snapshot      *ArchiveSnapshot `json:"snapshot,omitempty"`
+	Publish       *ArchivePublish  `json:"publish,omitempty"`
 }
 
 type Status struct {
-	App          string          `json:"app"`
-	Archive      string          `json:"archive"`
-	Mode         string          `json:"mode,omitempty"`
-	GeneratedAt  string          `json:"generated_at,omitempty"`
-	LastSyncAt   string          `json:"last_sync_at,omitempty"`
-	LastIngestAt string          `json:"last_ingest_at,omitempty"`
-	Counts       []control.Count `json:"counts,omitempty"`
-	Capabilities []string        `json:"capabilities,omitempty"`
-	SQLiteObject *SQLiteObject   `json:"sqlite_object,omitempty"`
-	SQLiteBundle *SQLiteBundle   `json:"sqlite_bundle,omitempty"`
-	Warnings     []string        `json:"warnings,omitempty"`
+	App          string           `json:"app"`
+	Archive      string           `json:"archive"`
+	Mode         string           `json:"mode,omitempty"`
+	GeneratedAt  string           `json:"generated_at,omitempty"`
+	LastSyncAt   string           `json:"last_sync_at,omitempty"`
+	LastIngestAt string           `json:"last_ingest_at,omitempty"`
+	Counts       []control.Count  `json:"counts,omitempty"`
+	Capabilities []string         `json:"capabilities,omitempty"`
+	SQLiteObject *SQLiteObject    `json:"sqlite_object,omitempty"`
+	SQLiteBundle *SQLiteBundle    `json:"sqlite_bundle,omitempty"`
+	Snapshot     *ArchiveSnapshot `json:"snapshot,omitempty"`
+	Publish      *ArchivePublish  `json:"publish,omitempty"`
+	Warnings     []string         `json:"warnings,omitempty"`
 }
 
 type QueryRequest struct {
@@ -234,6 +252,7 @@ type QueryResult struct {
 	Cursor     string           `json:"cursor,omitempty"`
 	Stats      QueryStats       `json:"stats,omitempty"`
 	SchemaHash string           `json:"schema_hash,omitempty"`
+	Snapshot   *ArchiveSnapshot `json:"snapshot,omitempty"`
 }
 
 type IngestManifest struct {
@@ -245,6 +264,8 @@ type IngestManifest struct {
 	Mode          string `json:"mode,omitempty"`
 	Source        string `json:"source,omitempty"`
 	SourceSyncAt  string `json:"source_sync_at,omitempty"`
+	SnapshotID    string `json:"snapshot_id,omitempty"`
+	SourceSHA256  string `json:"source_sha256,omitempty"`
 }
 
 type IngestRequest struct {
@@ -259,6 +280,7 @@ type IngestRequest struct {
 type IngestResult struct {
 	RunID           string `json:"run_id,omitempty"`
 	Table           string `json:"table,omitempty"`
+	SnapshotID      string `json:"snapshot_id,omitempty"`
 	RowsAccepted    int64  `json:"rows_accepted,omitempty"`
 	Cursor          string `json:"cursor,omitempty"`
 	Complete        bool   `json:"complete,omitempty"`
