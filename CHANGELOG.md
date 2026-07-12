@@ -4,6 +4,9 @@
 
 - Add a publisher-authenticated archive status route and client helper so
   interrupted snapshot publication can resume without reader credentials.
+- Add a snapshot-scoped publisher status client helper so resumable publishers
+  verify the exact immutable candidate instead of trusting an unrelated
+  completed candidate from the unscoped status route.
 - Add a 64 MiB mutable SQLite bundle default and preserve exact request content
   lengths for bounded remote uploads. The shipped
   `DefaultSQLiteBundleChunkSize` constant and immutable snapshot default remain
