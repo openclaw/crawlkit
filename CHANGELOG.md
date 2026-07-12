@@ -22,10 +22,12 @@
   snapshots and verify compressed and decompressed digests before any remote
   write. Every file-backed read is capped at its declared size plus one byte so
   concurrent same-inode growth is detected without consuming an unbounded tail.
-  Mutable uploads retain bounded sequential file handling, `Size: -1`
-  unknown-length transport, minimal legacy manifests, index-keyed part
-  matching, and no duplicate temporary staging; tiny chunk sizes also avoid
-  caller-sized part-slice preallocation. Manifests use crawl-remote's
+  Mutable uploads retain bounded sequential file handling: `Size: -1` uses the
+  statted file size for local verification while preserving unknown-length
+  transport, and part digests remain optional but are verified when supplied.
+  Minimal legacy manifests, index-keyed part matching, and no duplicate
+  temporary staging are also preserved; tiny chunk sizes avoid caller-sized
+  part-slice preallocation. Manifests use crawl-remote's
   deterministic two-space persisted JSON representation and are size-preflighted
   before full encoding: snapshots are capped at 64 KiB while legacy mutable
   manifests retain the service-compatible 1 MiB ceiling.

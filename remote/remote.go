@@ -650,10 +650,11 @@ func (c *Client) uploadMutableSQLiteBundleFiles(
 	manifest SQLiteBundleManifest,
 	manifestBody []byte,
 	parts []SQLiteBundlePartFile,
-	expectedParts map[int]SQLiteBundlePart,
+	expectedParts map[int]validatedMutableSQLiteBundlePartFile,
 ) (SQLiteBundleUploadResult, error) {
 	for _, part := range parts {
-		expected := expectedParts[part.Index]
+		validated := expectedParts[part.Index]
+		expected := validated.part
 		file, err := os.Open(part.Path)
 		if err != nil {
 			return SQLiteBundleUploadResult{}, fmt.Errorf("open sqlite bundle part %d: %w", part.Index, err)
@@ -663,7 +664,15 @@ func (c *Client) uploadMutableSQLiteBundleFiles(
 			_ = file.Close()
 			return SQLiteBundleUploadResult{}, fmt.Errorf("stat sqlite bundle part %d: %w", part.Index, err)
 		}
-		bounded, err := sqliteBundleDeclaredSizeReader(file, expected.Size)
+		if !infoBefore.Mode().IsRegular() || infoBefore.Size() != validated.localSize {
+			_ = file.Close()
+			return SQLiteBundleUploadResult{}, fmt.Errorf(
+				"sqlite bundle part file %d must be a %d-byte regular file",
+				part.Index,
+				validated.localSize,
+			)
+		}
+		bounded, err := sqliteBundleDeclaredSizeReader(file, validated.localSize)
 		if err != nil {
 			_ = file.Close()
 			return SQLiteBundleUploadResult{}, err
@@ -700,11 +709,14 @@ func (c *Client) uploadMutableSQLiteBundleFiles(
 		if closeErr != nil {
 			return SQLiteBundleUploadResult{}, fmt.Errorf("close sqlite bundle part %d: %w", part.Index, closeErr)
 		}
+		expectedSHA256 := strings.TrimSpace(expected.SHA256)
+		digestChanged := expectedSHA256 != "" &&
+			!strings.EqualFold(fmt.Sprintf("%x", hash.Sum(nil)), expectedSHA256)
 		if !os.SameFile(infoBefore, infoAfter) ||
-			infoBefore.Size() != expected.Size ||
-			infoAfter.Size() != expected.Size ||
-			int64(streamed) != expected.Size ||
-			!strings.EqualFold(fmt.Sprintf("%x", hash.Sum(nil)), expected.SHA256) {
+			infoBefore.Size() != validated.localSize ||
+			infoAfter.Size() != validated.localSize ||
+			int64(streamed) != validated.localSize ||
+			digestChanged {
 			return SQLiteBundleUploadResult{}, fmt.Errorf(
 				"sqlite bundle part file %d changed during upload",
 				part.Index,
@@ -712,6 +724,11 @@ func (c *Client) uploadMutableSQLiteBundleFiles(
 		}
 	}
 	return c.uploadSQLiteBundleManifest(ctx, app, archive, manifest.SnapshotID, manifestBody)
+}
+
+type validatedMutableSQLiteBundlePartFile struct {
+	part      SQLiteBundlePart
+	localSize int64
 }
 
 type byteCounter int64
@@ -1486,7 +1503,7 @@ func validateMutableSQLiteBundleFiles(
 	ctx context.Context,
 	manifest SQLiteBundleManifest,
 	parts []SQLiteBundlePartFile,
-) (map[int]SQLiteBundlePart, error) {
+) (map[int]validatedMutableSQLiteBundlePartFile, error) {
 	if len(manifest.Parts) > 0 && len(parts) != len(manifest.Parts) {
 		return nil, fmt.Errorf(
 			"sqlite bundle has %d part files, want %d",
@@ -1501,7 +1518,7 @@ func validateMutableSQLiteBundleFiles(
 		}
 		manifestParts[part.Index] = part
 	}
-	expectedParts := make(map[int]SQLiteBundlePart, len(parts))
+	expectedParts := make(map[int]validatedMutableSQLiteBundlePartFile, len(parts))
 	for _, part := range parts {
 		if _, duplicate := expectedParts[part.Index]; duplicate {
 			return nil, fmt.Errorf("sqlite bundle part files repeat index %d", part.Index)
@@ -1517,12 +1534,64 @@ func validateMutableSQLiteBundleFiles(
 				)
 			}
 		}
-		if err := copyValidatedSQLiteBundlePart(ctx, part.Index, part, io.Discard); err != nil {
+		size, err := validateMutableSQLiteBundlePartFile(ctx, part.Index, part)
+		if err != nil {
 			return nil, err
 		}
-		expectedParts[part.Index] = expected
+		expectedParts[part.Index] = validatedMutableSQLiteBundlePartFile{
+			part:      expected,
+			localSize: size,
+		}
 	}
 	return expectedParts, nil
+}
+
+func validateMutableSQLiteBundlePartFile(
+	ctx context.Context,
+	index int,
+	part SQLiteBundlePartFile,
+) (int64, error) {
+	if err := validateSQLiteBundlePartLimit(part.Index, part.Size, false); err != nil {
+		return 0, err
+	}
+	source, err := os.Open(part.Path)
+	if err != nil {
+		return 0, fmt.Errorf("open sqlite bundle part %d: %w", index, err)
+	}
+	defer func() { _ = source.Close() }()
+	infoBefore, err := source.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("stat sqlite bundle part %d: %w", index, err)
+	}
+	expectedSize := part.Size
+	if expectedSize == -1 {
+		expectedSize = infoBefore.Size()
+	}
+	if !infoBefore.Mode().IsRegular() || infoBefore.Size() != expectedSize {
+		return 0, fmt.Errorf(
+			"sqlite bundle part file %d must be a %d-byte regular file",
+			index,
+			expectedSize,
+		)
+	}
+	hash := sha256.New()
+	size, err := copySQLiteBundleDeclaredSize(ctx, hash, source, expectedSize)
+	if err != nil {
+		return 0, fmt.Errorf("validate sqlite bundle part %d: %w", index, err)
+	}
+	infoAfter, err := source.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("restat sqlite bundle part %d: %w", index, err)
+	}
+	if !os.SameFile(infoBefore, infoAfter) || infoAfter.Size() != expectedSize || size != expectedSize {
+		return 0, fmt.Errorf("sqlite bundle part file %d changed during validation", index)
+	}
+	expectedSHA256 := strings.TrimSpace(part.SHA256)
+	if expectedSHA256 != "" &&
+		!strings.EqualFold(fmt.Sprintf("%x", hash.Sum(nil)), expectedSHA256) {
+		return 0, fmt.Errorf("sqlite bundle part file %d sha256 does not match the manifest", index)
+	}
+	return expectedSize, nil
 }
 
 func snapshotSQLiteBundlePart(
