@@ -3,7 +3,7 @@
 ## v0.13.5 - Unreleased
 
 - Require notarized, single-architecture `crawlctl` release binaries bound to the repository-pinned signed tag and protected remote `main` commit, restore signing-keychain state before credential-free candidate probes, roll back partial artifact promotion, and keep naturally quarantined Gatekeeper execution plus Full Disk Access continuity as separate clean-VM gates because raw binaries and ZIP submission carriers cannot carry stapled tickets and raw-CLI `spctl` assessment is not an app-launch verdict.
-- Add provider-neutral remote archive snapshot and publish provenance fields so cloud readers can bind query results to one immutable source image.
+- Add provider-neutral remote archive snapshot and publish provenance fields, pinned queries, mutation generations, and explicit snapshot cutover support so cloud readers can bind results to one immutable source image.
 
 ## v0.13.4 - 2026-07-09
 

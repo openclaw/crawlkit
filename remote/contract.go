@@ -22,6 +22,7 @@ const (
 type Contract struct {
 	ProtocolVersion string      `json:"protocol_version"`
 	Service         string      `json:"service,omitempty"`
+	ReleaseSHA      string      `json:"release_sha,omitempty"`
 	Routes          []RouteSpec `json:"routes"`
 	Apps            []AppSpec   `json:"apps"`
 	Auth            []AuthSpec  `json:"auth,omitempty"`
@@ -74,6 +75,7 @@ func BaseContract() Contract {
 			{Method: http.MethodPost, Path: "/v1/apps/:app/archives/:archive/query", Auth: AuthReader},
 			{Method: http.MethodPost, Path: "/v1/apps/:app/archives/:archive/batch-read", Auth: AuthReader},
 			{Method: http.MethodPost, Path: "/v1/apps/:app/archives/:archive/ingest", Auth: AuthPublisher},
+			{Method: http.MethodPost, Path: "/v1/apps/:app/archives/:archive/cutover", Auth: AuthPublisher},
 			{Method: http.MethodPut, Path: "/v1/apps/:app/archives/:archive/sqlite", Auth: AuthPublisher},
 		},
 		Auth: []AuthSpec{
