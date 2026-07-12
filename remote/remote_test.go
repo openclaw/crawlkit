@@ -496,6 +496,43 @@ func TestDefaultSQLiteBundleChunkSizeMatchesRemoteUploadLimit(t *testing.T) {
 	if got, want := sqliteBundleChunkSize(DefaultSQLiteBundleChunkSize, true), int64(256*1024*1024); got != want {
 		t.Fatalf("legacy explicit snapshot sqlite bundle chunk size = %d, want %d", got, want)
 	}
+	if got, want := sqliteBundleChunkSize(DefaultSQLiteBundleChunkSize, false), int64(256*1024*1024); got != want {
+		t.Fatalf("legacy explicit mutable sqlite bundle chunk size = %d, want %d", got, want)
+	}
+}
+
+func TestBuildSQLiteBundlesRejectEmptySources(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "archive.db")
+	if err := os.WriteFile(source, nil, 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	for _, tc := range []struct {
+		name  string
+		build func(context.Context, SQLiteBundleBuildOptions) (SQLiteBundleBuild, error)
+	}{
+		{name: "mutable", build: BuildGzipSQLiteBundle},
+		{name: "snapshot", build: BuildSnapshotGzipSQLiteBundle},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			workDir := t.TempDir()
+			_, err := tc.build(context.Background(), SQLiteBundleBuildOptions{
+				App:        "gitcrawl",
+				Archive:    "gitcrawl/openclaw__openclaw",
+				SourcePath: source,
+				WorkDir:    workDir,
+			})
+			if err == nil || !strings.Contains(err.Error(), "object size must be between 1") {
+				t.Fatalf("build err = %v", err)
+			}
+			entries, readErr := os.ReadDir(workDir)
+			if readErr != nil {
+				t.Fatalf("read work dir: %v", readErr)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("bundle temp files created for empty source: %#v", entries)
+			}
+		})
+	}
 }
 
 func TestBuildGzipSQLiteBundleRejectsBoundedOutputAndCleansPartialArtifacts(t *testing.T) {
@@ -603,7 +640,7 @@ func TestBuildGzipSQLiteBundleRejectsOversizedChunkBeforeCreatingTempFiles(t *te
 		Archive:    "gitcrawl/openclaw__openclaw",
 		SourcePath: source,
 		WorkDir:    workDir,
-		ChunkSize:  DefaultMutableSQLiteBundleChunkSize + 1,
+		ChunkSize:  DefaultSQLiteBundleChunkSize + 1,
 	})
 	if err == nil || !strings.Contains(err.Error(), "chunk size must not exceed") {
 		t.Fatalf("build err = %v", err)
@@ -1226,8 +1263,12 @@ func TestSQLiteBundleUploadLimitsMatchRemoteContract(t *testing.T) {
 		wantErr  string
 	}{
 		{
-			name:     "mutable-boundary",
+			name:     "mutable-default-boundary",
 			manifest: manifest(false, DefaultMutableSQLiteBundleChunkSize),
+		},
+		{
+			name:     "legacy-mutable-boundary",
+			manifest: manifest(false, DefaultSQLiteBundleChunkSize),
 		},
 		{
 			name:     "snapshot-compatibility-boundary",
@@ -1235,7 +1276,7 @@ func TestSQLiteBundleUploadLimitsMatchRemoteContract(t *testing.T) {
 		},
 		{
 			name:     "mutable-part-too-large",
-			manifest: manifest(false, DefaultMutableSQLiteBundleChunkSize+1),
+			manifest: manifest(false, DefaultSQLiteBundleChunkSize+1),
 			wantErr:  "part 0 size",
 		},
 		{
@@ -1357,7 +1398,7 @@ func TestClientRejectsOversizedSQLiteBundleBeforeRequest(t *testing.T) {
 	}
 	if _, err := client.UploadSQLiteBundlePart(context.Background(), "gitcrawl", "archive", SQLiteBundlePartUpload{
 		Body: strings.NewReader("x"),
-		Size: DefaultMutableSQLiteBundleChunkSize + 1,
+		Size: DefaultSQLiteBundleChunkSize + 1,
 	}); err == nil || !strings.Contains(err.Error(), "part 0 size") {
 		t.Fatalf("mutable part upload err = %v", err)
 	}
