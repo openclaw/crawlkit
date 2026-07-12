@@ -219,6 +219,35 @@ func TestClientPublishStatusForSnapshotReturnsRemoteError(t *testing.T) {
 	}
 }
 
+func TestClientPublishStatusForSnapshotRejectsIgnoredScope(t *testing.T) {
+	requestedSnapshotID := strings.Repeat("a", 64)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("snapshot_id"); got != requestedSnapshotID {
+			t.Fatalf("snapshot id = %q, want %q", got, requestedSnapshotID)
+		}
+		_ = json.NewEncoder(w).Encode(PublisherStatus{
+			App:      "gitcrawl",
+			Archive:  "gitcrawl/openclaw",
+			Snapshot: &ArchiveSnapshot{ID: strings.Repeat("b", 64)},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	_, err = client.PublishStatusForSnapshot(
+		context.Background(),
+		"gitcrawl",
+		"gitcrawl/openclaw",
+		requestedSnapshotID,
+	)
+	if err == nil || !strings.Contains(err.Error(), "publish status returned snapshot") {
+		t.Fatalf("publish status error = %v", err)
+	}
+}
+
 func TestClientArchiveOperations(t *testing.T) {
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1264,7 +1293,10 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			partPath := filepath.Join(dir, "part")
-			if err := os.WriteFile(partPath, []byte("compressed"), 0o600); err != nil {
+			partContent := []byte("compressed")
+			partDigest := sha256.Sum256(partContent)
+			expectedPartSHA := fmt.Sprintf("%x", partDigest)
+			if err := os.WriteFile(partPath, partContent, 0o600); err != nil {
 				t.Fatalf("write part: %v", err)
 			}
 			var uploads []string
@@ -1275,7 +1307,7 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 					if r.Header.Get("x-crawl-bundle-part-index") != "0" ||
 						r.Header.Get("content-type") != "application/gzip" ||
 						r.ContentLength != int64(len("compressed")) ||
-						r.Header.Get("x-crawl-content-sha256") != strings.Repeat("d", 64) ||
+						r.Header.Get("x-crawl-content-sha256") != expectedPartSHA ||
 						r.Header.Get("x-crawl-compression") != SQLiteGzipCompression ||
 						r.Header.Get("x-crawl-snapshot-id") != tc.snapshotID {
 						t.Fatalf(
@@ -1338,6 +1370,10 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 				tc.snapshotID,
 				int64(len("compressed")),
 			)
+			partSHA := setTestSQLiteBundlePartContent(&manifest, 0, []byte("compressed"))
+			if partSHA != expectedPartSHA {
+				t.Fatalf("part sha256 = %q, want %q", partSHA, expectedPartSHA)
+			}
 			part := manifest.Parts[0]
 			result, err := client.UploadSQLiteBundleFiles(context.Background(), "gitcrawl", "gitcrawl/openclaw__openclaw", manifest, []SQLiteBundlePartFile{{
 				SQLiteBundlePart: part,
@@ -1352,8 +1388,224 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 			if result.Bundle == nil || result.Bundle.Key != tc.manifestKey() {
 				t.Fatalf("result = %#v", result)
 			}
+			if err := os.Rename(partPath, partPath+".closed"); err != nil {
+				t.Fatalf("part file remained open after upload: %v", err)
+			}
 		})
 	}
+}
+
+func setTestSQLiteBundlePartContent(manifest *SQLiteBundleManifest, index int, content []byte) string {
+	sum := sha256.Sum256(content)
+	value := fmt.Sprintf("%x", sum)
+	part := &manifest.Parts[index]
+	part.SHA256 = value
+	part.Key = SQLiteSnapshotBundlePartKey(
+		manifest.App,
+		manifest.Archive,
+		manifest.SnapshotID,
+		value,
+		index,
+	)
+	if len(manifest.Parts) == 1 {
+		manifest.CompressedObject.SHA256 = value
+		manifest.CompressedObject.Key = SQLiteSnapshotCompressedObjectKey(
+			manifest.App,
+			manifest.Archive,
+			manifest.SnapshotID,
+			value,
+		)
+	}
+	return value
+}
+
+func TestClientRejectsChangedSQLiteBundlePartContentBeforeRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(t *testing.T, path string, content []byte)
+	}{
+		{
+			name: "same-size-mutation",
+			mutate: func(t *testing.T, path string, content []byte) {
+				t.Helper()
+				if err := os.WriteFile(path, content, 0o600); err != nil {
+					t.Fatalf("mutate part: %v", err)
+				}
+			},
+		},
+		{
+			name: "same-size-replacement",
+			mutate: func(t *testing.T, path string, content []byte) {
+				t.Helper()
+				replacement := path + ".replacement"
+				if err := os.WriteFile(replacement, content, 0o600); err != nil {
+					t.Fatalf("write replacement: %v", err)
+				}
+				if err := os.Remove(path); err != nil {
+					t.Fatalf("remove original part: %v", err)
+				}
+				if err := os.Rename(replacement, path); err != nil {
+					t.Fatalf("replace part: %v", err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			original := []byte("compressed")
+			changed := []byte("corrupted!")
+			if len(changed) != len(original) {
+				t.Fatal("same-size fixture mismatch")
+			}
+			partPath := filepath.Join(t.TempDir(), "part")
+			if err := os.WriteFile(partPath, original, 0o600); err != nil {
+				t.Fatalf("write part: %v", err)
+			}
+			manifest := testSQLiteBundleManifest(
+				"gitcrawl",
+				"gitcrawl/openclaw__openclaw",
+				"",
+				int64(len(original)),
+			)
+			setTestSQLiteBundlePartContent(&manifest, 0, original)
+			part := manifest.Parts[0]
+			tc.mutate(t, partPath, changed)
+
+			var requests int
+			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				requests++
+			}))
+			defer server.Close()
+			client, err := NewClient(Options{
+				Endpoint:      server.URL,
+				TokenProvider: StaticToken("secret"),
+			})
+			if err != nil {
+				t.Fatalf("client: %v", err)
+			}
+			_, err = client.UploadSQLiteBundleFiles(
+				context.Background(),
+				manifest.App,
+				manifest.Archive,
+				manifest,
+				[]SQLiteBundlePartFile{{
+					SQLiteBundlePart: part,
+					Path:             partPath,
+				}},
+			)
+			if err == nil || !strings.Contains(err.Error(), "sha256 does not match") {
+				t.Fatalf("upload error = %v", err)
+			}
+			if requests != 0 {
+				t.Fatalf("requests = %d", requests)
+			}
+			if err := os.Rename(partPath, partPath+".closed"); err != nil {
+				t.Fatalf("part file remained open after failed preflight: %v", err)
+			}
+		})
+	}
+}
+
+func TestOpenValidatedSQLiteBundleFilesRetainsValidatedHandles(t *testing.T) {
+	original := []byte("compressed")
+	replacement := []byte("corrupted!")
+	partPath := filepath.Join(t.TempDir(), "part")
+	if err := os.WriteFile(partPath, original, 0o600); err != nil {
+		t.Fatalf("write part: %v", err)
+	}
+	manifest := testSQLiteBundleManifest(
+		"gitcrawl",
+		"gitcrawl/openclaw__openclaw",
+		"",
+		int64(len(original)),
+	)
+	setTestSQLiteBundlePartContent(&manifest, 0, original)
+	parts, err := openValidatedSQLiteBundleFiles(
+		context.Background(),
+		manifest,
+		[]SQLiteBundlePartFile{{
+			SQLiteBundlePart: manifest.Parts[0],
+			Path:             partPath,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("open validated parts: %v", err)
+	}
+	defer closeValidatedSQLiteBundleFiles(parts)
+
+	replacementPath := partPath + ".replacement"
+	if err := os.WriteFile(replacementPath, replacement, 0o600); err != nil {
+		t.Fatalf("write replacement: %v", err)
+	}
+	if err := os.Remove(partPath); err != nil {
+		t.Fatalf("remove original path: %v", err)
+	}
+	if err := os.Rename(replacementPath, partPath); err != nil {
+		t.Fatalf("replace part path: %v", err)
+	}
+	body, err := io.ReadAll(parts[0].file)
+	if err != nil {
+		t.Fatalf("read retained part: %v", err)
+	}
+	if !bytes.Equal(body, original) {
+		t.Fatalf("retained part = %q, want %q", body, original)
+	}
+}
+
+func TestOpenValidatedSQLiteBundleFilesClosesHandlesOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	firstPath := filepath.Join(dir, "part-0")
+	secondPath := filepath.Join(dir, "part-1")
+	firstContent := []byte("first-part")
+	secondContent := []byte("second-par")
+	for path, content := range map[string][]byte{
+		firstPath:  firstContent,
+		secondPath: secondContent,
+	} {
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatalf("write %s: %v", filepath.Base(path), err)
+		}
+	}
+	manifest := testSQLiteBundleManifest(
+		"gitcrawl",
+		"gitcrawl/openclaw__openclaw",
+		"",
+		int64(len(firstContent)),
+		int64(len(secondContent)),
+	)
+	setTestSQLiteBundlePartContent(&manifest, 0, firstContent)
+	setTestSQLiteBundlePartContent(&manifest, 1, []byte("other-data"))
+	partFiles := []SQLiteBundlePartFile{
+		{SQLiteBundlePart: manifest.Parts[0], Path: firstPath},
+		{SQLiteBundlePart: manifest.Parts[1], Path: secondPath},
+	}
+	before, countable := openFileDescriptorCount()
+	for range 32 {
+		_, err := openValidatedSQLiteBundleFiles(context.Background(), manifest, partFiles)
+		if err == nil || !strings.Contains(err.Error(), "sha256 does not match") {
+			t.Fatalf("validation error = %v", err)
+		}
+	}
+	if countable {
+		after, _ := openFileDescriptorCount()
+		if after != before {
+			t.Fatalf("open descriptors = %d, want %d", after, before)
+		}
+	}
+	for _, path := range []string{firstPath, secondPath} {
+		if err := os.Rename(path, path+".closed"); err != nil {
+			t.Fatalf("%s remained open after failed preflight: %v", filepath.Base(path), err)
+		}
+	}
+}
+
+func openFileDescriptorCount() (int, bool) {
+	for _, dir := range []string{"/proc/self/fd", "/dev/fd"} {
+		entries, err := os.ReadDir(dir)
+		if err == nil {
+			return len(entries), true
+		}
+	}
+	return 0, false
 }
 
 func TestSQLiteBundleUploadLimitsMatchRemoteContract(t *testing.T) {
@@ -1472,6 +1724,14 @@ func TestClientPreflightsCompleteSQLiteBundleManifestBeforePartUploads(t *testin
 				manifest.Reconstruct = "concatenate the parts somehow"
 			},
 			wantErr: "sqlite bundle reconstruct must be",
+		},
+		{
+			name:       "snapshot-generated-at",
+			snapshotID: strings.Repeat("c", 64),
+			mutate: func(manifest *SQLiteBundleManifest) {
+				manifest.GeneratedAt = "2026-07-12T15:00:00Z"
+			},
+			wantErr: "snapshot sqlite bundle generated_at must be omitted",
 		},
 		{
 			name:       "empty-snapshot-privacy-key",
