@@ -494,6 +494,9 @@ func (c *Client) UploadSQLiteBundlePart(ctx context.Context, app, archive string
 	if part.Body == nil {
 		return SQLiteUploadResult{}, errors.New("sqlite bundle part body is required")
 	}
+	if part.SnapshotID != "" && !validSQLiteSnapshotID(part.SnapshotID) {
+		return SQLiteUploadResult{}, errors.New("sqlite bundle snapshot id must be empty or a lowercase sha256 digest")
+	}
 	headers := http.Header{}
 	headers.Set("content-type", "application/gzip")
 	headers.Set("x-crawl-sqlite-upload", "bundle-part")
@@ -507,6 +510,9 @@ func (c *Client) UploadSQLiteBundlePart(ctx context.Context, app, archive string
 }
 
 func (c *Client) UploadSQLiteBundleFiles(ctx context.Context, app, archive string, manifest SQLiteBundleManifest, parts []SQLiteBundlePartFile) (SQLiteBundleUploadResult, error) {
+	if manifest.SnapshotID != "" && !validSQLiteSnapshotID(manifest.SnapshotID) {
+		return SQLiteBundleUploadResult{}, errors.New("sqlite bundle snapshot id must be empty or a lowercase sha256 digest")
+	}
 	for _, part := range parts {
 		file, err := os.Open(part.Path)
 		if err != nil {
@@ -529,6 +535,9 @@ func (c *Client) UploadSQLiteBundleFiles(ctx context.Context, app, archive strin
 }
 
 func (c *Client) UploadSQLiteBundleManifest(ctx context.Context, app, archive string, manifest SQLiteBundleManifest) (SQLiteBundleUploadResult, error) {
+	if manifest.SnapshotID != "" && !validSQLiteSnapshotID(manifest.SnapshotID) {
+		return SQLiteBundleUploadResult{}, errors.New("sqlite bundle snapshot id must be empty or a lowercase sha256 digest")
+	}
 	if strings.TrimSpace(manifest.App) == "" {
 		manifest.App = strings.TrimSpace(app)
 	}
