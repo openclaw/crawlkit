@@ -57,12 +57,20 @@ func TestClientQuerySendsBearerAndEscapedArchive(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		if req.App != "gitcrawl" || req.Archive != "gitcrawl/openclaw__openclaw" || req.Name != "gitcrawl.threads.search" {
+		if req.App != "gitcrawl" || req.Archive != "gitcrawl/openclaw__openclaw" ||
+			req.Name != "gitcrawl.threads.search" || req.SnapshotID != strings.Repeat("a", 64) {
 			t.Fatalf("request = %#v", req)
 		}
 		_ = json.NewEncoder(w).Encode(QueryResult{
 			Columns: []string{"number", "title"},
 			Rows:    [][]any{{float64(1), "remote"}},
+			Stats: QueryStats{
+				SnapshotID:       strings.Repeat("a", 64),
+				CoverageComplete: true,
+				SchemaVersion:    8,
+				ObservationOrder: "observation-order",
+				NextCursor:       "cursor-2",
+			},
 			Snapshot: &ArchiveSnapshot{
 				ID:           strings.Repeat("a", 64),
 				SourceSHA256: strings.Repeat("a", 64),
@@ -76,7 +84,10 @@ func TestClientQuerySendsBearerAndEscapedArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
-	result, err := client.Query(context.Background(), "gitcrawl", "gitcrawl/openclaw__openclaw", QueryRequest{Name: "gitcrawl.threads.search"})
+	result, err := client.Query(context.Background(), "gitcrawl", "gitcrawl/openclaw__openclaw", QueryRequest{
+		Name:       "gitcrawl.threads.search",
+		SnapshotID: strings.Repeat("a", 64),
+	})
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -91,6 +102,9 @@ func TestClientQuerySendsBearerAndEscapedArchive(t *testing.T) {
 	}
 	if result.Snapshot == nil || result.Snapshot.ID != strings.Repeat("a", 64) {
 		t.Fatalf("snapshot = %#v", result.Snapshot)
+	}
+	if result.Stats.SnapshotID != result.Snapshot.ID || result.Stats.NextCursor != "cursor-2" {
+		t.Fatalf("stats = %#v", result.Stats)
 	}
 }
 
@@ -120,9 +134,21 @@ func TestClientArchiveOperations(t *testing.T) {
 			}}})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status"):
 			_ = json.NewEncoder(w).Encode(Status{
-				App:      "gitcrawl",
-				Archive:  "gitcrawl/openclaw",
-				Mode:     ModeCloud,
+				App:                "gitcrawl",
+				Archive:            "gitcrawl/openclaw",
+				Mode:               ModeCloud,
+				SchemaVersion:      8,
+				SnapshotMode:       "snapshot",
+				SnapshotCutoverAt:  "2026-07-12T08:00:00Z",
+				ActiveSnapshotID:   strings.Repeat("b", 64),
+				SourceSyncAt:       "2026-07-12T07:55:00Z",
+				DatasetGeneratedAt: "2026-07-12T07:56:00Z",
+				CoverageComplete:   true,
+				Datasets: []DatasetCoverage{{
+					Dataset:  "threads",
+					RowCount: 10,
+					Complete: true,
+				}},
 				Snapshot: &ArchiveSnapshot{ID: strings.Repeat("b", 64)},
 				Publish:  &ArchivePublish{Status: "complete"},
 			})
@@ -148,16 +174,33 @@ func TestClientArchiveOperations(t *testing.T) {
 			if req.Manifest.SnapshotID != strings.Repeat("b", 64) || req.Manifest.SourceSHA256 != strings.Repeat("b", 64) {
 				t.Fatalf("ingest snapshot manifest = %#v", req.Manifest)
 			}
+			if req.MutationToken != "generation-1" {
+				t.Fatalf("mutation token = %q", req.MutationToken)
+			}
 			if len(req.Rows) == 0 {
 				_ = json.NewEncoder(w).Encode(IngestResult{RunID: "run-1", Table: req.Table, ResetIncomplete: true, ResetDeleted: 10000})
 				return
 			}
 			_ = json.NewEncoder(w).Encode(IngestResult{
-				RunID:        "run-1",
-				Table:        req.Table,
-				SnapshotID:   req.Manifest.SnapshotID,
-				RowsAccepted: int64(len(req.Rows)),
-				Complete:     req.Final,
+				RunID:         "run-1",
+				Table:         req.Table,
+				SnapshotID:    req.Manifest.SnapshotID,
+				MutationToken: req.MutationToken,
+				RowsAccepted:  int64(len(req.Rows)),
+				Complete:      req.Final,
+			})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/cutover"):
+			var body struct {
+				SnapshotID string `json:"snapshot_id"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode cutover: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(CutoverResult{
+				ArchiveID:  "gitcrawl/openclaw",
+				SnapshotID: body.SnapshotID,
+				Status:     "active",
+				CutoverAt:  "2026-07-12T08:00:00Z",
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/github/start":
 			var req LoginStartRequest
@@ -198,7 +241,8 @@ func TestClientArchiveOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if status.Mode != ModeCloud || status.Snapshot == nil || status.Publish == nil {
+	if status.Mode != ModeCloud || status.Snapshot == nil || status.Publish == nil ||
+		status.ActiveSnapshotID == "" || !status.CoverageComplete || len(status.Datasets) != 1 {
 		t.Fatalf("status = %#v", status)
 	}
 	results, err := client.BatchRead(context.Background(), "gitcrawl", "gitcrawl/openclaw", []QueryRequest{{Name: "threads"}})
@@ -213,27 +257,37 @@ func TestClientArchiveOperations(t *testing.T) {
 		SourceSHA256: strings.Repeat("b", 64),
 	}
 	ingest, err := client.Ingest(context.Background(), "gitcrawl", "gitcrawl/openclaw", IngestRequest{
-		Manifest: manifest,
-		Table:    "threads",
-		Rows:     [][]any{{"1"}},
-		Final:    true,
+		Manifest:      manifest,
+		Table:         "threads",
+		Rows:          [][]any{{"1"}},
+		MutationToken: "generation-1",
+		Final:         true,
 	})
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
-	if !ingest.Complete || ingest.RowsAccepted != 1 || ingest.SnapshotID != manifest.SnapshotID {
+	if !ingest.Complete || ingest.RowsAccepted != 1 || ingest.SnapshotID != manifest.SnapshotID ||
+		ingest.MutationToken != "generation-1" {
 		t.Fatalf("ingest result = %#v", ingest)
 	}
 	reset, err := client.Ingest(context.Background(), "gitcrawl", "gitcrawl/openclaw", IngestRequest{
-		Manifest: manifest,
-		Table:    "threads",
-		Rows:     [][]any{},
+		Manifest:      manifest,
+		Table:         "threads",
+		Rows:          [][]any{},
+		MutationToken: "generation-1",
 	})
 	if err != nil {
 		t.Fatalf("reset ingest: %v", err)
 	}
 	if !reset.ResetIncomplete || reset.ResetDeleted != 10000 {
 		t.Fatalf("reset result = %#v", reset)
+	}
+	cutover, err := client.Cutover(context.Background(), "gitcrawl", "gitcrawl/openclaw", manifest.SnapshotID)
+	if err != nil {
+		t.Fatalf("cutover: %v", err)
+	}
+	if cutover.SnapshotID != manifest.SnapshotID || cutover.Status != "active" {
+		t.Fatalf("cutover result = %#v", cutover)
 	}
 	start, err := client.StartGitHubLogin(context.Background(), "hash")
 	if err != nil {
@@ -249,7 +303,7 @@ func TestClientArchiveOperations(t *testing.T) {
 	if poll.Status != "complete" || poll.Token != "session-token" {
 		t.Fatalf("poll = %#v", poll)
 	}
-	if len(requests) != 7 {
+	if len(requests) != 8 {
 		t.Fatalf("requests = %#v", requests)
 	}
 }
@@ -505,6 +559,9 @@ func TestBaseContractValidates(t *testing.T) {
 	}
 	if !hasRoute(contract, http.MethodGet, ContractPath, AuthPublic) {
 		t.Fatalf("contract route missing")
+	}
+	if !hasRoute(contract, http.MethodPost, "/v1/apps/:app/archives/:archive/cutover", AuthPublisher) {
+		t.Fatalf("contract cutover route missing")
 	}
 }
 
