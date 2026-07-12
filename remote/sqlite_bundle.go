@@ -17,6 +17,10 @@ const (
 	SQLiteGzipCompression               = "gzip"
 	DefaultSQLiteBundleChunkSize        = int64(256 * 1024 * 1024)
 	DefaultMutableSQLiteBundleChunkSize = int64(64 * 1024 * 1024)
+
+	maxSQLiteBundleCompressedSize = int64(512 * 1024 * 1024)
+	maxSQLiteBundleObjectSize     = int64(4 * 1024 * 1024 * 1024)
+	maxSQLiteBundleParts          = 8
 )
 
 type SQLiteBundleObject struct {
