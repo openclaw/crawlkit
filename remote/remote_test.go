@@ -476,6 +476,12 @@ func TestBuildGzipSQLiteBundlePreservesCurrentKeyLayout(t *testing.T) {
 	assertSQLiteBundlePayload(t, compressed.String(), payload)
 }
 
+func TestDefaultSQLiteBundleChunkSizeMatchesRemoteUploadLimit(t *testing.T) {
+	if got, want := DefaultSQLiteBundleChunkSize, int64(64*1024*1024); got != want {
+		t.Fatalf("default sqlite bundle chunk size = %d, want %d", got, want)
+	}
+}
+
 func TestBuildSnapshotGzipSQLiteBundleUsesSnapshotKeyLayout(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "archive.db")
@@ -796,13 +802,15 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 				case "bundle-part":
 					if r.Header.Get("x-crawl-bundle-part-index") != "0" ||
 						r.Header.Get("content-type") != "application/gzip" ||
+						r.ContentLength != int64(len("compressed")) ||
 						r.Header.Get("x-crawl-content-sha256") != strings.Repeat("d", 64) ||
 						r.Header.Get("x-crawl-compression") != SQLiteGzipCompression ||
 						r.Header.Get("x-crawl-snapshot-id") != tc.snapshotID {
 						t.Fatalf(
-							"part headers index=%q content-type=%q sha=%q compression=%q snapshot=%q",
+							"part headers index=%q content-type=%q length=%d sha=%q compression=%q snapshot=%q",
 							r.Header.Get("x-crawl-bundle-part-index"),
 							r.Header.Get("content-type"),
+							r.ContentLength,
 							r.Header.Get("x-crawl-content-sha256"),
 							r.Header.Get("x-crawl-compression"),
 							r.Header.Get("x-crawl-snapshot-id"),
