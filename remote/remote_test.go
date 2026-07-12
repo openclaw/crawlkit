@@ -535,6 +535,19 @@ func TestBuildSQLiteBundlesRejectEmptySources(t *testing.T) {
 	}
 }
 
+func TestValidateSQLiteBundleSourceSizeBounds(t *testing.T) {
+	for _, size := range []int64{-1, 0, maxSQLiteBundleObjectSize + 1} {
+		if err := validateSQLiteBundleSourceSize(size); err == nil {
+			t.Fatalf("validate size %d succeeded", size)
+		}
+	}
+	for _, size := range []int64{1, maxSQLiteBundleObjectSize} {
+		if err := validateSQLiteBundleSourceSize(size); err != nil {
+			t.Fatalf("validate size %d: %v", size, err)
+		}
+	}
+}
+
 func TestBuildGzipSQLiteBundleRejectsBoundedOutputAndCleansPartialArtifacts(t *testing.T) {
 	sourceDir := t.TempDir()
 	source := filepath.Join(sourceDir, "archive.db")

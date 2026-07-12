@@ -138,11 +138,8 @@ func buildGzipSQLiteBundleWithLimits(
 	if err != nil {
 		return SQLiteBundleBuild{}, fmt.Errorf("stat sqlite bundle source: %w", err)
 	}
-	if sourceInfo.Size() <= 0 || sourceInfo.Size() > maxSQLiteBundleObjectSize {
-		return SQLiteBundleBuild{}, fmt.Errorf(
-			"sqlite bundle object size must be between 1 and %d bytes",
-			maxSQLiteBundleObjectSize,
-		)
+	if err := validateSQLiteBundleSourceSize(sourceInfo.Size()); err != nil {
+		return SQLiteBundleBuild{}, err
 	}
 	level := opts.CompressionLevel
 	if level == 0 {
@@ -192,12 +189,9 @@ func buildGzipSQLiteBundleWithLimits(
 		cleanup()
 		return SQLiteBundleBuild{}, err
 	}
-	if sourceSize > maxSQLiteBundleObjectSize {
+	if err := validateSQLiteBundleSourceSize(sourceSize); err != nil {
 		cleanup()
-		return SQLiteBundleBuild{}, fmt.Errorf(
-			"sqlite bundle object size must not exceed %d bytes",
-			maxSQLiteBundleObjectSize,
-		)
+		return SQLiteBundleBuild{}, err
 	}
 	compressedInfo, err := os.Stat(compressedPath)
 	if err != nil {
@@ -268,6 +262,16 @@ func buildGzipSQLiteBundleWithLimits(
 		Parts:          parts,
 		Cleanup:        cleanup,
 	}, nil
+}
+
+func validateSQLiteBundleSourceSize(size int64) error {
+	if size <= 0 || size > maxSQLiteBundleObjectSize {
+		return fmt.Errorf(
+			"sqlite bundle object size must be between 1 and %d bytes",
+			maxSQLiteBundleObjectSize,
+		)
+	}
+	return nil
 }
 
 func sqliteBundleChunkSize(requested int64, snapshotScoped bool) int64 {
