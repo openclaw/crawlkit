@@ -7,7 +7,8 @@
 - Add a snapshot-scoped publisher status client helper so resumable publishers
   verify the exact immutable candidate instead of trusting an unrelated
   completed candidate from the unscoped status route, and reject successful
-  responses that omit or return a different snapshot.
+  responses that omit the snapshot or return a different snapshot, app, or
+  archive.
 - Add a 64 MiB mutable SQLite bundle default and preserve exact request content
   lengths for bounded remote uploads. The shipped
   `DefaultSQLiteBundleChunkSize` constant and immutable snapshot default remain
@@ -19,10 +20,15 @@
   sources, removes partial temp artifacts on failure, and rejects source
   identity/content drift. Immutable uploads use private validated part
   snapshots and verify compressed and decompressed digests before any remote
-  write. Mutable uploads retain bounded sequential file handling, verify exact
-  streamed bytes, and avoid duplicate temporary staging. Snapshot manifests are
-  capped at 64 KiB while legacy mutable manifests retain the service-compatible
-  1 MiB ceiling.
+  write. Every file-backed read is capped at its declared size plus one byte so
+  concurrent same-inode growth is detected without consuming an unbounded tail.
+  Mutable uploads retain bounded sequential file handling, `Size: -1`
+  unknown-length transport, minimal legacy manifests, index-keyed part
+  matching, and no duplicate temporary staging; tiny chunk sizes also avoid
+  caller-sized part-slice preallocation. Manifests use crawl-remote's
+  deterministic two-space persisted JSON representation and are size-preflighted
+  before full encoding: snapshots are capped at 64 KiB while legacy mutable
+  manifests retain the service-compatible 1 MiB ceiling.
 
 ## v0.14.0 - 2026-07-12
 
