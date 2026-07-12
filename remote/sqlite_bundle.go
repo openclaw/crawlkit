@@ -96,6 +96,8 @@ type sqliteBundleBuildLimits struct {
 	maxParts          int
 }
 
+type sqliteBundleSourceCopy func(context.Context, io.Writer, io.Reader) (int64, error)
+
 func BuildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions) (SQLiteBundleBuild, error) {
 	return buildGzipSQLiteBundle(ctx, opts, false)
 }
@@ -121,11 +123,30 @@ func buildGzipSQLiteBundleWithLimits(
 	snapshotScoped bool,
 	limits sqliteBundleBuildLimits,
 ) (SQLiteBundleBuild, error) {
+	return buildGzipSQLiteBundleWithSourceCopy(
+		ctx,
+		opts,
+		snapshotScoped,
+		limits,
+		copyWithContext,
+	)
+}
+
+func buildGzipSQLiteBundleWithSourceCopy(
+	ctx context.Context,
+	opts SQLiteBundleBuildOptions,
+	snapshotScoped bool,
+	limits sqliteBundleBuildLimits,
+	copySource sqliteBundleSourceCopy,
+) (SQLiteBundleBuild, error) {
 	if opts.SourcePath == "" {
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source path is required")
 	}
 	if limits.maxCompressedSize <= 0 || limits.maxParts <= 0 {
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle build limits must be positive")
+	}
+	if copySource == nil {
+		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source copier is required")
 	}
 	chunkSize := sqliteBundleChunkSize(opts.ChunkSize, snapshotScoped)
 	if chunkSize > DefaultSQLiteBundleChunkSize {
@@ -134,9 +155,24 @@ func buildGzipSQLiteBundleWithLimits(
 			DefaultSQLiteBundleChunkSize,
 		)
 	}
-	sourceInfo, err := os.Stat(opts.SourcePath)
+	source, err := os.Open(opts.SourcePath)
+	if err != nil {
+		return SQLiteBundleBuild{}, fmt.Errorf("open sqlite bundle source: %w", err)
+	}
+	defer func() { _ = source.Close() }()
+	sourceInfo, err := source.Stat()
 	if err != nil {
 		return SQLiteBundleBuild{}, fmt.Errorf("stat sqlite bundle source: %w", err)
+	}
+	if !sourceInfo.Mode().IsRegular() {
+		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source must be a regular file")
+	}
+	pathInfo, err := os.Stat(opts.SourcePath)
+	if err != nil {
+		return SQLiteBundleBuild{}, fmt.Errorf("stat sqlite bundle source path: %w", err)
+	}
+	if !os.SameFile(sourceInfo, pathInfo) {
+		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source changed before compression")
 	}
 	if err := validateSQLiteBundleSourceSize(sourceInfo.Size()); err != nil {
 		return SQLiteBundleBuild{}, err
@@ -179,17 +215,25 @@ func buildGzipSQLiteBundleWithLimits(
 	}
 	sourceSHA, sourceSize, err := gzipFile(
 		ctx,
-		opts.SourcePath,
+		source,
 		compressedPath,
 		level,
 		compressedLimit,
 		compressedLimitErr,
+		copySource,
 	)
 	if err != nil {
 		cleanup()
 		return SQLiteBundleBuild{}, err
 	}
-	if err := validateSQLiteBundleSourceSize(sourceSize); err != nil {
+	if err := validateSQLiteBundleSourceStable(
+		ctx,
+		source,
+		opts.SourcePath,
+		sourceInfo,
+		sourceSize,
+		sourceSHA,
+	); err != nil {
 		cleanup()
 		return SQLiteBundleBuild{}, err
 	}
@@ -408,17 +452,13 @@ func (w *sqliteBundleBoundedWriter) Write(p []byte) (int, error) {
 
 func gzipFile(
 	ctx context.Context,
-	sourcePath,
+	source io.Reader,
 	targetPath string,
 	level int,
 	maxCompressedSize int64,
 	limitErr error,
+	copySource sqliteBundleSourceCopy,
 ) (string, int64, error) {
-	source, err := os.Open(sourcePath)
-	if err != nil {
-		return "", 0, fmt.Errorf("open sqlite bundle source: %w", err)
-	}
-	defer func() { _ = source.Close() }()
 	target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return "", 0, fmt.Errorf("create compressed sqlite bundle: %w", err)
@@ -434,7 +474,7 @@ func gzipFile(
 		return "", 0, fmt.Errorf("create gzip writer: %w", err)
 	}
 	hash := sha256.New()
-	sourceSize, err := copyWithContext(ctx, io.MultiWriter(gzw, hash), source)
+	sourceSize, err := copySource(ctx, io.MultiWriter(gzw, hash), source)
 	if err != nil {
 		_ = gzw.Close()
 		return "", 0, fmt.Errorf("compress sqlite bundle: %w", err)
@@ -443,6 +483,64 @@ func gzipFile(
 		return "", 0, fmt.Errorf("finish compressed sqlite bundle: %w", err)
 	}
 	return fmt.Sprintf("%x", hash.Sum(nil)), sourceSize, nil
+}
+
+func validateSQLiteBundleSourceStable(
+	ctx context.Context,
+	source *os.File,
+	sourcePath string,
+	initialInfo os.FileInfo,
+	sourceSize int64,
+	sourceSHA256 string,
+) error {
+	if err := validateSQLiteBundleSourceState(source, sourcePath, initialInfo, sourceSize); err != nil {
+		return err
+	}
+	if _, err := source.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("rewind sqlite bundle source: %w", err)
+	}
+	hash := sha256.New()
+	verifiedSize, err := copyWithContext(ctx, hash, source)
+	if err != nil {
+		return fmt.Errorf("verify sqlite bundle source: %w", err)
+	}
+	if verifiedSize != sourceSize ||
+		fmt.Sprintf("%x", hash.Sum(nil)) != sourceSHA256 {
+		return fmt.Errorf("sqlite bundle source changed during bundle construction")
+	}
+	return validateSQLiteBundleSourceState(
+		source,
+		sourcePath,
+		initialInfo,
+		verifiedSize,
+	)
+}
+
+func validateSQLiteBundleSourceState(
+	source *os.File,
+	sourcePath string,
+	initialInfo os.FileInfo,
+	readSize int64,
+) error {
+	currentInfo, err := source.Stat()
+	if err != nil {
+		return fmt.Errorf("restat sqlite bundle source: %w", err)
+	}
+	pathInfo, err := os.Stat(sourcePath)
+	if err != nil {
+		return fmt.Errorf("restat sqlite bundle source path: %w", err)
+	}
+	if !os.SameFile(initialInfo, currentInfo) ||
+		!os.SameFile(initialInfo, pathInfo) ||
+		!currentInfo.Mode().IsRegular() ||
+		initialInfo.Size() != currentInfo.Size() ||
+		initialInfo.Size() != pathInfo.Size() ||
+		initialInfo.Size() != readSize ||
+		!initialInfo.ModTime().Equal(currentInfo.ModTime()) ||
+		!initialInfo.ModTime().Equal(pathInfo.ModTime()) {
+		return fmt.Errorf("sqlite bundle source changed during bundle construction")
+	}
+	return nil
 }
 
 func splitBundleParts(
