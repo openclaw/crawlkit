@@ -140,7 +140,8 @@ func TestClientArchiveOperations(t *testing.T) {
 					Capabilities: []string{"gitcrawl.observation-order.v1"},
 				},
 			}}})
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status"):
+		case r.Method == http.MethodGet && (strings.HasSuffix(r.URL.Path, "/status") ||
+			strings.HasSuffix(r.URL.Path, "/publish-status")):
 			_ = json.NewEncoder(w).Encode(Status{
 				App:                "gitcrawl",
 				Archive:            "gitcrawl/openclaw",
@@ -258,6 +259,15 @@ func TestClientArchiveOperations(t *testing.T) {
 		!slices.Contains(status.Snapshot.Capabilities, "gitcrawl.observation-order.v1") {
 		t.Fatalf("status = %#v", status)
 	}
+	publishStatus, err := client.PublishStatus(context.Background(), "gitcrawl", "gitcrawl/openclaw")
+	if err != nil {
+		t.Fatalf("publish status: %v", err)
+	}
+	if publishStatus.ActiveSnapshotID != status.ActiveSnapshotID ||
+		publishStatus.Snapshot == nil ||
+		publishStatus.Snapshot.ID != status.Snapshot.ID {
+		t.Fatalf("publish status = %#v, want snapshot %#v", publishStatus, status.Snapshot)
+	}
 	results, err := client.BatchRead(context.Background(), "gitcrawl", "gitcrawl/openclaw", []QueryRequest{{Name: "threads"}})
 	if err != nil {
 		t.Fatalf("batch read: %v", err)
@@ -318,8 +328,14 @@ func TestClientArchiveOperations(t *testing.T) {
 	if poll.Status != "complete" || poll.Token != "session-token" {
 		t.Fatalf("poll = %#v", poll)
 	}
-	if len(requests) != 8 {
+	if len(requests) != 9 {
 		t.Fatalf("requests = %#v", requests)
+	}
+	if !slices.Contains(
+		requests,
+		"GET /v1/apps/gitcrawl/archives/gitcrawl%2Fopenclaw/publish-status",
+	) {
+		t.Fatalf("publisher status request missing: %#v", requests)
 	}
 }
 
@@ -922,6 +938,9 @@ func TestBaseContractValidates(t *testing.T) {
 	}
 	if !hasRoute(contract, http.MethodPost, "/v1/apps/:app/archives/:archive/cutover", AuthPublisher) {
 		t.Fatalf("contract cutover route missing")
+	}
+	if !hasRoute(contract, http.MethodGet, "/v1/apps/:app/archives/:archive/publish-status", AuthPublisher) {
+		t.Fatalf("contract publisher status route missing")
 	}
 }
 
