@@ -18,6 +18,7 @@ const (
 	DefaultSQLiteBundleChunkSize        = int64(256 * 1024 * 1024)
 	DefaultMutableSQLiteBundleChunkSize = int64(64 * 1024 * 1024)
 
+	maxSQLiteBundleManifestBytes  = int64(64 * 1024)
 	maxSQLiteBundleCompressedSize = int64(512 * 1024 * 1024)
 	maxSQLiteBundleObjectSize     = int64(4 * 1024 * 1024 * 1024)
 	maxSQLiteBundleParts          = 8
@@ -90,6 +91,11 @@ type SQLiteBundlePartUpload struct {
 	SnapshotID  string
 }
 
+type sqliteBundleBuildLimits struct {
+	maxCompressedSize int64
+	maxParts          int
+}
+
 func BuildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions) (SQLiteBundleBuild, error) {
 	return buildGzipSQLiteBundle(ctx, opts, false)
 }
@@ -103,10 +109,45 @@ func BuildSnapshotGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOp
 }
 
 func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, snapshotScoped bool) (SQLiteBundleBuild, error) {
+	return buildGzipSQLiteBundleWithLimits(ctx, opts, snapshotScoped, sqliteBundleBuildLimits{
+		maxCompressedSize: maxSQLiteBundleCompressedSize,
+		maxParts:          maxSQLiteBundleParts,
+	})
+}
+
+func buildGzipSQLiteBundleWithLimits(
+	ctx context.Context,
+	opts SQLiteBundleBuildOptions,
+	snapshotScoped bool,
+	limits sqliteBundleBuildLimits,
+) (SQLiteBundleBuild, error) {
 	if opts.SourcePath == "" {
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source path is required")
 	}
+	if limits.maxCompressedSize <= 0 || limits.maxParts <= 0 {
+		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle build limits must be positive")
+	}
 	chunkSize := sqliteBundleChunkSize(opts.ChunkSize, snapshotScoped)
+	maxPartSize := DefaultMutableSQLiteBundleChunkSize
+	if snapshotScoped {
+		maxPartSize = DefaultSQLiteBundleChunkSize
+	}
+	if chunkSize > maxPartSize {
+		return SQLiteBundleBuild{}, fmt.Errorf(
+			"sqlite bundle chunk size must not exceed %d bytes",
+			maxPartSize,
+		)
+	}
+	sourceInfo, err := os.Stat(opts.SourcePath)
+	if err != nil {
+		return SQLiteBundleBuild{}, fmt.Errorf("stat sqlite bundle source: %w", err)
+	}
+	if sourceInfo.Size() > maxSQLiteBundleObjectSize {
+		return SQLiteBundleBuild{}, fmt.Errorf(
+			"sqlite bundle object size must not exceed %d bytes",
+			maxSQLiteBundleObjectSize,
+		)
+	}
 	level := opts.CompressionLevel
 	if level == 0 {
 		level = gzip.DefaultCompression
@@ -129,10 +170,38 @@ func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, s
 	}
 	cleanup := func() { _ = os.RemoveAll(tmpDir) }
 	compressedPath := filepath.Join(tmpDir, "current.db.gz")
-	sourceSHA, sourceSize, err := gzipFile(ctx, opts.SourcePath, compressedPath, level)
+	compressedLimit := limits.maxCompressedSize
+	compressedLimitErr := fmt.Errorf(
+		"compressed sqlite bundle exceeds %d bytes",
+		limits.maxCompressedSize,
+	)
+	partCapacity := chunkSize * int64(limits.maxParts)
+	if partCapacity < compressedLimit {
+		compressedLimit = partCapacity
+		compressedLimitErr = fmt.Errorf(
+			"compressed sqlite bundle requires more than %d parts at %d bytes each",
+			limits.maxParts,
+			chunkSize,
+		)
+	}
+	sourceSHA, sourceSize, err := gzipFile(
+		ctx,
+		opts.SourcePath,
+		compressedPath,
+		level,
+		compressedLimit,
+		compressedLimitErr,
+	)
 	if err != nil {
 		cleanup()
 		return SQLiteBundleBuild{}, err
+	}
+	if sourceSize > maxSQLiteBundleObjectSize {
+		cleanup()
+		return SQLiteBundleBuild{}, fmt.Errorf(
+			"sqlite bundle object size must not exceed %d bytes",
+			maxSQLiteBundleObjectSize,
+		)
 	}
 	compressedInfo, err := os.Stat(compressedPath)
 	if err != nil {
@@ -154,7 +223,16 @@ func buildGzipSQLiteBundle(ctx context.Context, opts SQLiteBundleBuildOptions, s
 		compressedObjectKey = SQLiteSnapshotCompressedObjectKey(opts.App, opts.Archive, snapshotID, compressedSHA)
 		reconstruct = "concatenate parts in index order to archive.db.gz, then gzip-decompress to archive.db"
 	}
-	parts, err := splitBundleParts(ctx, compressedPath, tmpDir, opts.App, opts.Archive, snapshotID, chunkSize)
+	parts, err := splitBundleParts(
+		ctx,
+		compressedPath,
+		tmpDir,
+		opts.App,
+		opts.Archive,
+		snapshotID,
+		chunkSize,
+		limits,
+	)
 	if err != nil {
 		cleanup()
 		return SQLiteBundleBuild{}, err
@@ -297,7 +375,45 @@ func validSQLiteSnapshotID(snapshotID string) bool {
 	return true
 }
 
-func gzipFile(ctx context.Context, sourcePath, targetPath string, level int) (string, int64, error) {
+type sqliteBundleBoundedWriter struct {
+	writer   io.Writer
+	limit    int64
+	written  int64
+	limitErr error
+}
+
+func (w *sqliteBundleBoundedWriter) Write(p []byte) (int, error) {
+	remaining := w.limit - w.written
+	if remaining <= 0 {
+		return 0, w.limitErr
+	}
+	if int64(len(p)) > remaining {
+		n, err := w.writer.Write(p[:remaining])
+		w.written += int64(n)
+		if err != nil {
+			return n, err
+		}
+		if int64(n) != remaining {
+			return n, io.ErrShortWrite
+		}
+		return n, w.limitErr
+	}
+	n, err := w.writer.Write(p)
+	w.written += int64(n)
+	if err == nil && n != len(p) {
+		err = io.ErrShortWrite
+	}
+	return n, err
+}
+
+func gzipFile(
+	ctx context.Context,
+	sourcePath,
+	targetPath string,
+	level int,
+	maxCompressedSize int64,
+	limitErr error,
+) (string, int64, error) {
 	source, err := os.Open(sourcePath)
 	if err != nil {
 		return "", 0, fmt.Errorf("open sqlite bundle source: %w", err)
@@ -308,7 +424,12 @@ func gzipFile(ctx context.Context, sourcePath, targetPath string, level int) (st
 		return "", 0, fmt.Errorf("create compressed sqlite bundle: %w", err)
 	}
 	defer func() { _ = target.Close() }()
-	gzw, err := gzip.NewWriterLevel(target, level)
+	boundedTarget := &sqliteBundleBoundedWriter{
+		writer:   target,
+		limit:    maxCompressedSize,
+		limitErr: limitErr,
+	}
+	gzw, err := gzip.NewWriterLevel(boundedTarget, level)
 	if err != nil {
 		return "", 0, fmt.Errorf("create gzip writer: %w", err)
 	}
@@ -324,14 +445,44 @@ func gzipFile(ctx context.Context, sourcePath, targetPath string, level int) (st
 	return fmt.Sprintf("%x", hash.Sum(nil)), sourceSize, nil
 }
 
-func splitBundleParts(ctx context.Context, sourcePath, dir, app, archive, snapshotID string, chunkSize int64) ([]SQLiteBundlePartFile, error) {
+func splitBundleParts(
+	ctx context.Context,
+	sourcePath,
+	dir,
+	app,
+	archive,
+	snapshotID string,
+	chunkSize int64,
+	limits sqliteBundleBuildLimits,
+) ([]SQLiteBundlePartFile, error) {
 	source, err := os.Open(sourcePath)
 	if err != nil {
 		return nil, fmt.Errorf("open compressed sqlite bundle: %w", err)
 	}
 	defer func() { _ = source.Close() }()
-	var parts []SQLiteBundlePartFile
-	for index := 0; ; index++ {
+	info, err := source.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat compressed sqlite bundle: %w", err)
+	}
+	if info.Size() <= 0 {
+		return nil, fmt.Errorf("compressed sqlite bundle is empty")
+	}
+	if info.Size() > limits.maxCompressedSize {
+		return nil, fmt.Errorf(
+			"compressed sqlite bundle exceeds %d bytes",
+			limits.maxCompressedSize,
+		)
+	}
+	partCount := int((info.Size()-1)/chunkSize) + 1
+	if partCount > limits.maxParts {
+		return nil, fmt.Errorf(
+			"compressed sqlite bundle requires %d parts, maximum is %d",
+			partCount,
+			limits.maxParts,
+		)
+	}
+	parts := make([]SQLiteBundlePartFile, 0, partCount)
+	for index := 0; index < partCount; index++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -341,17 +492,22 @@ func splitBundleParts(ctx context.Context, sourcePath, dir, app, archive, snapsh
 			return nil, fmt.Errorf("create sqlite bundle part: %w", err)
 		}
 		hash := sha256.New()
-		written, copyErr := io.CopyN(io.MultiWriter(partFile, hash), source, chunkSize)
+		partSize := min(chunkSize, info.Size()-int64(index)*chunkSize)
+		written, copyErr := io.CopyN(io.MultiWriter(partFile, hash), source, partSize)
 		closeErr := partFile.Close()
-		if copyErr != nil && copyErr != io.EOF {
+		if copyErr != nil {
 			return nil, fmt.Errorf("write sqlite bundle part: %w", copyErr)
 		}
 		if closeErr != nil {
 			return nil, fmt.Errorf("close sqlite bundle part: %w", closeErr)
 		}
-		if written == 0 && copyErr == io.EOF {
-			_ = os.Remove(partPath)
-			break
+		if written != partSize {
+			return nil, fmt.Errorf(
+				"write sqlite bundle part %d: wrote %d bytes, want %d",
+				index,
+				written,
+				partSize,
+			)
 		}
 		partSHA := fmt.Sprintf("%x", hash.Sum(nil))
 		parts = append(parts, SQLiteBundlePartFile{
@@ -363,12 +519,6 @@ func splitBundleParts(ctx context.Context, sourcePath, dir, app, archive, snapsh
 			},
 			Path: partPath,
 		})
-		if copyErr == io.EOF {
-			break
-		}
-	}
-	if len(parts) == 0 {
-		return nil, fmt.Errorf("compressed sqlite bundle is empty")
 	}
 	return parts, nil
 }
