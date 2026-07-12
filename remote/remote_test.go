@@ -1871,6 +1871,135 @@ func TestClientPreservesMinimalMutableBundleManifestCompatibility(t *testing.T) 
 	}
 }
 
+func TestClientPreservesUnknownLengthMutableBundleFileTransport(t *testing.T) {
+	content := []byte("compressed")
+	digest := sha256.Sum256(content)
+	part := SQLiteBundlePartFile{
+		SQLiteBundlePart: SQLiteBundlePart{
+			Index:  3,
+			Key:    "legacy-part",
+			Size:   -1,
+			SHA256: fmt.Sprintf("%x", digest),
+		},
+		Path: filepath.Join(t.TempDir(), "part"),
+	}
+	if err := os.WriteFile(part.Path, content, 0o600); err != nil {
+		t.Fatalf("write part: %v", err)
+	}
+
+	var uploads []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		uploads = append(uploads, r.Header.Get("x-crawl-sqlite-upload"))
+		switch r.Header.Get("x-crawl-sqlite-upload") {
+		case "bundle-part":
+			if r.ContentLength != -1 {
+				t.Fatalf("content length = %d, want unknown", r.ContentLength)
+			}
+			if got := r.Header.Get("x-crawl-content-sha256"); got != fmt.Sprintf("%x", digest) {
+				t.Fatalf("sha256 header = %q", got)
+			}
+			if !slices.Contains(r.TransferEncoding, "chunked") {
+				t.Fatalf("transfer encoding = %#v", r.TransferEncoding)
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read part: %v", err)
+			}
+			if !bytes.Equal(body, content) {
+				t.Fatalf("part body = %q", body)
+			}
+			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
+		case "bundle-manifest":
+			_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{Complete: true})
+		default:
+			t.Fatalf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{
+		Endpoint:      server.URL,
+		TokenProvider: StaticToken("secret"),
+	})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	if _, err := client.UploadSQLiteBundleFiles(
+		context.Background(),
+		"gitcrawl",
+		"gitcrawl/openclaw__openclaw",
+		SQLiteBundleManifest{},
+		[]SQLiteBundlePartFile{part},
+	); err != nil {
+		t.Fatalf("upload unknown-length mutable bundle file: %v", err)
+	}
+	if !slices.Equal(uploads, []string{"bundle-part", "bundle-manifest"}) {
+		t.Fatalf("uploads = %#v", uploads)
+	}
+}
+
+func TestClientAllowsMutableBundleFileWithoutSHA256(t *testing.T) {
+	content := []byte("compressed")
+	part := SQLiteBundlePartFile{
+		SQLiteBundlePart: SQLiteBundlePart{
+			Index: 3,
+			Key:   "legacy-part",
+			Size:  int64(len(content)),
+		},
+		Path: filepath.Join(t.TempDir(), "part"),
+	}
+	if err := os.WriteFile(part.Path, content, 0o600); err != nil {
+		t.Fatalf("write part: %v", err)
+	}
+
+	var uploads []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		uploads = append(uploads, r.Header.Get("x-crawl-sqlite-upload"))
+		switch r.Header.Get("x-crawl-sqlite-upload") {
+		case "bundle-part":
+			if r.ContentLength != int64(len(content)) {
+				t.Fatalf("content length = %d, want %d", r.ContentLength, len(content))
+			}
+			if got := r.Header.Get("x-crawl-content-sha256"); got != "" {
+				t.Fatalf("sha256 header = %q", got)
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read part: %v", err)
+			}
+			if !bytes.Equal(body, content) {
+				t.Fatalf("part body = %q", body)
+			}
+			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
+		case "bundle-manifest":
+			_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{Complete: true})
+		default:
+			t.Fatalf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Options{
+		Endpoint:      server.URL,
+		TokenProvider: StaticToken("secret"),
+	})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	if _, err := client.UploadSQLiteBundleFiles(
+		context.Background(),
+		"gitcrawl",
+		"gitcrawl/openclaw__openclaw",
+		SQLiteBundleManifest{},
+		[]SQLiteBundlePartFile{part},
+	); err != nil {
+		t.Fatalf("upload mutable bundle file without sha256: %v", err)
+	}
+	if !slices.Equal(uploads, []string{"bundle-part", "bundle-manifest"}) {
+		t.Fatalf("uploads = %#v", uploads)
+	}
+}
+
 func gzipTestPayload(t *testing.T, payload []byte) []byte {
 	t.Helper()
 	var out bytes.Buffer
