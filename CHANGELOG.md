@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Add a publisher-authenticated archive status route and client helper so
-  interrupted snapshot publication can resume without reader credentials.
+## v0.14.2 - 2026-07-12
+
 - Add a snapshot-scoped publisher status client helper so resumable publishers
   verify the exact immutable candidate instead of trusting an unrelated
   completed candidate from the unscoped status route, and reject successful
@@ -31,6 +31,11 @@
   deterministic two-space persisted JSON representation and are size-preflighted
   before full encoding: snapshots are capped at 64 KiB while legacy mutable
   manifests retain the service-compatible 1 MiB ceiling.
+
+## v0.14.1 - 2026-07-12
+
+- Add a publisher-authenticated archive status route and client helper so
+  interrupted snapshot publication can resume without reader credentials.
 
 ## v0.14.0 - 2026-07-12
 
