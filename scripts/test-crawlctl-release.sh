@@ -41,6 +41,12 @@ grep -F '"$RELEASE_TAG" "$RELEASE_COMMIT" "$archive"' \
   "$ROOT/.github/workflows/release-assets.yml" >/dev/null
 grep -F 'gpg.ssh.allowedSignersFile=' \
   "$ROOT/scripts/verify-crawlctl-release-provenance.sh" >/dev/null
+grep -F 'export GIT_NO_REPLACE_OBJECTS=1' \
+  "$ROOT/scripts/preflight-crawlctl-release.sh" >/dev/null
+grep -F -- '-c fetch.prune=false -c fetch.pruneTags=false' \
+  "$ROOT/scripts/preflight-crawlctl-release.sh" >/dev/null
+grep -F -- '-c remote.origin.prune=false -c remote.origin.pruneTags=false' \
+  "$ROOT/scripts/preflight-crawlctl-release.sh" >/dev/null
 # shellcheck disable=SC2016
 grep -F '+refs/heads/$DEFAULT_BRANCH:$branch_ref' \
   "$ROOT/scripts/verify-crawlctl-release-provenance.sh" >/dev/null
@@ -157,6 +163,9 @@ TAG
     esac
     ;;
   status) [[ "${MOCK_STATUS_RESULT:-ok}" == ok ]] ;;
+  for-each-ref)
+    [[ -z "${MOCK_REPLACE_REF:-}" ]] || echo "$MOCK_REPLACE_REF"
+    ;;
   update-ref) exit 0 ;;
   *) exit 2 ;;
 esac
@@ -456,6 +465,26 @@ if MOCK_STATUS_RESULT=fail bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
 fi
 [[ ! -e "$WORK_DIR/preflight-status-error" ]] ||
   fail "failed checkout probe mutated the preflight artifact destination"
+if MOCK_REPLACE_REF=refs/replace/$MOCK_COMMIT \
+  bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
+    v0.14.3 "$WORK_DIR/preflight-replace-ref" >/dev/null 2>&1; then
+  fail "preflight accepted a Git replacement ref"
+fi
+[[ ! -e "$WORK_DIR/preflight-replace-ref" ]] ||
+  fail "replacement ref mutated the preflight artifact destination"
+if MOCK_REMOTE_URL=https://github.com/steipete/crawlkit.git \
+  bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
+    v0.14.3 "$WORK_DIR/preflight-wrong-origin" >/dev/null 2>&1; then
+  fail "preflight accepted a non-official origin"
+fi
+[[ ! -e "$WORK_DIR/preflight-wrong-origin" ]] ||
+  fail "non-official origin mutated the preflight artifact destination"
+if MOCK_LOCAL_HEAD="$MOCK_SIDE_COMMIT" bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
+  v0.14.3 "$WORK_DIR/preflight-side-commit" >/dev/null 2>&1; then
+  fail "preflight accepted a checkout outside protected main"
+fi
+[[ ! -e "$WORK_DIR/preflight-side-commit" ]] ||
+  fail "side-commit preflight mutated the artifact destination"
 preflight_commit=$(bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
   v0.14.3 "$WORK_DIR/preflight")
 [[ "$preflight_commit" == "$MOCK_COMMIT" ]] || fail "preflight reported the wrong commit"
