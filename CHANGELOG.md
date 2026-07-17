@@ -11,7 +11,7 @@
 
 ### Maintenance
 
-- Update terminal detection to `go-isatty` v0.0.23, CodeQL Action to v4.37.0, and TruffleHog to v3.95.9.
+- Update terminal detection to `go-isatty` v0.0.23 and refresh CI security tooling.
 
 ## v0.14.2 - 2026-07-12
 
