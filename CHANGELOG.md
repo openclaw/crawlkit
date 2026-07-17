@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## v0.14.3 - 2026-07-17
+
+### Highlights
+
+- Restore release readiness with Peter's current repository-pinned SSH signing key and a supported pre-tag macOS notarization preflight that rechecks online tickets and build provenance after managed keychain cleanup.
+- Update the bundled SQLite engine to v3.53.3 through `modernc.org/sqlite` v1.54.0.
+
+### Maintenance
+
+- Update terminal detection to `go-isatty` v0.0.23, CodeQL Action to v4.37.0, and TruffleHog to v3.95.9.
+
 ## v0.14.2 - 2026-07-12
 
 - Add a snapshot-scoped publisher status client helper so resumable publishers

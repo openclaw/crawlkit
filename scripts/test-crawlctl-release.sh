@@ -12,9 +12,15 @@ fail() {
 }
 
 for script in download-crawlctl-release-assets.sh install-crawlctl.sh package-crawlctl-release.sh \
-  verify-crawlctl-release-provenance.sh verify-crawlctl-release.sh; do
+  preflight-crawlctl-release.sh verify-crawlctl-release-provenance.sh \
+  verify-crawlctl-release.sh; do
   bash -n "$ROOT/scripts/$script"
 done
+grep -Fx \
+  'steipete@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA6rFpd7CodTF6fy60LZTriTeiGAJ7haIBWD4hrdxmDB' \
+  "$ROOT/.github/release-allowed-signers" >/dev/null
+[[ "$(wc -l < "$ROOT/.github/release-allowed-signers" | tr -d ' ')" == 1 ]] ||
+  fail "release signer policy must contain exactly one reviewed signer"
 grep -F "github.event_name == 'release' ||" \
   "$ROOT/.github/workflows/release-assets.yml" >/dev/null
 grep -F "ref: \${{ github.event_name == 'release' && github.event.repository.default_branch || github.workflow_sha }}" \
@@ -443,6 +449,15 @@ for version in v0.13.4 v0.14.0; do
   [[ "$(find "$WORK_DIR/$version" -maxdepth 1 -type f | wc -l | tr -d ' ')" == 4 ]] ||
     fail "unexpected release artifact inventory for $version"
 done
+preflight_commit=$(bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
+  v0.14.3 "$WORK_DIR/preflight")
+[[ "$preflight_commit" == "$MOCK_COMMIT" ]] || fail "preflight reported the wrong commit"
+for arch in arm64 x86_64; do
+  archive="$WORK_DIR/preflight/crawlctl-v0.14.3-macos-${arch}.tar.gz"
+  [[ -f "$archive" && -f "$archive.sha256" ]] || fail "missing preflight $arch artifact"
+done
+[[ "$(find "$WORK_DIR/preflight" -maxdepth 1 -type f | wc -l | tr -d ' ')" == 4 ]] ||
+  fail "unexpected preflight artifact inventory"
 grep -F 'codesign-run --with-package-secrets --' "$MOCK_HELPER_LOG" >/dev/null ||
   fail "package producer did not use the managed release helper"
 awk '
