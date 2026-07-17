@@ -9,7 +9,11 @@ if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ || -z "$OUT
   echo "usage: $0 vX.Y.Z output-directory" >&2
   exit 2
 fi
-[[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=normal)" ]] || {
+if ! worktree_state=$(git -C "$ROOT" status --porcelain --untracked-files=normal); then
+  echo "could not inspect release preflight checkout" >&2
+  exit 1
+fi
+[[ -z "$worktree_state" ]] || {
   echo "release preflight checkout is not clean" >&2
   exit 1
 }

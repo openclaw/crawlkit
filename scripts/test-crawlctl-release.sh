@@ -156,7 +156,8 @@ TAG
       *) exit 2 ;;
     esac
     ;;
-  status|update-ref) exit 0 ;;
+  status) [[ "${MOCK_STATUS_RESULT:-ok}" == ok ]] ;;
+  update-ref) exit 0 ;;
   *) exit 2 ;;
 esac
 EOF
@@ -449,6 +450,12 @@ for version in v0.13.4 v0.14.0; do
   [[ "$(find "$WORK_DIR/$version" -maxdepth 1 -type f | wc -l | tr -d ' ')" == 4 ]] ||
     fail "unexpected release artifact inventory for $version"
 done
+if MOCK_STATUS_RESULT=fail bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
+  v0.14.3 "$WORK_DIR/preflight-status-error" >/dev/null 2>&1; then
+  fail "preflight accepted a failed checkout cleanliness probe"
+fi
+[[ ! -e "$WORK_DIR/preflight-status-error" ]] ||
+  fail "failed checkout probe mutated the preflight artifact destination"
 preflight_commit=$(bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
   v0.14.3 "$WORK_DIR/preflight")
 [[ "$preflight_commit" == "$MOCK_COMMIT" ]] || fail "preflight reported the wrong commit"
