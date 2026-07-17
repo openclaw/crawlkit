@@ -20,8 +20,17 @@ GOWORK=off go test -count=1 ./...
 3. Update docs and changelogs in `crawlkit` plus every downstream app branch
    that consumes the release.
 4. Test downstream apps against the local checkout through a temporary Go workspace.
-5. Before merging, run a complete notarization preflight from the clean release
-   candidate with the approved private signing environment. This does not
+5. Merge `crawlkit` to `main`.
+6. Pull the final protected `main` commit into a clean checkout.
+
+```bash
+git switch main
+git pull --ff-only
+git status --short --branch
+```
+
+7. Run a complete notarization preflight from that exact release candidate with
+   the approved private signing environment. This does not
    inspect or create a tag. It produces disposable candidates, restores the
    managed keychain, then runs the credential-free online-ticket and build
    provenance verifier:
@@ -31,8 +40,7 @@ preflight_dir=$(mktemp -d /private/tmp/crawlkit-v0.14.3-preflight.XXXXXX)
 scripts/preflight-crawlctl-release.sh v0.14.3 "$preflight_dir"
 ```
 
-6. Merge `crawlkit` to `main`.
-7. Tag the next semver release from `main`:
+8. Tag the next semver release from `main`:
 
 ```bash
 git tag -s v0.14.3
@@ -40,7 +48,7 @@ git push origin main
 git push origin v0.14.3
 ```
 
-8. From the clean checkout whose `HEAD` exactly matches the signed release tag,
+9. From the clean checkout whose `HEAD` exactly matches the signed release tag,
 build the signed macOS artifacts. The package entrypoint fetches the remote tag
 and protected `main` head into temporary refs, verifies the annotated tag against
 the repository-pinned SSH signer principal and key, requires the signed tag
@@ -91,7 +99,7 @@ Apple. Do not use
 standalone executables can exit with “the code is valid but does not seem to be
 an app.”
 
-9. Create the GitHub release as a draft, attach both archives and their
+10. Create the GitHub release as a draft, attach both archives and their
 `.sha256` files, then run the `Release Assets` workflow manually from the
 default branch with the tag to verify the uploaded draft assets. Publish only
 after that check succeeds. A crawlkit release without both verified signed
@@ -118,14 +126,14 @@ separately:
   action succeeds without a second alert. Do not claim first-install prompt
   suppression.
 
-10. Prime and verify module proxy visibility:
+11. Prime and verify module proxy visibility:
 
 ```bash
 GOPROXY=https://proxy.golang.org GONOSUMDB= go list -m github.com/openclaw/crawlkit@v0.14.3
 GOPROXY=https://proxy.golang.org go list -m github.com/openclaw/crawlkit@v0.14.3
 ```
 
-11. Bump downstream apps to the new tag and commit their `go.mod`/`go.sum` updates:
+12. Bump downstream apps to the new tag and commit their `go.mod`/`go.sum` updates:
 
 ```bash
 go get github.com/openclaw/crawlkit@v0.14.3
