@@ -12,9 +12,15 @@ fail() {
 }
 
 for script in download-crawlctl-release-assets.sh install-crawlctl.sh package-crawlctl-release.sh \
-  verify-crawlctl-release-provenance.sh verify-crawlctl-release.sh; do
+  preflight-crawlctl-release.sh verify-crawlctl-release-provenance.sh \
+  verify-crawlctl-release.sh; do
   bash -n "$ROOT/scripts/$script"
 done
+grep -Fx \
+  'steipete@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA6rFpd7CodTF6fy60LZTriTeiGAJ7haIBWD4hrdxmDB' \
+  "$ROOT/.github/release-allowed-signers" >/dev/null
+[[ "$(wc -l < "$ROOT/.github/release-allowed-signers" | tr -d ' ')" == 1 ]] ||
+  fail "release signer policy must contain exactly one reviewed signer"
 grep -F "github.event_name == 'release' ||" \
   "$ROOT/.github/workflows/release-assets.yml" >/dev/null
 grep -F "ref: \${{ github.event_name == 'release' && github.event.repository.default_branch || github.workflow_sha }}" \
@@ -35,6 +41,12 @@ grep -F '"$RELEASE_TAG" "$RELEASE_COMMIT" "$archive"' \
   "$ROOT/.github/workflows/release-assets.yml" >/dev/null
 grep -F 'gpg.ssh.allowedSignersFile=' \
   "$ROOT/scripts/verify-crawlctl-release-provenance.sh" >/dev/null
+grep -F 'export GIT_NO_REPLACE_OBJECTS=1' \
+  "$ROOT/scripts/preflight-crawlctl-release.sh" >/dev/null
+grep -F -- '-c fetch.prune=false -c fetch.pruneTags=false' \
+  "$ROOT/scripts/preflight-crawlctl-release.sh" >/dev/null
+grep -F -- '-c remote.origin.prune=false -c remote.origin.pruneTags=false' \
+  "$ROOT/scripts/preflight-crawlctl-release.sh" >/dev/null
 # shellcheck disable=SC2016
 grep -F '+refs/heads/$DEFAULT_BRANCH:$branch_ref' \
   "$ROOT/scripts/verify-crawlctl-release-provenance.sh" >/dev/null
@@ -150,7 +162,11 @@ TAG
       *) exit 2 ;;
     esac
     ;;
-  status|update-ref) exit 0 ;;
+  status) [[ "${MOCK_STATUS_RESULT:-ok}" == ok ]] ;;
+  for-each-ref)
+    [[ -z "${MOCK_REPLACE_REF:-}" ]] || echo "$MOCK_REPLACE_REF"
+    ;;
+  update-ref) exit 0 ;;
   *) exit 2 ;;
 esac
 EOF
@@ -443,6 +459,41 @@ for version in v0.13.4 v0.14.0; do
   [[ "$(find "$WORK_DIR/$version" -maxdepth 1 -type f | wc -l | tr -d ' ')" == 4 ]] ||
     fail "unexpected release artifact inventory for $version"
 done
+if MOCK_STATUS_RESULT=fail bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
+  v0.14.3 "$WORK_DIR/preflight-status-error" >/dev/null 2>&1; then
+  fail "preflight accepted a failed checkout cleanliness probe"
+fi
+[[ ! -e "$WORK_DIR/preflight-status-error" ]] ||
+  fail "failed checkout probe mutated the preflight artifact destination"
+if MOCK_REPLACE_REF=refs/replace/$MOCK_COMMIT \
+  bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
+    v0.14.3 "$WORK_DIR/preflight-replace-ref" >/dev/null 2>&1; then
+  fail "preflight accepted a Git replacement ref"
+fi
+[[ ! -e "$WORK_DIR/preflight-replace-ref" ]] ||
+  fail "replacement ref mutated the preflight artifact destination"
+if MOCK_REMOTE_URL=https://github.com/steipete/crawlkit.git \
+  bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
+    v0.14.3 "$WORK_DIR/preflight-wrong-origin" >/dev/null 2>&1; then
+  fail "preflight accepted a non-official origin"
+fi
+[[ ! -e "$WORK_DIR/preflight-wrong-origin" ]] ||
+  fail "non-official origin mutated the preflight artifact destination"
+if MOCK_LOCAL_HEAD="$MOCK_SIDE_COMMIT" bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
+  v0.14.3 "$WORK_DIR/preflight-side-commit" >/dev/null 2>&1; then
+  fail "preflight accepted a checkout outside protected main"
+fi
+[[ ! -e "$WORK_DIR/preflight-side-commit" ]] ||
+  fail "side-commit preflight mutated the artifact destination"
+preflight_commit=$(bash "$ROOT/scripts/preflight-crawlctl-release.sh" \
+  v0.14.3 "$WORK_DIR/preflight")
+[[ "$preflight_commit" == "$MOCK_COMMIT" ]] || fail "preflight reported the wrong commit"
+for arch in arm64 x86_64; do
+  archive="$WORK_DIR/preflight/crawlctl-v0.14.3-macos-${arch}.tar.gz"
+  [[ -f "$archive" && -f "$archive.sha256" ]] || fail "missing preflight $arch artifact"
+done
+[[ "$(find "$WORK_DIR/preflight" -maxdepth 1 -type f | wc -l | tr -d ' ')" == 4 ]] ||
+  fail "unexpected preflight artifact inventory"
 grep -F 'codesign-run --with-package-secrets --' "$MOCK_HELPER_LOG" >/dev/null ||
   fail "package producer did not use the managed release helper"
 awk '

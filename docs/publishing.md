@@ -21,15 +21,34 @@ GOWORK=off go test -count=1 ./...
    that consumes the release.
 4. Test downstream apps against the local checkout through a temporary Go workspace.
 5. Merge `crawlkit` to `main`.
-6. Tag the next semver release from `main`:
+6. Pull the final protected `main` commit into a clean checkout.
 
 ```bash
-git tag -s v0.14.0
-git push origin main
-git push origin v0.14.0
+git switch main
+git pull --ff-only
+git status --short --branch
 ```
 
-7. From the clean checkout whose `HEAD` exactly matches the signed release tag,
+7. Run a complete notarization preflight from that exact release candidate with
+   the approved private signing environment. This does not
+   inspect or create a tag. It produces disposable candidates, restores the
+   managed keychain, then runs the credential-free online-ticket and build
+   provenance verifier:
+
+```bash
+preflight_dir=$(mktemp -d /private/tmp/crawlkit-v0.14.3-preflight.XXXXXX)
+scripts/preflight-crawlctl-release.sh v0.14.3 "$preflight_dir"
+```
+
+8. Tag the next semver release from `main`:
+
+```bash
+git tag -s v0.14.3
+git push origin main
+git push origin v0.14.3
+```
+
+9. From the clean checkout whose `HEAD` exactly matches the signed release tag,
 build the signed macOS artifacts. The package entrypoint fetches the remote tag
 and protected `main` head into temporary refs, verifies the annotated tag against
 the repository-pinned SSH signer principal and key, requires the signed tag
@@ -39,11 +58,11 @@ or renamed tag is not releasable. It then uses the shared secret-safe release
 keychain helper and fails closed if any provenance or signing check differs:
 
 ```bash
-make release-artifacts VERSION=v0.14.0
-release_commit=$(scripts/verify-crawlctl-release-provenance.sh v0.14.0)
-scripts/verify-crawlctl-release.sh v0.14.0 "$release_commit" \
-  dist/crawlctl-v0.14.0-macos-arm64.tar.gz \
-  dist/crawlctl-v0.14.0-macos-x86_64.tar.gz
+make release-artifacts VERSION=v0.14.3
+release_commit=$(scripts/verify-crawlctl-release-provenance.sh v0.14.3)
+scripts/verify-crawlctl-release.sh v0.14.3 "$release_commit" \
+  dist/crawlctl-v0.14.3-macos-arm64.tar.gz \
+  dist/crawlctl-v0.14.3-macos-x86_64.tar.gz
 ```
 
 The fixed code identifier is `org.openclaw.crawlctl`. The required signing
@@ -80,7 +99,7 @@ Apple. Do not use
 standalone executables can exit with “the code is valid but does not seem to be
 an app.”
 
-8. Create the GitHub release as a draft, attach both archives and their
+10. Create the GitHub release as a draft, attach both archives and their
 `.sha256` files, then run the `Release Assets` workflow manually from the
 default branch with the tag to verify the uploaded draft assets. Publish only
 after that check succeeds. A crawlkit release without both verified signed
@@ -107,17 +126,17 @@ separately:
   action succeeds without a second alert. Do not claim first-install prompt
   suppression.
 
-9. Prime and verify module proxy visibility:
+11. Prime and verify module proxy visibility:
 
 ```bash
-GOPROXY=https://proxy.golang.org GONOSUMDB= go list -m github.com/openclaw/crawlkit@v0.14.0
-GOPROXY=https://proxy.golang.org go list -m github.com/openclaw/crawlkit@v0.14.0
+GOPROXY=https://proxy.golang.org GONOSUMDB= go list -m github.com/openclaw/crawlkit@v0.14.3
+GOPROXY=https://proxy.golang.org go list -m github.com/openclaw/crawlkit@v0.14.3
 ```
 
-10. Bump downstream apps to the new tag and commit their `go.mod`/`go.sum` updates:
+12. Bump downstream apps to the new tag and commit their `go.mod`/`go.sum` updates:
 
 ```bash
-go get github.com/openclaw/crawlkit@v0.14.0
+go get github.com/openclaw/crawlkit@v0.14.3
 GOWORK=off go mod tidy
 ```
 
