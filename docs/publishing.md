@@ -27,15 +27,18 @@ those historical releases or their assets.
    using the current signer recorded in `.github/release-allowed-signers`:
 
    ```bash
-   git switch main
-   git pull --ff-only
-   test -z "$(git status --porcelain)"
-   release_commit="$(git rev-parse HEAD)"
-   test "$release_commit" = "$(git rev-parse origin/main)"
-   git -c gpg.format=ssh tag -s -a vX.Y.Z "$release_commit" -m "crawlkit vX.Y.Z"
-   git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=.github/release-allowed-signers verify-tag vX.Y.Z
-   test "$(git rev-parse 'vX.Y.Z^{commit}')" = "$release_commit"
-   git push origin vX.Y.Z
+   (
+     set -euo pipefail
+     git switch main
+     git pull --ff-only
+     test -z "$(git status --porcelain)"
+     release_commit="$(git rev-parse HEAD)"
+     test "$release_commit" = "$(git rev-parse origin/main)"
+     git -c gpg.format=ssh tag -s -a vX.Y.Z "$release_commit" -m "crawlkit vX.Y.Z"
+     git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=.github/release-allowed-signers verify-tag vX.Y.Z
+     test "$(git rev-parse 'vX.Y.Z^{commit}')" = "$release_commit"
+     git push origin vX.Y.Z
+   )
    ```
 
 5. Prime and verify module proxy visibility:
