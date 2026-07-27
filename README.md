@@ -16,8 +16,8 @@ safe desktop-cache snapshot utilities.
 go get github.com/openclaw/crawlkit@latest
 ```
 
-Beginning with the next release after v0.13.3, macOS users should install or
-update `crawlctl` from the Developer ID-signed release artifact:
+macOS users should install or update `crawlctl` from the Developer ID-signed
+release artifact:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/openclaw/crawlkit/main/scripts/install-crawlctl.sh
@@ -33,7 +33,21 @@ requirement across in-place updates; the separate clean-VM release gate must
 prove that a later same-path build does not trigger a second protected-data
 alert. This contract does not suppress the first-install consent.
 
-Starting with v0.14.0, release binaries also require an Apple online
+Starting with v0.14.4, release assets use the fleet naming convention:
+`crawlkit_<version>_darwin_arm64.tar.gz` and
+`crawlkit_<version>_darwin_amd64.tar.gz`, with one `checksums.txt` file. This is
+a deliberate breaking rename from the v0.14.3
+`crawlctl-v0.14.3-macos-<arch>.tar.gz` archives and their individual `.sha256`
+sidecars. The version in the new filename has no `v` prefix, and Intel uses
+`amd64` instead of `x86_64`. The installer understands the new names.
+
+The same release also provides `crawlkit_<version>_linux_arm64.tar.gz` and
+`crawlkit_<version>_linux_amd64.tar.gz`. Each archive contains the `crawlctl`
+executable; verify it against `checksums.txt` before installation. The bundled
+installer remains macOS-specific because it also enforces the Developer ID
+designated requirement and online notarization ticket.
+
+Starting with v0.14.0, macOS release binaries also require an Apple online
 notarization ticket before packaging and installation. The raw executable and
 ephemeral ZIP submitted to Apple do not support ticket stapling, so verification
 requires network access. Release verification also binds each thin binary's Go
@@ -50,9 +64,9 @@ development, but produces a locally compiled, ad-hoc-signed macOS executable.
 Replacing that executable changes its designated requirement and invalidates
 Full Disk Access grants.
 
-Go packages are published by tagging this repository. GitHub releases also
-carry signed macOS `crawlctl` artifacts. See `docs/publishing.md` for the
-release commands.
+Go packages are published by tagging this repository. GitHub releases carry
+signed macOS and static Linux `crawlctl` artifacts. See `docs/publishing.md`
+for the release commands and exact asset contract.
 See `docs/boundary.md` for the crawlkit-versus-app ownership boundary and
 `docs/remote-contract.md` for the Worker/client split.
 

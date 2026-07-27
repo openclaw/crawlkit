@@ -14,8 +14,8 @@ help:
 		'  lint              Run vet, dead-code, and vulnerability checks.' \
 		'  check             Run every local gate enforced by CI.' \
 		'  snapshot          Build a credential-free local snapshot.' \
-		'  release           Build and verify official release artifacts (VERSION=vX.Y.Z).' \
-		'  verify-release    Verify existing release artifacts (VERSION=vX.Y.Z).' \
+		'  release           Refuse local publishing and print the unified workflow command.' \
+		'  verify-release    Verify downloaded fleet release artifacts (VERSION=X.Y.Z).' \
 		'  test-race         Run the Go test suite with the race detector.' \
 		'  test-release      Test the release scripts.' \
 		'  vet               Run go vet (compatibility target).' \
@@ -64,16 +64,19 @@ check: tidy-check fmt lint test test-race test-release
 snapshot: build
 
 release:
-	@test -n "$(VERSION)" || (echo "usage: make release VERSION=vX.Y.Z" >&2; exit 2)
 	@./scripts/package-crawlctl-release.sh "$(VERSION)"
 
 verify-release:
-	@test -n "$(VERSION)" || (echo "usage: make verify-release VERSION=vX.Y.Z" >&2; exit 2)
+	@test -n "$(VERSION)" || (echo "usage: make verify-release VERSION=X.Y.Z" >&2; exit 2)
 	@set -e; \
-	release_commit="$$(./scripts/verify-crawlctl-release-provenance.sh "$(VERSION)")"; \
-	./scripts/verify-crawlctl-release.sh "$(VERSION)" "$$release_commit" \
-		"dist/crawlctl-$(VERSION)-macos-arm64.tar.gz" \
-		"dist/crawlctl-$(VERSION)-macos-x86_64.tar.gz"
+		version="$(VERSION)"; \
+		version="$${version#v}"; \
+		release_commit="$$(./scripts/verify-crawlctl-release-provenance.sh "v$$version")"; \
+		./scripts/verify-crawlctl-release.sh "$$version" "$$release_commit" \
+			"dist/crawlkit_$${version}_darwin_arm64.tar.gz" \
+			"dist/crawlkit_$${version}_darwin_amd64.tar.gz" \
+			"dist/crawlkit_$${version}_linux_arm64.tar.gz" \
+			"dist/crawlkit_$${version}_linux_amd64.tar.gz"
 
 release-artifacts: release
 
