@@ -2,7 +2,7 @@ BINARY := crawlctl
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build test test-race vet tidy tidy-check fmt lint test-release check snapshot release verify-release release-artifacts clean
+.PHONY: help build test test-race vet tidy tidy-check fmt lint check clean
 
 help:
 	@printf '%s\n' \
@@ -13,15 +13,10 @@ help:
 		'  fmt               Check Go formatting.' \
 		'  lint              Run vet, dead-code, and vulnerability checks.' \
 		'  check             Run every local gate enforced by CI.' \
-		'  snapshot          Build a credential-free local snapshot.' \
-		'  release           Refuse local publishing and print the unified workflow command.' \
-		'  verify-release    Verify downloaded fleet release artifacts (VERSION=X.Y.Z).' \
 		'  test-race         Run the Go test suite with the race detector.' \
-		'  test-release      Test the release scripts.' \
 		'  vet               Run go vet (compatibility target).' \
 		'  tidy              Apply go.mod and go.sum tidying.' \
 		'  tidy-check        Verify go.mod and go.sum are tidy.' \
-		'  release-artifacts Alias for release.' \
 		'  clean             Remove local build output.'
 
 build:
@@ -56,29 +51,7 @@ lint: vet
 	if [ -s "$$output_file" ]; then cat "$$output_file"; exit 1; fi
 	GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...
 
-test-release:
-	bash scripts/test-crawlctl-release.sh
-
-check: tidy-check fmt lint test test-race test-release
-
-snapshot: build
-
-release:
-	@./scripts/package-crawlctl-release.sh "$(VERSION)"
-
-verify-release:
-	@test -n "$(VERSION)" || (echo "usage: make verify-release VERSION=X.Y.Z" >&2; exit 2)
-	@set -e; \
-		version="$(VERSION)"; \
-		version="$${version#v}"; \
-		release_commit="$$(./scripts/verify-crawlctl-release-provenance.sh "v$$version")"; \
-		./scripts/verify-crawlctl-release.sh "$$version" "$$release_commit" \
-			"dist/crawlkit_$${version}_darwin_arm64.tar.gz" \
-			"dist/crawlkit_$${version}_darwin_amd64.tar.gz" \
-			"dist/crawlkit_$${version}_linux_arm64.tar.gz" \
-			"dist/crawlkit_$${version}_linux_amd64.tar.gz"
-
-release-artifacts: release
+check: tidy-check fmt lint test test-race
 
 clean:
 	rm -rf bin
