@@ -37,16 +37,14 @@ verify_thin_architecture() {
 }
 
 verify_checksum() {
-  local archive_path=$1 checksum_path=$2 expected_hash expected_name extra actual_hash
-  [[ "$(wc -l < "$checksum_path" | tr -d ' ')" == 1 ]] || {
-    echo "invalid checksum file: $checksum_path" >&2
+  local archive_path=$1 checksum_path=$2 expected_name matches expected_hash actual_hash
+  expected_name=$(basename "$archive_path")
+  matches=$(awk -v name="$expected_name" '$2 == name || $2 == "*" name { print $1 }' "$checksum_path")
+  [[ -n "$matches" && "$matches" != *$'\n'* && "$matches" =~ ^[[:xdigit:]]{64}$ ]] || {
+    echo "checksums file must contain exactly one valid record for $expected_name" >&2
     return 1
   }
-  read -r expected_hash expected_name extra < "$checksum_path"
-  [[ "$expected_hash" =~ ^[[:xdigit:]]{64}$ && "$expected_name" == "$(basename "$archive_path")" && -z "${extra:-}" ]] || {
-    echo "invalid checksum record: $checksum_path" >&2
-    return 1
-  }
+  expected_hash=$matches
   actual_hash=$(shasum -a 256 "$archive_path" | awk '{print $1}')
   [[ "$actual_hash" == "$expected_hash" ]] || {
     echo "checksum mismatch: $archive_path" >&2
@@ -64,14 +62,14 @@ esac
 
 case "$(uname -m)" in
   arm64) arch=arm64 ;;
-  x86_64) arch=x86_64 ;;
+  x86_64) arch=amd64 ;;
   *)
     echo "unsupported macOS architecture: $(uname -m)" >&2
     exit 1
     ;;
 esac
 
-for tool in codesign csreq curl env lipo shasum tar; do
+for tool in awk codesign csreq curl env lipo shasum tar; do
   command -v "$tool" >/dev/null || {
     echo "missing required tool: $tool" >&2
     exit 1
@@ -104,7 +102,8 @@ fi
   exit 2
 }
 
-asset="crawlctl-${VERSION}-macos-${arch}.tar.gz"
+release_version=${VERSION#v}
+asset="crawlkit_${release_version}_darwin_${arch}.tar.gz"
 base_url=${CRAWLCTL_DOWNLOAD_BASE_URL:-"https://github.com/$REPOSITORY/releases/download/$VERSION"}
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/crawlctl-install.XXXXXX")
 temp_binary=
@@ -115,15 +114,16 @@ cleanup() {
 trap cleanup EXIT
 
 curl -fsSL "$base_url/$asset" -o "$WORK_DIR/$asset"
-curl -fsSL "$base_url/$asset.sha256" -o "$WORK_DIR/$asset.sha256"
-verify_checksum "$WORK_DIR/$asset" "$WORK_DIR/$asset.sha256"
-[[ "$(tar -tzf "$WORK_DIR/$asset")" == crawlctl ]] || {
+curl -fsSL "$base_url/checksums.txt" -o "$WORK_DIR/checksums.txt"
+verify_checksum "$WORK_DIR/$asset" "$WORK_DIR/checksums.txt"
+members=$(tar -tzf "$WORK_DIR/$asset" | sed 's#^\./##; /^$/d')
+[[ "$members" == crawlctl ]] || {
   echo "release archive must contain only crawlctl" >&2
   exit 1
 }
 
 binary="$WORK_DIR/crawlctl"
-tar -xOf "$WORK_DIR/$asset" crawlctl > "$binary"
+tar -xzf "$WORK_DIR/$asset" -C "$WORK_DIR"
 chmod 0755 "$binary"
 codesign --verify --strict -R="$REQUIREMENT" --verbose=2 "$binary"
 codesign --verify --strict --check-notarization -R=notarized --verbose=2 "$binary"
@@ -133,7 +133,9 @@ grep -Fx "TeamIdentifier=$EXPECTED_TEAM_ID" <<<"$signature" >/dev/null
 grep -Fx "Authority=$EXPECTED_AUTHORITY" <<<"$signature" >/dev/null
 grep -F '(runtime)' <<<"$signature" >/dev/null
 verify_designated_requirement "$binary"
-verify_thin_architecture "$binary" "$arch"
+expected_macho_arch=$arch
+[[ "$expected_macho_arch" == amd64 ]] && expected_macho_arch=x86_64
+verify_thin_architecture "$binary" "$expected_macho_arch"
 [[ "$(env -i PATH=/usr/bin:/bin "$binary" --version)" == "${VERSION#v}" ]]
 
 mkdir -p "$INSTALL_DIR"

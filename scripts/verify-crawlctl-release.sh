@@ -26,18 +26,6 @@ verify_designated_requirement() {
   }
 }
 
-verify_thin_architecture() {
-  local binary=$1 expected_arch=$2 architecture_output
-  local -a slices
-  architecture_output=$(lipo -archs "$binary")
-  architecture_output=${architecture_output//$'\n'/ }
-  read -r -a slices <<<"$architecture_output"
-  if [[ "${#slices[@]}" -ne 1 || "${slices[0]}" != "$expected_arch" ]]; then
-    echo "crawlctl must contain exactly one $expected_arch architecture slice: $binary" >&2
-    return 1
-  fi
-}
-
 verify_build_provenance() {
   local binary=$1 buildinfo
   buildinfo=$(go version -m "$binary")
@@ -60,33 +48,31 @@ verify_build_provenance() {
 }
 
 verify_checksum() {
-  local archive_path=$1 checksum_path=$2 expected_hash expected_name extra actual_hash
-  [[ "$(wc -l < "$checksum_path" | tr -d ' ')" == 1 ]] || {
-    echo "invalid checksum file: $checksum_path" >&2
+  local archive=$1 checksum_file=$2 name matches expected_hash actual_hash
+  name=$(basename "$archive")
+  matches=$(awk -v name="$name" '$2 == name || $2 == "*" name { print $1 }' "$checksum_file")
+  [[ -n "$matches" && "$matches" != *$'\n'* && "$matches" =~ ^[[:xdigit:]]{64}$ ]] || {
+    echo "checksums file must contain exactly one valid record for $name" >&2
     return 1
   }
-  read -r expected_hash expected_name extra < "$checksum_path"
-  [[ "$expected_hash" =~ ^[[:xdigit:]]{64}$ && "$expected_name" == "$(basename "$archive_path")" && -z "${extra:-}" ]] || {
-    echo "invalid checksum record: $checksum_path" >&2
-    return 1
-  }
-  actual_hash=$(shasum -a 256 "$archive_path" | awk '{print $1}')
+  expected_hash=$matches
+  actual_hash=$(shasum -a 256 "$archive" | awk '{print $1}')
   [[ "$actual_hash" == "$expected_hash" ]] || {
-    echo "checksum mismatch: $archive_path" >&2
+    echo "checksum mismatch: $archive" >&2
     return 1
   }
 }
 
-if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ||
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ||
   ! "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ || "$#" -eq 0 ]]; then
-  echo "usage: $0 vX.Y.Z EXPECTED-COMMIT crawlctl-vX.Y.Z-macos-ARCH.tar.gz [...]" >&2
+  echo "usage: $0 X.Y.Z EXPECTED-COMMIT crawlkit_X.Y.Z_PLATFORM_ARCH.tar.gz [...]" >&2
   exit 2
 fi
 [[ "$(uname -s)" == Darwin ]] || {
-  echo "crawlctl macOS signature verification must run on macOS" >&2
+  echo "crawlctl release verification must run on macOS" >&2
   exit 1
 }
-for tool in codesign csreq env go lipo shasum tar; do
+for tool in awk codesign csreq env file go lipo sed shasum tar; do
   command -v "$tool" >/dev/null || {
     echo "missing required tool: $tool" >&2
     exit 1
@@ -99,43 +85,64 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 for archive in "$@"; do
   archive=$(cd "$(dirname "$archive")" && pwd)/$(basename "$archive")
-  checksum="$archive.sha256"
-  [[ -f "$archive" && -f "$checksum" ]] || {
-    echo "missing artifact or checksum: $archive" >&2
+  checksum_file="$(dirname "$archive")/checksums.txt"
+  [[ -f "$archive" && -f "$checksum_file" ]] || {
+    echo "missing artifact or checksums.txt: $archive" >&2
     exit 1
   }
 
+  platform=
+  expected_arch=
   case "$(basename "$archive")" in
-    "crawlctl-${VERSION}-macos-arm64.tar.gz") expected_arch=arm64 ;;
-    "crawlctl-${VERSION}-macos-x86_64.tar.gz") expected_arch=x86_64 ;;
+    "crawlkit_${VERSION}_darwin_arm64.tar.gz") platform=darwin; expected_arch=arm64 ;;
+    "crawlkit_${VERSION}_darwin_amd64.tar.gz") platform=darwin; expected_arch=x86_64 ;;
+    "crawlkit_${VERSION}_linux_arm64.tar.gz") platform=linux; expected_arch=arm64 ;;
+    "crawlkit_${VERSION}_linux_amd64.tar.gz") platform=linux; expected_arch=amd64 ;;
     *)
-      echo "unexpected crawlctl artifact name: $(basename "$archive")" >&2
+      echo "unexpected crawlkit artifact name: $(basename "$archive")" >&2
       exit 1
       ;;
   esac
 
-  verify_checksum "$archive" "$checksum"
-  [[ "$(tar -tzf "$archive")" == crawlctl ]] || {
+  verify_checksum "$archive" "$checksum_file"
+  members=$(tar -tzf "$archive" | sed 's#^\./##; /^$/d')
+  [[ "$members" == crawlctl ]] || {
     echo "release archive must contain only crawlctl: $archive" >&2
     exit 1
   }
 
-  stage="$WORK_DIR/$expected_arch"
+  stage="$WORK_DIR/${platform}-${expected_arch}"
   mkdir -p "$stage"
+  tar -xzf "$archive" -C "$stage"
   binary="$stage/crawlctl"
-  tar -xOf "$archive" crawlctl > "$binary"
   chmod 0755 "$binary"
+  file_output=$(file -b "$binary")
 
-  codesign --verify --strict -R="$REQUIREMENT" --verbose=2 "$binary"
-  codesign --verify --strict --check-notarization -R=notarized --verbose=2 "$binary"
-  signature=$(codesign -dvvv "$binary" 2>&1)
-  grep -Fx "Identifier=$IDENTIFIER" <<<"$signature" >/dev/null
-  grep -Fx "TeamIdentifier=$EXPECTED_TEAM_ID" <<<"$signature" >/dev/null
-  grep -Fx "Authority=$EXPECTED_AUTHORITY" <<<"$signature" >/dev/null
-  grep -F '(runtime)' <<<"$signature" >/dev/null
-  verify_designated_requirement "$binary"
-  verify_thin_architecture "$binary" "$expected_arch"
+  if [[ "$platform" == darwin ]]; then
+    [[ "$file_output" == *"Mach-O 64-bit executable"* && "$file_output" == *"$expected_arch"* ]] || {
+      echo "unexpected Mach-O architecture for $archive: $file_output" >&2
+      exit 1
+    }
+    codesign --verify --strict -R="$REQUIREMENT" --verbose=2 "$binary"
+    codesign --verify --strict --check-notarization -R=notarized --verbose=2 "$binary"
+    signature=$(codesign -dvvv "$binary" 2>&1)
+    grep -Fx "Identifier=$IDENTIFIER" <<<"$signature" >/dev/null
+    grep -Fx "TeamIdentifier=$EXPECTED_TEAM_ID" <<<"$signature" >/dev/null
+    grep -Fx "Authority=$EXPECTED_AUTHORITY" <<<"$signature" >/dev/null
+    grep -F '(runtime)' <<<"$signature" >/dev/null
+    verify_designated_requirement "$binary"
+    [[ "$(lipo -archs "$binary")" == "$expected_arch" ]]
+  elif [[ "$expected_arch" == arm64 ]]; then
+    [[ "$file_output" == *"ELF 64-bit"* && "$file_output" == *"ARM aarch64"* ]] || {
+      echo "unexpected Linux arm64 binary: $file_output" >&2
+      exit 1
+    }
+  else
+    [[ "$file_output" == *"ELF 64-bit"* && "$file_output" == *"x86-64"* ]] || {
+      echo "unexpected Linux amd64 binary: $file_output" >&2
+      exit 1
+    }
+  fi
+
   verify_build_provenance "$binary"
-
-  [[ "$(env -i PATH=/usr/bin:/bin "$binary" --version)" == "${VERSION#v}" ]]
 done

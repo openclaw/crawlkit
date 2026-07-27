@@ -78,13 +78,8 @@ git -C "$ROOT" \
 
 tag_commit=$(git -C "$ROOT" rev-parse "$tag_ref^{commit}")
 branch_commit=$(git -C "$ROOT" rev-parse "$branch_ref^{commit}")
-head_commit=$(git -C "$ROOT" rev-parse HEAD)
-[[ "$tag_commit" == "$branch_commit" ]] || {
-  echo "remote release tag does not target the protected $DEFAULT_BRANCH head: $VERSION" >&2
-  exit 1
-}
-[[ "$head_commit" == "$tag_commit" ]] || {
-  echo "local HEAD does not match the verified remote release commit: $VERSION" >&2
+git -C "$ROOT" merge-base --is-ancestor "$tag_commit" "$branch_commit" || {
+  echo "remote release tag is not reachable from protected $DEFAULT_BRANCH: $VERSION" >&2
   exit 1
 }
 

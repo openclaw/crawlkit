@@ -2,10 +2,16 @@
 
 ## v0.14.4 - Unreleased
 
+### Breaking release asset rename
+
+- Replace `crawlctl-v0.14.3-macos-arm64.tar.gz` with `crawlkit_0.14.4_darwin_arm64.tar.gz` and `crawlctl-v0.14.3-macos-x86_64.tar.gz` with `crawlkit_0.14.4_darwin_amd64.tar.gz`. The new fleet-standard names use the repository prefix, omit the `v` inside filenames, use `darwin` and `amd64`, and replace per-asset `.sha256` sidecars with one `checksums.txt`; scripts that download the old names must be updated.
+- Add fleet-standard `crawlkit_0.14.4_linux_arm64.tar.gz` and `crawlkit_0.14.4_linux_amd64.tar.gz` archives containing the `crawlctl` executable.
+
+### Maintenance
+
 - Update Go dependencies, including `go-runewidth` v0.0.27 and `x/crypto` v0.54.0, and refresh Actions Checkout to v7.0.1 and CodeQL Action to v4.37.3.
 - Standardize local build, check, snapshot, and fail-closed release commands under the shared crawler Makefile contract.
-
-## Unreleased
+- Move official publication to the shared signed, notarized, independently verified GitHub Actions pipeline while preserving the `org.openclaw.crawlctl` code-signing identifier.
 
 ## v0.14.3 - 2026-07-17
 
