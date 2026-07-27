@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -37,6 +38,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(exitCode(err))
 	}
+}
+
+func crawlctlVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	return resolveVersion(version, info, ok)
+}
+
+func resolveVersion(linked string, info *debug.BuildInfo, ok bool) string {
+	if linked != "dev" || !ok || info == nil || info.Main.Version == "" || info.Main.Version == "(devel)" {
+		return linked
+	}
+	return strings.TrimPrefix(info.Main.Version, "v")
 }
 
 func exitCode(err error) int {
@@ -72,7 +85,7 @@ func (a *app) run(ctx context.Context, args []string) error {
 	a.json = *jsonOut
 	a.config = *configPath
 	if *versionFlag {
-		fmt.Fprintln(a.stdout, version)
+		fmt.Fprintln(a.stdout, crawlctlVersion())
 		return nil
 	}
 	rest := fs.Args()

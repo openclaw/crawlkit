@@ -2,24 +2,23 @@
 
 ## v0.14.5 - Unreleased
 
+- Stop publishing release binaries for this Go library. Install the optional CLI with `go install github.com/openclaw/crawlkit/cmd/crawlctl@latest`; v0.14.4 was the last release with attached artifacts.
+
 ## v0.14.4 - 2026-07-26
 
-### Breaking release asset rename
+### Final attached CLI artifacts
 
-- Replace `crawlctl-v0.14.3-macos-arm64.tar.gz` with `crawlkit_0.14.4_darwin_arm64.tar.gz` and `crawlctl-v0.14.3-macos-x86_64.tar.gz` with `crawlkit_0.14.4_darwin_amd64.tar.gz`. The new fleet-standard names use the repository prefix, omit the `v` inside filenames, use `darwin` and `amd64`, and replace per-asset `.sha256` sidecars with one `checksums.txt`; scripts that download the old names must be updated.
-- Add fleet-standard `crawlkit_0.14.4_linux_arm64.tar.gz` and `crawlkit_0.14.4_linux_amd64.tar.gz` archives containing the `crawlctl` executable.
+- Publish the final GitHub release with attached `crawlctl` artifacts for macOS and Linux.
 
 ### Maintenance
 
 - Update Go dependencies, including `go-runewidth` v0.0.27 and `x/crypto` v0.54.0, and refresh Actions Checkout to v7.0.1 and CodeQL Action to v4.37.3.
-- Standardize local build, check, snapshot, and fail-closed release commands under the shared crawler Makefile contract.
-- Move official publication to the shared signed, notarized, independently verified GitHub Actions pipeline while preserving the `org.openclaw.crawlctl` code-signing identifier.
+- Standardize local build and check commands under the shared crawler Makefile contract.
 
 ## v0.14.3 - 2026-07-17
 
 ### Highlights
 
-- Restore release readiness with Peter's current repository-pinned SSH signing key and a supported pre-tag macOS notarization preflight that rechecks online tickets and build provenance after managed keychain cleanup.
 - Update the bundled SQLite engine to v3.53.3 through `modernc.org/sqlite` v1.54.0.
 
 ### Maintenance
@@ -63,13 +62,11 @@
 
 ## v0.14.0 - 2026-07-12
 
-- Require notarized, single-architecture `crawlctl` release binaries bound to the repository-pinned signed tag and protected remote `main` commit, restore signing-keychain state before credential-free candidate probes, roll back partial artifact promotion, and keep naturally quarantined Gatekeeper execution plus Full Disk Access continuity as separate clean-VM gates because raw binaries and ZIP submission carriers cannot carry stapled tickets and raw-CLI `spctl` assessment is not an app-launch verdict.
 - Add immutable SQLite snapshot bundle manifests with deterministic source and representation digests, digest-scoped compressed objects and chunks, and explicit snapshot publishing helpers while preserving the legacy `current.*` bundle layout.
 - Expose immutable snapshot capabilities separately from the currently served archive capabilities so publishers can safely resume staged profiles before cutover.
 
 ## v0.13.4 - 2026-07-09
 
-- Add stable Developer ID signing, verification, and atomic installation for macOS `crawlctl` release artifacts so Full Disk Access survives updates.
 - Require Go 1.26.5 to include the standard-library TLS security fixes.
 
 ## v0.13.3 - 2026-07-06

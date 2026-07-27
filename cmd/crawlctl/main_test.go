@@ -8,11 +8,34 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 
 	"github.com/openclaw/crawlkit/scheduler"
 )
+
+func TestResolveVersion(t *testing.T) {
+	tests := []struct {
+		name   string
+		linked string
+		info   *debug.BuildInfo
+		ok     bool
+		want   string
+	}{
+		{name: "linked release", linked: "0.14.4", info: &debug.BuildInfo{Main: debug.Module{Version: "v0.14.5"}}, ok: true, want: "0.14.4"},
+		{name: "module release", linked: "dev", info: &debug.BuildInfo{Main: debug.Module{Version: "v0.14.5"}}, ok: true, want: "0.14.5"},
+		{name: "development build", linked: "dev", info: &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, ok: true, want: "dev"},
+		{name: "missing build info", linked: "dev", ok: false, want: "dev"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := resolveVersion(test.linked, test.info, test.ok); got != test.want {
+				t.Fatalf("resolveVersion() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
 
 func TestLatestRecordForJobAggregatesRepoRuns(t *testing.T) {
 	records := map[string]scheduler.RunRecord{

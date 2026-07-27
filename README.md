@@ -12,61 +12,24 @@ safe desktop-cache snapshot utilities.
 
 ## Install
 
+Import the library from a Go module:
+
 ```bash
 go get github.com/openclaw/crawlkit@latest
 ```
 
-macOS users should install or update `crawlctl` from the Developer ID-signed
-release artifact:
+Install the optional `crawlctl` CLI from source:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/openclaw/crawlkit/main/scripts/install-crawlctl.sh
-bash install-crawlctl.sh
+go install github.com/openclaw/crawlkit/cmd/crawlctl@latest
 ```
 
-The installer replaces the active `crawlctl` path when one exists, otherwise it
-uses the Go binary directory. An explicit destination may be passed as the
-second argument. Moving from an ad-hoc build to the first signed release needs
-one final Full Disk Access grant. Official builds keep the fixed
-`org.openclaw.crawlctl` identifier and OpenClaw Foundation designated
-requirement across in-place updates; the separate clean-VM release gate must
-prove that a later same-path build does not trigger a second protected-data
-alert. This contract does not suppress the first-install consent.
+`crawlkit` publishes no release binaries. Go modules resolve releases directly
+from signed git tags, so releasing this repository means creating and pushing a
+tag from `main`; there is no release workflow to dispatch. v0.14.4 was the last
+release with attached artifacts. See `docs/publishing.md` for the tag-only
+release procedure.
 
-Starting with v0.14.4, release assets use the fleet naming convention:
-`crawlkit_<version>_darwin_arm64.tar.gz` and
-`crawlkit_<version>_darwin_amd64.tar.gz`, with one `checksums.txt` file. This is
-a deliberate breaking rename from the v0.14.3
-`crawlctl-v0.14.3-macos-<arch>.tar.gz` archives and their individual `.sha256`
-sidecars. The version in the new filename has no `v` prefix, and Intel uses
-`amd64` instead of `x86_64`. The installer understands the new names.
-
-The same release also provides `crawlkit_<version>_linux_arm64.tar.gz` and
-`crawlkit_<version>_linux_amd64.tar.gz`. Each archive contains the `crawlctl`
-executable; verify it against `checksums.txt` before installation. The bundled
-installer remains macOS-specific because it also enforces the Developer ID
-designated requirement and online notarization ticket.
-
-Starting with v0.14.0, macOS release binaries also require an Apple online
-notarization ticket before packaging and installation. The raw executable and
-ephemeral ZIP submitted to Apple do not support ticket stapling, so verification
-requires network access. Release verification also binds each thin binary's Go
-VCS metadata to the repository-pinned signed tag at the protected remote
-`main` head and rejects non-SSH, renamed, modified, or side-commit builds.
-`spctl --assess --type execute` is not a valid release gate for a standalone
-CLI: it can reject valid notarized code because the file is not an app bundle.
-These checks do not replace a separate launch test using a naturally
-quarantined download; `curl`, `scp`, and archive extraction alone are not
-reliable Gatekeeper proof.
-
-`go install github.com/openclaw/crawlkit/cmd/crawlctl@latest` remains useful for
-development, but produces a locally compiled, ad-hoc-signed macOS executable.
-Replacing that executable changes its designated requirement and invalidates
-Full Disk Access grants.
-
-Go packages are published by tagging this repository. GitHub releases carry
-signed macOS and static Linux `crawlctl` artifacts. See `docs/publishing.md`
-for the release commands and exact asset contract.
 See `docs/boundary.md` for the crawlkit-versus-app ownership boundary and
 `docs/remote-contract.md` for the Worker/client split.
 
