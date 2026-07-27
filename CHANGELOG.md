@@ -3,6 +3,7 @@
 ## v0.14.4 - Unreleased
 
 - Update Go dependencies, including `go-runewidth` v0.0.27 and `x/crypto` v0.54.0, and refresh Actions Checkout to v7.0.1 and CodeQL Action to v4.37.3.
+- Standardize local build, check, snapshot, and fail-closed release commands under the shared crawler Makefile contract.
 
 ## Unreleased
 

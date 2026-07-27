@@ -11,10 +11,7 @@ its TCC/Full Disk Access identity across updates.
 2. Run the crawlkit gate:
 
 ```bash
-GOWORK=off go mod tidy
-git diff --exit-code -- go.mod go.sum
-GOWORK=off go vet ./...
-GOWORK=off go test -count=1 ./...
+make check
 ```
 
 3. Update docs and changelogs in `crawlkit` plus every downstream app branch
@@ -58,12 +55,15 @@ or renamed tag is not releasable. It then uses the shared secret-safe release
 keychain helper and fails closed if any provenance or signing check differs:
 
 ```bash
-make release-artifacts VERSION=v0.14.3
-release_commit=$(scripts/verify-crawlctl-release-provenance.sh v0.14.3)
-scripts/verify-crawlctl-release.sh v0.14.3 "$release_commit" \
-  dist/crawlctl-v0.14.3-macos-arm64.tar.gz \
-  dist/crawlctl-v0.14.3-macos-x86_64.tar.gz
+make release VERSION=v0.14.3
 ```
+
+`make release` does not return successfully until the package entrypoint has
+verified both final archives, including their Developer ID signatures and
+online notarization tickets. Use `make verify-release VERSION=v0.14.3` to
+recheck artifacts that were already built. The former `make release-artifacts`
+name remains an alias for compatibility. For an unsigned, credential-free
+development build, use `make snapshot`.
 
 The fixed code identifier is `org.openclaw.crawlctl`. The required signing
 identity is `Developer ID Application: OpenClaw Foundation (FWJYW4S8P8)`; the
