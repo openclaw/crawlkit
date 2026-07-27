@@ -45,8 +45,11 @@ fi
 grep -Fx \
   'steipete@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA6rFpd7CodTF6fy60LZTriTeiGAJ7haIBWD4hrdxmDB' \
   "$ROOT/.github/release-allowed-signers" >/dev/null
-[[ "$(wc -l < "$ROOT/.github/release-allowed-signers" | tr -d ' ')" == 1 ]] ||
-  fail "release signer policy must contain exactly one reviewed signer"
+grep -Fx \
+  'steipete@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII9XsaCcr8TInPnHcuTVfvXXcsoUFrOE7menfbEIHFW9' \
+  "$ROOT/.github/release-allowed-signers" >/dev/null
+[[ "$(wc -l < "$ROOT/.github/release-allowed-signers" | tr -d ' ')" == 2 ]] ||
+  fail "release signer policy must contain exactly the historical and current reviewed signers"
 
 release_output=$(bash "$ROOT/scripts/package-crawlctl-release.sh" v0.14.4 2>&1) &&
   fail "local package script unexpectedly succeeded"
