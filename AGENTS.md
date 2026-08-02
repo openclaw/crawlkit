@@ -74,11 +74,12 @@ then consume it from the app.
 
 ## Release Model
 
-Go libraries are released by signed semver git tags. Every GitHub release must
-also include Developer ID-signed `crawlctl` macOS artifacts produced through
-the repository release scripts from the clean checkout at that exact signed
-tag; never publish locally compiled or ad-hoc-signed macOS binaries. There is no
-npm, PyPI, or Homebrew publish step for `crawlkit`.
+Release only through `.github/workflows/release-unified.yml`. The shared
+`openclaw/release-workflows` pipeline owns tag creation, Developer ID signing,
+notarization, independent artifact verification, and GitHub Release
+publication. Never create or sign release tags locally, publish locally built
+artifacts, or handle release credentials outside the workflow. There is no npm,
+PyPI, or Homebrew publish step for `crawlkit`.
 
 Use patch tags for narrow fixes and minor tags for broader shared crawler or TUI
 infrastructure. After tagging, prime/verify the Go proxy and then update

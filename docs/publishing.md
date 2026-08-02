@@ -1,55 +1,70 @@
 # Publishing Crawlkit
 
-`crawlkit` is a Go library. Releases are signed git tags, which are the source
-used by the Go module proxy. The repository publishes no release binaries, and
-there is no release workflow to dispatch. Users who want the optional CLI
-install it from source:
+`crawlkit` is a Go library with the optional `crawlctl` CLI. Releases use the
+fleet `release-go-cli` workflow from `openclaw/release-workflows`. The workflow
+owns tag creation, Developer ID signing, notarization, independent artifact
+verification, and GitHub Release publication. Do not create release tags or
+handle signing credentials locally.
 
-```bash
-go install github.com/openclaw/crawlkit/cmd/crawlctl@latest
-```
+## Release assets
 
-v0.14.4 was the last release with attached artifacts. Do not delete or modify
-those historical releases or their assets.
+The archive prefix is the repository name; the executable inside every archive
+is `crawlctl`.
+
+| Platform | Asset |
+| --- | --- |
+| macOS Apple Silicon | `crawlkit_<version>_darwin_arm64.tar.gz` |
+| macOS Intel | `crawlkit_<version>_darwin_amd64.tar.gz` |
+| Linux arm64 | `crawlkit_<version>_linux_arm64.tar.gz` |
+| Linux amd64 | `crawlkit_<version>_linux_amd64.tar.gz` |
+| All platforms | `checksums.txt` |
+
+The fixed macOS code identifier is `org.openclaw.crawlctl`, and the required
+signing identity is `Developer ID Application: OpenClaw Foundation
+(FWJYW4S8P8)`. The workflow signs each native Mach-O with the hardened runtime,
+submits it for notarization, and independently verifies both architectures
+before publication. crawlkit has no universal macOS archive, nFPM package, or
+Homebrew handoff.
 
 ## Release checklist
 
-1. Pull the protected default branch and confirm the checkout is clean.
-2. Add the release notes to the versioned Unreleased section and run:
+1. Prepare a release PR from the current protected `main` head. Date the
+   versioned changelog section and run:
 
    ```bash
    make check
    actionlint
    ```
 
-3. Merge the release-preparation PR, then date its changelog heading.
-4. Create an SSH-signed annotated tag from the exact protected `main` commit
-   using the current signer recorded in `.github/release-allowed-signers`:
+2. Merge the release-preparation PR and confirm its exact merge commit is green.
+3. Dispatch the unified workflow from the current protected `main` head:
 
    ```bash
-   (
-     set -euo pipefail
-     git switch main
-     git pull --ff-only
-     test -z "$(git status --porcelain)"
-     release_commit="$(git rev-parse HEAD)"
-     test "$release_commit" = "$(git rev-parse origin/main)"
-     git -c gpg.format=ssh tag -s -a vX.Y.Z "$release_commit" -m "crawlkit vX.Y.Z"
-     git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=.github/release-allowed-signers verify-tag vX.Y.Z
-     test "$(git rev-parse 'vX.Y.Z^{commit}')" = "$release_commit"
-     git push origin vX.Y.Z
-   )
+   gh workflow run release-unified.yml --repo openclaw/crawlkit -f version=X.Y.Z
    ```
 
-5. Prime and verify module proxy visibility:
+4. Watch the exact workflow run through publication. It creates or reuses an
+   immutable annotated version tag, builds all four native archives, signs and
+   notarizes the two macOS binaries, verifies the immutable draft independently
+   on Apple Silicon and Intel, and publishes only the verified bytes.
+5. Confirm the GitHub Release notes match the dated changelog section. Download
+   every release asset, verify `checksums.txt`, inspect both Linux binaries, and
+   verify a downloaded macOS binary with:
+
+   ```bash
+   codesign --verify --strict --check-notarization -R=notarized ./crawlctl
+   ```
+
+6. Prime and verify module proxy visibility:
 
    ```bash
    GOPROXY=https://proxy.golang.org GONOSUMDB= go list -m github.com/openclaw/crawlkit@vX.Y.Z
    GOPROXY=https://proxy.golang.org go list -m github.com/openclaw/crawlkit@vX.Y.Z
    ```
 
-6. Add the next patch-version Unreleased changelog section and merge it.
+7. Merge the workflow's closeout PR, or otherwise add the next patch-version
+   Unreleased changelog section.
 
-Use a patch tag only for narrow fixes on the existing API. Use a minor tag for
-broad crawler infrastructure changes. If the module reaches v2, Go requires
+Use a patch version for narrow fixes on the existing API. Use a minor version
+for broad crawler infrastructure changes. If the module reaches v2, Go requires
 the module path to become `github.com/openclaw/crawlkit/v2`.
