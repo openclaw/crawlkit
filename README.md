@@ -24,11 +24,11 @@ Install the optional `crawlctl` CLI from source:
 go install github.com/openclaw/crawlkit/cmd/crawlctl@latest
 ```
 
-`crawlkit` publishes no release binaries. Go modules resolve releases directly
-from signed git tags, so releasing this repository means creating and pushing a
-tag from `main`; there is no release workflow to dispatch. v0.14.4 was the last
-release with attached artifacts. See `docs/publishing.md` for the tag-only
-release procedure.
+GitHub releases also provide Developer ID-signed and notarized `crawlctl`
+archives for macOS plus static Linux archives. Releases are created through the
+repository's unified release workflow; it owns tag creation, signing,
+notarization, verification, and publication. See `docs/publishing.md` for the
+release procedure and artifact contract.
 
 See `docs/boundary.md` for the crawlkit-versus-app ownership boundary and
 `docs/remote-contract.md` for the Worker/client split.

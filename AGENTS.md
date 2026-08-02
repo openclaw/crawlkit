@@ -75,13 +75,12 @@ then consume it from the app.
 
 ## Release Model
 
-Go libraries are released by SSH-signed semver git tags. `crawlkit` publishes no
-release binaries, and there is no release workflow to dispatch. Users install
-the optional `crawlctl` CLI from source with
-`go install github.com/openclaw/crawlkit/cmd/crawlctl@latest`. v0.14.4 was the
-last release with attached artifacts; do not delete or modify those historical
-releases or assets. There is no npm, PyPI, or Homebrew publish step for
-`crawlkit`.
+Release only through `.github/workflows/release-unified.yml`. The shared
+`openclaw/release-workflows` pipeline owns tag creation, Developer ID signing,
+notarization, independent artifact verification, and GitHub Release
+publication. Never create or sign release tags locally, publish locally built
+artifacts, or handle release credentials outside the workflow. There is no npm,
+PyPI, or Homebrew publish step for `crawlkit`.
 
 Use patch tags for narrow fixes and minor tags for broader shared crawler or TUI
 infrastructure. After tagging, prime/verify the Go proxy and then update
