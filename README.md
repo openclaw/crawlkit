@@ -90,3 +90,8 @@ Native install backends:
 
 Library tests use temporary directories. They do not touch app runtime stores
 such as `~/.config/gitcrawl`, `~/.slacrawl`, `~/.discrawl`, or `~/.notcrawl`.
+
+When a caller supplies a SQLite `file:` URI instead of a filesystem path, its
+query parameters are forwarded to the SQLite driver. Those parameters can
+override crawlkit's default pragmas or make the connection fail validation, so
+use a plain path unless driver-specific behavior is intentional.

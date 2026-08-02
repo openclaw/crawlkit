@@ -3,6 +3,7 @@
 ## v0.14.5 - Unreleased
 
 - Stop publishing release binaries for this Go library. Install the optional CLI with `go install github.com/openclaw/crawlkit/cmd/crawlctl@latest`; v0.14.4 was the last release with attached artifacts.
+- Update the SQLite driver to v1.55.0 and document caller-provided `file:` URI parameter pass-through.
 
 ## v0.14.4 - 2026-07-26
 
