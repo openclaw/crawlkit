@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -146,7 +145,7 @@ func TestOpenEscapesURIReservedPathCharacters(t *testing.T) {
 func TestOpenHonorsCallerSQLiteURIParameters(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "archive.db")
-	uri := (&url.URL{Scheme: "file", Path: path}).String() + "?_journal_mode=delete"
+	uri := dsn(path, "_journal_mode=delete")
 	st, err := Open(ctx, Options{Path: uri})
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +164,7 @@ func TestOpenHonorsCallerSQLiteURIParameters(t *testing.T) {
 func TestOpenRejectsInvalidCallerSQLiteURIParameters(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "archive.db")
-	uri := (&url.URL{Scheme: "file", Path: path}).String() + "?_busy_timeout=5s"
+	uri := dsn(path, "_busy_timeout=5s")
 	st, err := Open(ctx, Options{Path: uri})
 	if st != nil {
 		_ = st.Close()
@@ -189,7 +188,7 @@ func TestOpenReadOnlyPreservesModeWithCallerSQLiteURIParameters(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	uri := (&url.URL{Scheme: "file", Path: path}).String() + "?_query_only=0"
+	uri := dsn(path, "_query_only=0")
 	ro, err := OpenReadOnly(ctx, uri)
 	if err != nil {
 		t.Fatal(err)
