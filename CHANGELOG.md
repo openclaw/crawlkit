@@ -3,6 +3,7 @@
 ## v0.14.5 - Unreleased
 
 - Stop publishing release binaries for this Go library. Install the optional CLI with `go install github.com/openclaw/crawlkit/cmd/crawlctl@latest`; v0.14.4 was the last release with attached artifacts.
+- Refresh the pinned TruffleHog and CodeQL security actions to v3.96.0 and v4.37.4.
 
 ## v0.14.4 - 2026-07-26
 
