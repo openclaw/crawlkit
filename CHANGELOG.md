@@ -1,5 +1,7 @@
 # Changelog
 
+## v0.14.6 - Unreleased
+
 ## v0.14.5 - 2026-08-02
 
 - Stop publishing release binaries for this Go library. Install the optional CLI with `go install github.com/openclaw/crawlkit/cmd/crawlctl@latest`; v0.14.4 was the last release with attached artifacts.
