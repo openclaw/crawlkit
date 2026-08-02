@@ -7,6 +7,7 @@
 - Refresh the pinned TruffleHog and CodeQL security actions to v3.96.0 and v4.37.4.
 - Update the stale repository automation to the immutable v11.0.0 action revision.
 - Raise the brokered AWS Crabbox root volume to 400 GB to match the current developer snapshot minimum.
+- Allow the current maintainer SSH signing key to create repository-verified release tags.
 
 ## v0.14.4 - 2026-07-26
 
