@@ -24,11 +24,11 @@ Install the optional `crawlctl` CLI from source:
 go install github.com/openclaw/crawlkit/cmd/crawlctl@latest
 ```
 
-GitHub releases also provide Developer ID-signed and notarized `crawlctl`
-archives for macOS plus static Linux archives. Releases are created through the
-repository's unified release workflow; it owns tag creation, signing,
-notarization, verification, and publication. See `docs/publishing.md` for the
-release procedure and artifact contract.
+v0.14.5 is an SSH-signed Go module tag without a GitHub Release or attached
+artifacts. The unified release workflow is configured to publish future
+Developer ID-signed and notarized `crawlctl` archives for macOS plus static
+Linux archives. See `docs/publishing.md` for the release procedure, credential
+prerequisites, and artifact contract.
 
 See `docs/boundary.md` for the crawlkit-versus-app ownership boundary and
 `docs/remote-contract.md` for the Worker/client split.

@@ -2,9 +2,13 @@
 
 ## v0.14.6 - Unreleased
 
+- Prepare the unified release pipeline for future Developer ID-signed and
+  notarized `crawlctl` macOS archives and static Linux archives.
+
 ## v0.14.5 - 2026-08-02
 
-- Restore the unified release pipeline for Developer ID-signed and notarized `crawlctl` macOS archives and static Linux archives; the shared workflow now owns tag creation and release publication.
+- Publish the module as an SSH-signed tag without a GitHub Release or attached
+  `crawlctl` artifacts; v0.14.4 remains the latest release with binary assets.
 - Update Go dependencies and validation tools, including SQLite v1.55.0, `modernc.org/libc` v1.74.4, `go-colorful` v1.4.1, deadcode v0.48.0, and govulncheck v1.6.0; document caller-provided `file:` URI parameter pass-through.
 - Refresh the pinned TruffleHog and CodeQL security actions to v3.96.0 and v4.37.4.
 - Update the stale repository automation to the immutable v11.0.0 action revision.
