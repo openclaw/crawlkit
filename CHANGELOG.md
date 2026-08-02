@@ -1,9 +1,9 @@
 # Changelog
 
-## v0.14.5 - Unreleased
+## v0.14.5 - 2026-08-02
 
 - Stop publishing release binaries for this Go library. Install the optional CLI with `go install github.com/openclaw/crawlkit/cmd/crawlctl@latest`; v0.14.4 was the last release with attached artifacts.
-- Update Go dependencies and validation tools, including SQLite v1.55.0, `modernc.org/libc` v1.74.4, deadcode v0.48.0, and govulncheck v1.6.0; document caller-provided `file:` URI parameter pass-through.
+- Update Go dependencies and validation tools, including SQLite v1.55.0, `modernc.org/libc` v1.74.4, `go-colorful` v1.4.1, deadcode v0.48.0, and govulncheck v1.6.0; document caller-provided `file:` URI parameter pass-through.
 - Refresh the pinned TruffleHog and CodeQL security actions to v3.96.0 and v4.37.4.
 - Update the stale repository automation to the immutable v11.0.0 action revision.
 - Raise the brokered AWS Crabbox root volume to 400 GB to match the current developer snapshot minimum.
