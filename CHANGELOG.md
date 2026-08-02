@@ -1,11 +1,14 @@
 # Changelog
 
+## v0.14.6 - Unreleased
+
 ## v0.14.5 - 2026-08-02
 
 - Restore the unified release pipeline for Developer ID-signed and notarized `crawlctl` macOS archives and static Linux archives; the shared workflow now owns tag creation and release publication.
-- Update Go dependencies and validation tools, including SQLite v1.55.0, `modernc.org/libc` v1.74.4, deadcode v0.48.0, and govulncheck v1.6.0; document caller-provided `file:` URI parameter pass-through.
+- Update Go dependencies and validation tools, including SQLite v1.55.0, `modernc.org/libc` v1.74.4, `go-colorful` v1.4.1, deadcode v0.48.0, and govulncheck v1.6.0; document caller-provided `file:` URI parameter pass-through.
 - Refresh the pinned TruffleHog and CodeQL security actions to v3.96.0 and v4.37.4.
 - Update the stale repository automation to the immutable v11.0.0 action revision.
+- Raise the brokered AWS Crabbox root volume to 400 GB to match the current developer snapshot minimum.
 
 ## v0.14.4 - 2026-07-26
 
