@@ -1,97 +1,129 @@
-# 🧱 crawlkit
+# crawlkit 🧰 — one kit, many crawlers
 
 ![crawlkit banner](docs/assets/readme-banner.jpg)
 
-Shared Go infrastructure for local-first crawler archives.
+[![CI](https://img.shields.io/github/actions/workflow/status/openclaw/crawlkit/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/openclaw/crawlkit/actions/workflows/ci.yml)
+[![Go module](https://img.shields.io/github/v/tag/openclaw/crawlkit?sort=semver&style=flat-square)](https://pkg.go.dev/github.com/openclaw/crawlkit)
+[![Go](https://img.shields.io/github/go-mod/go-version/openclaw/crawlkit?style=flat-square)](https://go.dev/)
+[![License](https://img.shields.io/github/license/openclaw/crawlkit?style=flat-square)](LICENSE)
 
-`crawlkit` is not a universal Slack, Discord, Notion, or GitHub crawler. It is
-the reusable foundation beneath those tools: SQLite hygiene, TOML config
-defaults, portable JSONL/Gzip packing, git-backed snapshot sharing, sync state,
-CLI output helpers, control/status metadata, a shared terminal explorer, and
-safe desktop-cache snapshot utilities.
+`crawlkit` is the shared Go library for local-first crawler archives. It gives crawler authors provider-neutral building blocks for config paths, SQLite stores, snapshots, backups, synchronization, search, terminal interfaces, and automation.
+
+Provider APIs, authentication, schemas, privacy filters, and user-facing command contracts stay in the downstream crawl apps.
 
 ## Install
 
-Import the library from a Go module:
+`crawlkit` requires Go 1.26.5 or newer.
 
-```bash
-go get github.com/openclaw/crawlkit@latest
+Add the package you need to a Go module. For the quick start below:
+
+```sh
+go get github.com/openclaw/crawlkit/store@latest
 ```
 
-Install the optional `crawlctl` CLI from source:
+Install the optional archive controller:
 
-```bash
+```sh
 go install github.com/openclaw/crawlkit/cmd/crawlctl@latest
 ```
 
-v0.14.5 is an SSH-signed Go module tag without a GitHub Release or attached
-artifacts. The unified release workflow is configured to publish future
-Developer ID-signed and notarized `crawlctl` archives for macOS plus static
-Linux archives. See `docs/publishing.md` for the release procedure, credential
-prerequisites, and artifact contract.
+The latest module version is available through the Go module proxy. Binary release history and the future signed-archive process are documented in [Publishing Crawlkit](docs/publishing.md).
 
-See `docs/boundary.md` for the crawlkit-versus-app ownership boundary and
-`docs/remote-contract.md` for the Worker/client split.
+## Quick start
 
-## Packages
+This example opens an in-memory SQLite store with crawlkit's connection defaults, applies a schema, writes a row, and reads it back:
 
-- `config`: standard TOML config paths, opt-in platform-native runtime dirs,
-  migration-safe legacy path fallback, and token diagnostics.
-- `store`: SQLite open/read-only/transaction/query helpers plus safe FTS5 term and optimization helpers.
-- `snapshot`: `manifest.json` plus JSONL/Gzip table snapshot export, file fingerprints, exact or monotonic-merge import planning, impact classification, and managed sidecar trees.
-- `backup`: age-encrypted JSONL/Gzip shards, backup manifests, recipient/identity helpers, history listing, and historical-ref restore verification.
-- `mirror`: clone/init/pull/commit/push helpers plus non-mutating fetch, immutable tags, Git-object reads, and history inspection for private snapshot repos.
-- `state`: generic crawler cursor and freshness records, including mapped adapters for existing app table layouts.
-- `embed`: reusable OpenAI-compatible, Ollama, and llama.cpp embedding providers plus local probe diagnostics.
-- `vector`: float32 vector encoding, dimension validation, exact cosine search, optional turbovec-backed search for dimensions divisible by 8 up to 8,192, top-k helpers, and reciprocal-rank fusion.
-- `releasecheck`: GitHub release checks, 24-hour cache handling, scripted-output
-  suppression, and stderr update notice formatting for crawl app CLIs.
-- `remote`: provider-neutral HTTP client, config, query, ingest, auth, status,
-  and protocol contract metadata for Worker-fronted remote archives such as
-  Cloudflare D1.
-- `output`: text/json/log output helpers.
-- `control`: crawl app metadata, command manifests, status payloads, contact-export contracts, and database inventory for launchers and automation.
-- `scheduler`: crawl app discovery, job config, single-process run locking,
-  JSONL run history, log paths, and launchd/systemd/Windows/cron schedule
-  rendering for controller CLIs.
-- `tui`: shared terminal archive explorer with gitcrawl-style responsive panes, entity/member/detail lanes, compact sortable headers, mouse selection, floating right-click actions, sorting/filtering, and local/remote source status.
-- `cache`: safe read-only local cache and SQLite DB/WAL/SHM snapshot helpers.
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/openclaw/crawlkit/store"
+)
+
+func main() {
+	ctx := context.Background()
+	db, err := store.Open(ctx, store.Options{
+		Path:   ":memory:",
+		Schema: `create table items (title text not null)`,
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	if _, err := db.DB().ExecContext(ctx, `insert into items values (?)`, "first crawl"); err != nil {
+		panic(err)
+	}
+	rows, err := db.Query(ctx, `select title from items`)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(rows.Values[0]["title"])
+}
+```
+
+Run it from a module that depends on `crawlkit`:
+
+```sh
+go run .
+```
+
+```text
+first crawl
+```
+
+## Package map
+
+| Area | Packages | What they own |
+| --- | --- | --- |
+| Local data | `config`, `store`, `state`, `cache` | Runtime paths, SQLite access, sync cursors, and safe cache snapshots |
+| Portable archives | `snapshot`, `backup`, `mirror` | JSONL/Gzip packs, encrypted backups, sidecars, and Git-backed history |
+| Search | `embed`, `vector` | Embedding providers, vector encoding, exact search, and result fusion |
+| App contracts | `control`, `output`, `progress` | Machine-readable metadata, output formats, and CI-safe progress logs |
+| Remote archives | `remote` | Provider-neutral HTTP client and versioned archive protocol |
+| User surfaces | `scheduler`, `tui`, `releasecheck` | Refresh jobs, terminal browsing, and release notices |
+
+See the [package guide](docs/packages.md) for the complete inventory and [Go package reference](https://pkg.go.dev/github.com/openclaw/crawlkit) for exported APIs.
 
 ## crawlctl
 
-`crawlctl` is the shared controller for keeping local crawl archives warm.
-It discovers installed crawl apps through `metadata --json`, falls back to
-temporary legacy adapters for older apps, runs configured jobs with a lock, and
-records one JSONL run record per command.
+`crawlctl` discovers installed crawl apps through their machine-readable metadata, runs configured refresh jobs under a single-process lock, and records JSONL run history.
 
-```bash
-crawlctl init --repo openclaw/openclaw
-crawlctl run
-crawlctl status
-crawlctl logs gitcrawl --tail 80
-crawlctl install --dry-run
-```
+| Command | Purpose |
+| --- | --- |
+| `init` | Discover crawl apps and write a controller config |
+| `discover` | Print discovered crawl apps |
+| `run` | Run enabled refresh jobs |
+| `status` | Show the latest recorded job status |
+| `logs` | Print recent job logs |
+| `install` | Install or render a periodic schedule |
+| `uninstall` | Remove an installed periodic schedule |
 
-Native install backends:
+Scheduling uses launchd on macOS, systemd user units on Linux, Task Scheduler on Windows, and cron rendering as the portable fallback.
 
-- macOS: `launchd`
-- Linux: `systemd --user`
-- Windows: Task Scheduler
-- portable fallback: cron line rendering
+## Boundaries
 
-## Downstream apps
+`crawlkit` accepts shared mechanics only when they are provider-neutral, reusable by at least two apps, and preserve each app's database and CLI contracts. The [ownership map](docs/boundary.md) tracks what belongs here and what remains in GitHub-, Discord-, Slack-, Notion-, and other provider-specific applications.
 
-- `gitcrawl`, `discrawl`, `notcrawl`, `wacrawl`, `telecrawl`, and `slacrawl`
-  consume `crawlkit` on `main`.
-- The apps keep provider schemas, auth, desktop/API parsing, privacy filters,
-  and user-facing CLI contracts. `crawlkit` owns only the reusable mechanics.
+The `remote` package owns the Go client and v1 wire contract for hosted archives. Worker deployment, D1 schema, authentication policy, and secrets live outside this module; see the [remote contract](docs/remote-contract.md) and [Cloudflare archive design](docs/cloudflare-remote-archives.md).
 
 ## Safety
 
-Library tests use temporary directories. They do not touch app runtime stores
-such as `~/.config/gitcrawl`, `~/.slacrawl`, `~/.discrawl`, or `~/.notcrawl`.
+Tests and examples use temporary or in-memory data. They do not access app runtime stores such as `~/.config/gitcrawl`, `~/.slacrawl`, `~/.discrawl`, or `~/.notcrawl`.
 
-When a caller supplies a SQLite `file:` URI instead of a filesystem path, its
-query parameters are forwarded to the SQLite driver. Those parameters can
-override crawlkit's default pragmas or make the connection fail validation, so
-use a plain path unless driver-specific behavior is intentional.
+Pass a plain filesystem path to `store.Open` unless SQLite driver parameters are intentional. A caller-supplied `file:` URI keeps its query parameters, which can override crawlkit's default pragmas or fail connection validation.
+
+## Development
+
+```sh
+make check
+```
+
+This runs module tidiness, formatting, vet, dead-code and vulnerability checks, unit tests, and race tests with `GOWORK=off`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the compatibility rules.
+
+## License
+
+[MIT](LICENSE)
