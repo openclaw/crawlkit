@@ -2,6 +2,7 @@
 
 ## v0.14.6 - Unreleased
 
+- Rewrite the README to the shared project standard and move the full package inventory to `docs/packages.md`.
 - Prepare the unified release pipeline for future Developer ID-signed and
   notarized `crawlctl` macOS archives and static Linux archives.
 
