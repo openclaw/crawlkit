@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -840,7 +841,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.filterMode {
 			switch typed.String() {
-			case "ctrl+c", "ctrl+d", "q":
+			case "ctrl+c", "ctrl+d":
 				return m, tea.Quit
 			case "enter":
 				m.filterMode = false
@@ -852,7 +853,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterMode = false
 			case "backspace":
 				if len(m.query) > 0 {
-					m.query = m.query[:len(m.query)-1]
+					_, size := utf8.DecodeLastRuneInString(m.query)
+					m.query = m.query[:len(m.query)-size]
 					m.applyFilter()
 				}
 			default:
@@ -1597,6 +1599,12 @@ func (m *model) startRefresh(manual bool) tea.Cmd {
 	if m.refresh == nil {
 		if manual {
 			m.status = "Refresh unavailable"
+		}
+		return nil
+	}
+	if m.refreshing {
+		if manual {
+			m.status = "Refresh already in progress"
 		}
 		return nil
 	}

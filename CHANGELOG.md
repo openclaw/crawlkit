@@ -1,7 +1,10 @@
 # Changelog
 
-## v0.14.6 - Unreleased
+## v0.14.6 - 2026-08-06
 
+- Fix the TUI filter so typing `q` appends to the query instead of quitting; `ctrl+c`/`ctrl+d` still quit while filtering.
+- Fix TUI filter backspace to remove one rune instead of one byte, keeping CJK and emoji queries valid UTF-8.
+- Guard `startRefresh` against overlapping runs so slow refreshes no longer stack goroutines; a manual refresh reports "Refresh already in progress".
 - Rewrite the README to the shared project standard and move the full package inventory to `docs/packages.md`.
 - Prepare the unified release pipeline for future Developer ID-signed and
   notarized `crawlctl` macOS archives and static Linux archives.
