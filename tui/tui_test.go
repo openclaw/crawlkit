@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -444,7 +445,7 @@ func TestVeryNarrowPanesStillShowCompactColumns(t *testing.T) {
 	}
 }
 
-func TestQClosesMenuAndQuitsFromFilterModes(t *testing.T) {
+func TestQClosesMenuAndTypesInFilterMode(t *testing.T) {
 	m := newModel(Options{Title: "archive", Items: []Item{{Title: "alpha"}}})
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	m = updated.(model)
@@ -463,9 +464,46 @@ func TestQClosesMenuAndQuitsFromFilterModes(t *testing.T) {
 	if !m.filterMode {
 		t.Fatal("filter did not start")
 	}
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = updated.(model)
+	if cmd != nil || !m.filterMode || m.query != "q" {
+		t.Fatalf("q in filter should be typed, mode=%v query=%q cmd=%v", m.filterMode, m.query, cmd)
+	}
+}
+
+func TestFilterModeAcceptsQueryAndControlCQuits(t *testing.T) {
+	m := newModel(Options{Title: "archive", Items: []Item{{Title: "query"}}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = updated.(model)
+	for _, r := range "query" {
+		var cmd tea.Cmd
+		updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(model)
+		if cmd != nil {
+			t.Fatalf("typing %q returned a command", r)
+		}
+	}
+	if !m.filterMode || m.query != "query" {
+		t.Fatalf("typed filter = mode %v query %q, want mode true query %q", m.filterMode, m.query, "query")
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
-		t.Fatal("q in filter should quit")
+		t.Fatal("ctrl+c in filter should quit")
+	}
+}
+
+func TestFilterBackspaceRemovesLastRune(t *testing.T) {
+	m := newModel(Options{Title: "archive", Items: []Item{{Title: "日本語"}}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = updated.(model)
+	for _, r := range "日本語" {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(model)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = updated.(model)
+	if m.query != "日本" || !utf8.ValidString(m.query) {
+		t.Fatalf("query after backspace = %q, valid UTF-8=%v", m.query, utf8.ValidString(m.query))
 	}
 }
 
@@ -1513,6 +1551,25 @@ func TestRefreshCurrentStatusUsesGitcrawlSourceLanguage(t *testing.T) {
 	m = updated.(model)
 	if m.status != "Local data already current" {
 		t.Fatalf("current refresh status = %q", m.status)
+	}
+}
+
+func TestStartRefreshDoesNotStack(t *testing.T) {
+	m := newModel(Options{
+		Title: "archive",
+		Items: []Item{{Title: "alpha"}},
+		Refresh: func(context.Context) ([]Item, error) {
+			return []Item{{Title: "alpha"}}, nil
+		},
+	})
+	if cmd := m.startRefresh(false); cmd == nil || !m.refreshing {
+		t.Fatalf("initial refresh did not start, cmd=%v refreshing=%v", cmd, m.refreshing)
+	}
+	if cmd := m.startRefresh(false); cmd != nil {
+		t.Fatalf("automatic refresh stacked while refreshing: cmd=%v", cmd)
+	}
+	if cmd := m.startRefresh(true); cmd != nil || m.status != "Refresh already in progress" {
+		t.Fatalf("manual refresh while refreshing = cmd %v status %q", cmd, m.status)
 	}
 }
 
