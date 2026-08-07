@@ -1,7 +1,12 @@
 # Changelog
 
+## v0.14.7 - Unreleased
+
 ## v0.14.6 - 2026-08-06
 
+- Publish the module as an SSH-signed tag without a GitHub Release or attached
+  `crawlctl` artifacts; the unified pipeline still needs its signing secrets
+  provisioned before it can attach binaries.
 - Fix the TUI filter so typing `q` appends to the query instead of quitting; `ctrl+c`/`ctrl+d` still quit while filtering.
 - Fix TUI filter backspace to remove one rune instead of one byte, keeping CJK and emoji queries valid UTF-8.
 - Guard `startRefresh` against overlapping runs so slow refreshes no longer stack goroutines; a manual refresh reports "Refresh already in progress".
