@@ -2,6 +2,8 @@
 
 ## v0.14.7 - Unreleased
 
+- Update `modernc.org/sqlite` to v1.56.0 for the SQLite 3.53.3 journal-rollback corruption fix and regenerated platform bindings.
+
 ## v0.14.6 - 2026-08-06
 
 - Publish the module as an SSH-signed tag without a GitHub Release or attached
