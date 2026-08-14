@@ -1,9 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.14.7 - 2026-08-14
 
 - Require Go 1.26.6 for the latest standard-library security fixes.
-
 ## v0.14.7 - 2026-08-08
 
 - Update `modernc.org/sqlite` to v1.56.0 for the SQLite 3.53.3 journal-rollback corruption fix and regenerated platform bindings.
