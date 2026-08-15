@@ -214,7 +214,7 @@ func normalizeOptions(opts Options) Options {
 		opts.Interval = DefaultInterval
 	}
 	if opts.Client == nil {
-		opts.Client = http.DefaultClient
+		opts.Client = &http.Client{Timeout: 30 * time.Second}
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
