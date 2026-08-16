@@ -13,6 +13,28 @@ import (
 	"time"
 )
 
+func TestNormalizeOptionsDefaultsBoundedHTTPClient(t *testing.T) {
+	opts := normalizeOptions(Options{})
+	if opts.Client == nil {
+		t.Fatal("default Client is nil")
+	}
+	if opts.Client == http.DefaultClient {
+		t.Fatal("default Client is http.DefaultClient, which has no timeout")
+	}
+	if opts.Client.Timeout <= 0 {
+		t.Fatalf("default Client.Timeout = %s, want > 0 so a hung api.github.com cannot stall check-update", opts.Client.Timeout)
+	}
+	if opts.Client.Timeout != 30*time.Second {
+		t.Fatalf("default Client.Timeout = %s, want 30s to match remote.NewClient", opts.Client.Timeout)
+	}
+
+	custom := &http.Client{Timeout: time.Second}
+	got := normalizeOptions(Options{Client: custom})
+	if got.Client != custom {
+		t.Fatal("supplied Client was replaced")
+	}
+}
+
 func TestCheckReportsNewReleaseAndCaches(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
