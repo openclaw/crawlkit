@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## v0.14.7 - 2026-08-14
 
 - Update `modernc.org/sqlite` to v1.56.0 for the SQLite 3.53.3 journal-rollback corruption fix and regenerated platform bindings.
