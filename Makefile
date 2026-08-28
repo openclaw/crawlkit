@@ -2,7 +2,7 @@ BINARY := crawlctl
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build test test-race vet tidy tidy-check fmt lint check clean
+.PHONY: help build test test-race test-release vet tidy tidy-check fmt lint check clean
 
 help:
 	@printf '%s\n' \
@@ -14,6 +14,7 @@ help:
 		'  lint              Run vet, dead-code, and vulnerability checks.' \
 		'  check             Run every local gate enforced by CI.' \
 		'  test-race         Run the Go test suite with the race detector.' \
+		'  test-release      Test the release dispatch guard (Node.js required).' \
 		'  vet               Run go vet (compatibility target).' \
 		'  tidy              Apply go.mod and go.sum tidying.' \
 		'  tidy-check        Verify go.mod and go.sum are tidy.' \
@@ -28,6 +29,9 @@ test:
 
 test-race:
 	GOWORK=off go test -race ./...
+
+test-release:
+	node --test .github/scripts/*.test.cjs
 
 vet:
 	GOWORK=off go vet ./...
@@ -51,7 +55,7 @@ lint: vet
 	if [ -s "$$output_file" ]; then cat "$$output_file"; exit 1; fi
 	GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
-check: tidy-check fmt lint test test-race
+check: tidy-check fmt lint test test-race test-release
 
 clean:
 	rm -rf bin
