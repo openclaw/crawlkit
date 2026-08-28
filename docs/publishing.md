@@ -6,9 +6,10 @@ owns tag creation, Developer ID signing, notarization, independent artifact
 verification, and GitHub Release publication. Do not create release tags or
 handle signing credentials locally.
 
-v0.14.5 is an SSH-signed Go module tag without a GitHub Release or attached
-artifacts. v0.14.4 remains the latest historical release with binary assets.
-The unified pipeline applies to future releases.
+v0.14.7 is published with signed CLI assets and is available from the Go module
+proxy. A second dispatch for that version rebuilt the payload and correctly
+failed its comparison with the existing public release; it left a separate
+unpublished draft. See the [incident evidence](release-31838411168.md).
 
 ## Release assets
 
@@ -36,8 +37,11 @@ Homebrew handoff.
    `MACOS_SIGNING_P12`, `MACOS_SIGNING_P12_PASSWORD`, `ASC_KEY_ID`,
    `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_P8`. The shared workflow validates
    them before creating a tag.
-2. Prepare a release PR from the current protected `main` head. Date the
-   versioned changelog section and run:
+2. Choose an unused version and prepare a release PR from the current protected
+   `main` head. For the next release, use **v0.14.8**, not v0.14.7. It will carry
+   the post-v0.14.7 release-check HTTP timeout fix, dependency/toolchain updates,
+   and dispatch guard. Date the versioned changelog section and run (Node.js is
+   required for the dispatch regression tests):
 
    ```bash
    make check
@@ -51,8 +55,11 @@ Homebrew handoff.
    gh workflow run release-unified.yml --repo openclaw/crawlkit -f version=X.Y.Z
    ```
 
-5. Watch the exact workflow run through publication. It creates or reuses an
-   immutable annotated version tag, builds all four native archives, signs and
+5. Watch the exact workflow run through publication. A read-only preflight
+   rejects existing tags and releases before the shared workflow runs. A
+   repository-wide workflow lock spans preflight through publication, so queued
+   dispatches (including `X.Y.Z` and `vX.Y.Z`) recheck state after the previous
+   run finishes. The shared workflow creates an annotated version tag, builds all four native archives, signs and
    notarizes the two macOS binaries, verifies the immutable draft independently
    on Apple Silicon and Intel, and publishes only the verified bytes.
 6. Confirm the GitHub Release notes match the dated changelog section. Download
@@ -73,9 +80,21 @@ Homebrew handoff.
 8. Merge the workflow's closeout PR, or otherwise add the next patch-version
    Unreleased changelog section.
 
-Never delete or force-update a release tag. If a run fails after tag creation,
-fix the blocker and rerun the same version; the shared workflow requires the
-exact annotated tag object and target observed during validation.
+Never delete or force-update a release tag or replace published assets. A Git
+tag is already a public Go module version, even when GitHub publication fails.
+Fresh dispatches require a new version once a tag exists; this also blocks
+leftover drafts because the shared pipeline freezes the tag before drafting.
+The release lookup additionally rejects a visible release whose tag is missing.
+API failures other than an explicit 404 stop preflight.
+
+After a failure, inspect the exact run, tag, release IDs, and retained artifacts
+before taking action. Do not rerun all jobs or redispatch a published version:
+rebuilding/re-signing does not reproduce the original verified archive bytes.
+Any recovery of an unpublished draft must retain its original payload and
+attestations, and requires a separately reviewed recovery decision. If those
+bytes cannot be recovered, use a new patch version. Old workflow runs retain
+their original workflow definition; this guard does not retrofit historical
+reruns. Keep the shared workflow's final byte-binding checks intact.
 
 Use a patch version for narrow fixes on the existing API. Use a minor version
 for broad crawler infrastructure changes. If the module reaches v2, Go requires

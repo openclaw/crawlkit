@@ -10,8 +10,31 @@ on:
 
 permissions: {}
 
+# Hold the lock across preflight and publication, including v-prefixed inputs.
+concurrency:
+  group: crawlkit-release-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Require an unused release version
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const preflight = require('./.github/scripts/release-preflight.cjs');
+            await preflight({ github, context, version: process.env.RELEASE_VERSION });
+
   release:
+    needs: preflight
     permissions:
       actions: read
       checks: read
