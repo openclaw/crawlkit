@@ -13,7 +13,7 @@ Provider APIs, authentication, schemas, privacy filters, and user-facing command
 
 ## Install
 
-`crawlkit` requires Go 1.26.6 or newer.
+`crawlkit` requires Go 1.27.0 or newer.
 
 Add the package you need to a Go module. For the quick start below:
 

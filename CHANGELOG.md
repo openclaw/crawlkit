@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Require Go 1.27.0, update SQLite to v1.57.0 and supporting Go dependencies, and refresh deadcode, govulncheck, CodeQL, and TruffleHog validation tools.
+
 ## v0.14.7 - 2026-08-14
 
 - Update `modernc.org/sqlite` to v1.56.0 for the SQLite 3.53.3 journal-rollback corruption fix and regenerated platform bindings.
