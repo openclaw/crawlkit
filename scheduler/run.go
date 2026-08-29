@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -283,9 +284,20 @@ func appendHistory(path string, record RunRecord) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	enc := json.NewEncoder(file)
-	return enc.Encode(record)
+	return writeHistoryRecord(file, record)
+}
+
+func writeHistoryRecord(file io.WriteCloser, record RunRecord) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(record); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if _, err := file.Write(buf.Bytes()); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
 }
 
 func ReadHistory(path string) ([]RunRecord, error) {

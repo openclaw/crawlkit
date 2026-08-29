@@ -1,7 +1,10 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -253,5 +256,87 @@ func TestDefaultPathsCustomConfigKeepsStateNearby(t *testing.T) {
 	}
 	if filepath.Dir(paths.History) != filepath.Join(filepath.Dir(path), "state") {
 		t.Fatalf("history = %s, want state next to config", paths.History)
+	}
+}
+
+func TestAppendHistoryWritesCompleteJSONLLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runs.jsonl")
+	record := RunRecord{
+		ID:         "rec1",
+		Job:        "ok",
+		Command:    []string{"echo", "ok"},
+		Status:     "success",
+		StartedAt:  "2026-08-29T00:00:00Z",
+		FinishedAt: "2026-08-29T00:00:01Z",
+		DurationMs: 1000,
+		LogPath:    "/tmp/ok.log",
+	}
+	if err := appendHistory(path, record); err != nil {
+		t.Fatalf("appendHistory: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		t.Fatalf("history = %q, want one newline-terminated JSONL line", data)
+	}
+	if bytes.Count(data, []byte{'\n'}) != 1 {
+		t.Fatalf("history = %q, want exactly one line", data)
+	}
+	history, err := ReadHistory(path)
+	if err != nil {
+		t.Fatalf("ReadHistory: %v", err)
+	}
+	if len(history) != 1 || history[0].ID != record.ID || history[0].Job != record.Job {
+		t.Fatalf("history = %#v", history)
+	}
+}
+
+type historyCloseWriter struct {
+	writes   [][]byte
+	closeErr error
+}
+
+func (w *historyCloseWriter) Write(p []byte) (int, error) {
+	w.writes = append(w.writes, append([]byte(nil), p...))
+	return len(p), nil
+}
+
+func (w *historyCloseWriter) Close() error {
+	return w.closeErr
+}
+
+func TestWriteHistoryRecordWritesCompleteLine(t *testing.T) {
+	w := &historyCloseWriter{}
+	record := RunRecord{ID: "rec1", Job: "ok", Status: "success"}
+	if err := writeHistoryRecord(w, record); err != nil {
+		t.Fatalf("writeHistoryRecord: %v", err)
+	}
+	if len(w.writes) != 1 {
+		t.Fatalf("writes = %d, want 1 complete line", len(w.writes))
+	}
+	line := w.writes[0]
+	if len(line) == 0 || line[len(line)-1] != '\n' {
+		t.Fatalf("write = %q, want newline-terminated JSONL", line)
+	}
+	var got RunRecord
+	if err := json.Unmarshal(bytes.TrimSpace(line), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.ID != record.ID || got.Job != record.Job {
+		t.Fatalf("got %#v", got)
+	}
+}
+
+func TestWriteHistoryRecordReturnsCloseError(t *testing.T) {
+	w := &historyCloseWriter{closeErr: errors.New("flush failed")}
+	err := writeHistoryRecord(w, RunRecord{ID: "rec1", Job: "ok", Status: "success"})
+	if err == nil {
+		t.Fatal("expected close error")
+	}
+	if !strings.Contains(err.Error(), "flush failed") {
+		t.Fatalf("err = %v, want close error", err)
 	}
 }
