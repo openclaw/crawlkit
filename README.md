@@ -27,7 +27,7 @@ Install the optional archive controller:
 go install github.com/openclaw/crawlkit/cmd/crawlctl@latest
 ```
 
-The latest module version is available through the Go module proxy. Binary release history and the future signed-archive process are documented in [Publishing Crawlkit](docs/publishing.md).
+The latest module version is available through the Go module proxy. Signed CLI archives and the release process are documented in [Publishing Crawlkit](docs/publishing.md).
 
 ## Quick start
 

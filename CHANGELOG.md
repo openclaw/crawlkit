@@ -1,5 +1,7 @@
 # Changelog
 
+## v0.14.9 - Unreleased
+
 ## v0.14.8 - 2026-08-30
 
 - Default release checks to a 30-second HTTP timeout so unresponsive servers cannot hang checks indefinitely.
