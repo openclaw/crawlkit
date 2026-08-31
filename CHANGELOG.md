@@ -4,6 +4,7 @@
 
 - Reject release dispatches for existing tags or releases before rebuilding artifacts, and serialize dispatch checks through publication.
 - Require Go 1.27.0, update SQLite to v1.57.0 and supporting Go dependencies, and refresh deadcode, govulncheck, CodeQL, and TruffleHog validation tools.
+- Update age to v1.3.2 for encrypted-backup fixes and input hardening.
 
 ## v0.14.7 - 2026-08-14
 
