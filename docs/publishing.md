@@ -6,8 +6,11 @@ owns tag creation, Developer ID signing, notarization, independent artifact
 verification, and GitHub Release publication. Do not create release tags or
 handle signing credentials locally.
 
-v0.14.7 is published with signed CLI assets and is available from the Go module
-proxy. A second dispatch for that version rebuilt the payload and correctly
+[v0.14.8](https://github.com/openclaw/crawlkit/releases/tag/v0.14.8) is published
+with signed CLI assets and is available from the Go module proxy. Its release
+notes match the dated section in [CHANGELOG.md](../CHANGELOG.md).
+
+A second dispatch for v0.14.7 rebuilt the payload and correctly
 failed its comparison with the existing public release; it left a separate
 unpublished draft. See the [incident evidence](release-31838411168.md).
 
@@ -23,6 +26,7 @@ is `crawlctl`.
 | Linux arm64 | `crawlkit_<version>_linux_arm64.tar.gz` |
 | Linux amd64 | `crawlkit_<version>_linux_amd64.tar.gz` |
 | All platforms | `checksums.txt` |
+| Release evidence | `ASSET-INVENTORY.json`, `SIGNING-MANIFEST.json`, `RELEASE-NOTES.md` |
 
 The fixed macOS code identifier is `org.openclaw.crawlctl`, and the required
 signing identity is `Developer ID Application: OpenClaw Foundation
@@ -38,9 +42,8 @@ Homebrew handoff.
    `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_P8`. The shared workflow validates
    them before creating a tag.
 2. Choose an unused version and prepare a release PR from the current protected
-   `main` head. For the next release, use **v0.14.8**, not v0.14.7. It will carry
-   the post-v0.14.7 release-check HTTP timeout fix, dependency/toolchain updates,
-   and dispatch guard. Date the versioned changelog section and run (Node.js is
+   `main` head. The next patch section is **v0.14.9 - Unreleased**; v0.14.8 is
+   already published. Date the versioned changelog section and run (Node.js is
    required for the dispatch regression tests):
 
    ```bash
