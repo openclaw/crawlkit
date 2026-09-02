@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -253,5 +254,94 @@ func TestDefaultPathsCustomConfigKeepsStateNearby(t *testing.T) {
 	}
 	if filepath.Dir(paths.History) != filepath.Join(filepath.Dir(path), "state") {
 		t.Fatalf("history = %s, want state next to config", paths.History)
+	}
+}
+
+func TestReadHistoryIgnoresTruncatedLastLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runs.jsonl")
+	complete := `{"id":"1","job":"ok","command":["true"],"started_at":"2026-01-01T00:00:00Z","finished_at":"2026-01-01T00:00:01Z","duration_ms":1,"exit_code":0,"status":"success","log_path":"ok.log"}` + "\n"
+	if err := os.WriteFile(path, []byte(complete+`{"id":"2","job":"ok"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	history, err := ReadHistory(path)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(history) != 1 || history[0].ID != "1" {
+		t.Fatalf("history = %#v", history)
+	}
+}
+
+func TestRunDoesNotRefuseOnTruncatedHistoryLine(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell command path differs on windows")
+	}
+	dir := t.TempDir()
+	paths := Paths{LogDir: filepath.Join(dir, "logs"), StateDir: filepath.Join(dir, "state"), LockPath: filepath.Join(dir, "state", "lock"), History: filepath.Join(dir, "state", "runs.jsonl")}
+	if err := os.MkdirAll(paths.StateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	complete := `{"id":"1","job":"ok","command":["true"],"started_at":"2026-01-01T00:00:00Z","finished_at":"2026-01-01T00:00:01Z","duration_ms":1,"exit_code":0,"status":"success","log_path":"ok.log"}` + "\n"
+	if err := os.WriteFile(paths.History, []byte(complete+`{"id":"2","job":"ok"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := DefaultConfig()
+	cfg.Jobs["ok"] = Job{Enabled: true, Command: []string{"sh", "-c", "echo ok"}}
+	records, err := Run(context.Background(), RunOptions{Config: cfg, Paths: paths, Names: []string{"ok"}})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(records) != 1 || records[0].Status != "success" {
+		t.Fatalf("records = %#v", records)
+	}
+	history, err := ReadHistory(paths.History)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(history) != 2 || history[0].ID != "1" || history[1].ID == "" || history[1].ID == "1" {
+		t.Fatalf("history = %#v", history)
+	}
+	data, err := os.ReadFile(paths.History)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		t.Fatalf("history file = %q, want complete JSONL", data)
+	}
+}
+
+func TestAppendHistoryWritesCompleteJSONLLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runs.jsonl")
+	record := RunRecord{
+		ID:         "rec1",
+		Job:        "ok",
+		Command:    []string{"echo", "ok"},
+		Status:     "success",
+		StartedAt:  "2026-08-29T00:00:00Z",
+		FinishedAt: "2026-08-29T00:00:01Z",
+		DurationMs: 1000,
+		LogPath:    "/tmp/ok.log",
+	}
+	if err := appendHistory(path, record); err != nil {
+		t.Fatalf("appendHistory: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		t.Fatalf("history = %q, want one newline-terminated JSONL line", data)
+	}
+	if bytes.Count(data, []byte{'\n'}) != 1 {
+		t.Fatalf("history = %q, want exactly one line", data)
+	}
+	history, err := ReadHistory(path)
+	if err != nil {
+		t.Fatalf("ReadHistory: %v", err)
+	}
+	if len(history) != 1 || history[0].ID != record.ID || history[0].Job != record.Job {
+		t.Fatalf("history = %#v", history)
 	}
 }

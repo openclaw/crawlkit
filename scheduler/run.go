@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -279,26 +280,74 @@ func appendHistory(path string, record RunRecord) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	enc := json.NewEncoder(file)
-	return enc.Encode(record)
+	if err := trimIncompleteHistoryTail(file); err != nil {
+		_ = file.Close()
+		return err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return err
+	}
+	start := info.Size()
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(record); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if _, err := file.Write(buf.Bytes()); err != nil {
+		_ = file.Truncate(start)
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+func trimIncompleteHistoryTail(file *os.File) error {
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	size := info.Size()
+	if size == 0 {
+		return nil
+	}
+	data := make([]byte, size)
+	if _, err := file.ReadAt(data, 0); err != nil {
+		return err
+	}
+	keep := completeHistoryPrefix(data)
+	if int64(len(keep)) == size {
+		return nil
+	}
+	return file.Truncate(int64(len(keep)))
+}
+
+func completeHistoryPrefix(data []byte) []byte {
+	if len(data) == 0 || data[len(data)-1] == '\n' {
+		return data
+	}
+	if n := bytes.LastIndexByte(data, '\n'); n >= 0 {
+		return data[:n+1]
+	}
+	return nil
 }
 
 func ReadHistory(path string) ([]RunRecord, error) {
-	file, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	defer file.Close()
+	data = completeHistoryPrefix(data)
 	var records []RunRecord
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		var record RunRecord
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
