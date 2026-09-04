@@ -284,73 +284,106 @@ func appendHistory(path string, record RunRecord) error {
 	if err != nil {
 		return err
 	}
-	if err := trimIncompleteHistoryTail(file); err != nil {
-		_ = file.Close()
-		return err
-	}
+	return appendHistoryFile(file, record)
+}
+
+type historyFile interface {
+	io.Writer
+	io.ReaderAt
+	Stat() (os.FileInfo, error)
+	Truncate(int64) error
+	Close() error
+}
+
+func appendHistoryFile(file historyFile, record RunRecord) (err error) {
+	defer func() { err = errors.Join(err, file.Close()) }()
 	info, err := file.Stat()
 	if err != nil {
-		_ = file.Close()
 		return err
 	}
 	start := info.Size()
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(record); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if _, err := file.Write(buf.Bytes()); err != nil {
-		_ = file.Truncate(start)
-		_ = file.Close()
-		return err
-	}
-	return file.Close()
-}
-
-func trimIncompleteHistoryTail(file *os.File) error {
-	info, err := file.Stat()
+	tailStart, tail, err := readHistoryTail(file, start)
 	if err != nil {
 		return err
 	}
-	size := info.Size()
-	if size == 0 {
-		return nil
+	if len(tail) > 0 {
+		var previous RunRecord
+		if err := json.Unmarshal(tail, &previous); err != nil {
+			if !incompleteHistoryRecord(tail) {
+				return err
+			}
+			if err := file.Truncate(tailStart); err != nil {
+				return err
+			}
+			start = tailStart
+			tail = nil
+		}
 	}
-	data := make([]byte, size)
-	if _, err := file.ReadAt(data, 0); err != nil {
+	var buf bytes.Buffer
+	if len(tail) > 0 {
+		// A valid EOF record may lack only its separator; retain every byte.
+		buf.WriteByte('\n')
+	}
+	if err := json.NewEncoder(&buf).Encode(record); err != nil {
 		return err
 	}
-	keep := completeHistoryPrefix(data)
-	if int64(len(keep)) == size {
-		return nil
+	n, err := file.Write(buf.Bytes())
+	if err == nil && n != buf.Len() {
+		err = io.ErrShortWrite
 	}
-	return file.Truncate(int64(len(keep)))
-}
-
-func completeHistoryPrefix(data []byte) []byte {
-	if len(data) == 0 || data[len(data)-1] == '\n' {
-		return data
-	}
-	if n := bytes.LastIndexByte(data, '\n'); n >= 0 {
-		return data[:n+1]
+	if err != nil {
+		return errors.Join(err, file.Truncate(start))
 	}
 	return nil
 }
 
+func readHistoryTail(file io.ReaderAt, end int64) (int64, []byte, error) {
+	var tail []byte
+	for end > 0 {
+		start := max(int64(0), end-4096)
+		block := make([]byte, end-start)
+		if _, err := file.ReadAt(block, start); err != nil {
+			return 0, nil, err
+		}
+		if n := bytes.LastIndexByte(block, '\n'); n >= 0 {
+			return start + int64(n) + 1, append(block[n+1:], tail...), nil
+		}
+		tail = append(block, tail...)
+		end = start
+	}
+	return 0, tail, nil
+}
+
+func incompleteHistoryRecord(data []byte) bool {
+	var value json.RawMessage
+	return errors.Is(json.NewDecoder(bytes.NewReader(data)).Decode(&value), io.ErrUnexpectedEOF)
+}
+
 func ReadHistory(path string) ([]RunRecord, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	data = completeHistoryPrefix(data)
+	defer file.Close()
 	var records []RunRecord
-	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner := bufio.NewScanner(file)
+	terminated := false
+	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		advance, token, err := bufio.ScanLines(data, atEOF)
+		if advance > 0 {
+			terminated = data[advance-1] == '\n'
+		}
+		return advance, token, err
+	})
 	for scanner.Scan() {
 		var record RunRecord
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			if !terminated && incompleteHistoryRecord(scanner.Bytes()) {
+				break
+			}
 			return nil, err
 		}
 		records = append(records, record)

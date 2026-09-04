@@ -2,6 +2,9 @@
 
 ## v0.14.9 - Unreleased
 
+- Recover truncated scheduler history tails after interrupted writes while preserving valid final records without a newline and reporting write or cleanup failures. Thanks @SebTardif.
+- Refresh the pinned TruffleHog secret-scanning action to v3.97.4. Thanks @dependabot.
+
 ## v0.14.8 - 2026-08-30
 
 - Default release checks to a 30-second HTTP timeout so unresponsive servers cannot hang checks indefinitely.
