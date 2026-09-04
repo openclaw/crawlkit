@@ -2,6 +2,7 @@
 
 ## v0.14.9 - Unreleased
 
+- Update SQLite to v1.58.0 with its required libc v1.75.6 runtime, refresh x/crypto and go-runewidth, and prefer Go 1.27.1 while retaining the Go 1.27.0 minimum.
 - Refresh the pinned TruffleHog secret-scanning action to v3.97.4. Thanks @dependabot.
 
 ## v0.14.8 - 2026-08-30
