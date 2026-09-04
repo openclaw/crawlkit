@@ -15,6 +15,8 @@ Provider APIs, authentication, schemas, privacy filters, and user-facing command
 
 `crawlkit` requires Go 1.27.0 or newer.
 
+Development builds prefer Go 1.27.1 through the `toolchain` directive in `go.mod`.
+
 Add the package you need to a Go module. For the quick start below:
 
 ```sh
@@ -123,6 +125,8 @@ make check
 ```
 
 This runs module tidiness, formatting, vet, dead-code and vulnerability checks, unit tests, and race tests with `GOWORK=off`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the compatibility rules.
+
+Keep `modernc.org/libc` at the exact version required by the selected `modernc.org/sqlite` module. SQLite v1.58.0 requires libc v1.75.6; its runtime dependency must be updated together with SQLite, not independently.
 
 ## License
 
