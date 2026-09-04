@@ -280,7 +280,9 @@ func appendHistory(path string, record RunRecord) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
+	// The scheduler lock serializes writes. Avoid O_APPEND: Windows append
+	// handles lack the write-data access required for recovery truncation.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}
@@ -290,6 +292,7 @@ func appendHistory(path string, record RunRecord) error {
 type historyFile interface {
 	io.Writer
 	io.ReaderAt
+	io.Seeker
 	Stat() (os.FileInfo, error)
 	Truncate(int64) error
 	Close() error
@@ -325,6 +328,9 @@ func appendHistoryFile(file historyFile, record RunRecord) (err error) {
 		buf.WriteByte('\n')
 	}
 	if err := json.NewEncoder(&buf).Encode(record); err != nil {
+		return err
+	}
+	if _, err := file.Seek(start, io.SeekStart); err != nil {
 		return err
 	}
 	n, err := file.Write(buf.Bytes())

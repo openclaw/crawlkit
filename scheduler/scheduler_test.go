@@ -475,7 +475,7 @@ func TestHistoryWriteFailurePreservesPriorRecords(t *testing.T) {
 			if err := os.WriteFile(path, original, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			file, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND, 0o600)
+			file, err := os.OpenFile(path, os.O_RDWR, 0o600)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -511,7 +511,7 @@ func TestHistoryWriteFailurePreservesPriorRecords(t *testing.T) {
 
 func TestHistoryReturnsCloseFailure(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runs.jsonl")
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
