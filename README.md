@@ -94,6 +94,8 @@ See the [package guide](docs/packages.md) for the complete inventory and [Go pac
 
 `crawlctl` discovers installed crawl apps through their machine-readable metadata, runs configured refresh jobs under a single-process lock, and records JSONL run history.
 
+If a write is interrupted, history reads ignore a truncated final JSON value and the next run repairs that tail before appending. Valid final records without a trailing newline are retained; complete corrupt records still report an error.
+
 | Command | Purpose |
 | --- | --- |
 | `init` | Discover crawl apps and write a controller config |

@@ -1,7 +1,11 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -253,5 +257,267 @@ func TestDefaultPathsCustomConfigKeepsStateNearby(t *testing.T) {
 	}
 	if filepath.Dir(paths.History) != filepath.Join(filepath.Dir(path), "state") {
 		t.Fatalf("history = %s, want state next to config", paths.History)
+	}
+}
+
+func TestReadHistoryIgnoresTruncatedLastLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runs.jsonl")
+	complete := `{"id":"1","job":"ok","command":["true"],"started_at":"2026-01-01T00:00:00Z","finished_at":"2026-01-01T00:00:01Z","duration_ms":1,"exit_code":0,"status":"success","log_path":"ok.log"}` + "\n"
+	if err := os.WriteFile(path, []byte(complete+`{"id":"2","job":"ok"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	history, err := ReadHistory(path)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(history) != 1 || history[0].ID != "1" {
+		t.Fatalf("history = %#v", history)
+	}
+}
+
+func TestRunDoesNotRefuseOnTruncatedHistoryLine(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell command path differs on windows")
+	}
+	dir := t.TempDir()
+	paths := Paths{LogDir: filepath.Join(dir, "logs"), StateDir: filepath.Join(dir, "state"), LockPath: filepath.Join(dir, "state", "lock"), History: filepath.Join(dir, "state", "runs.jsonl")}
+	if err := os.MkdirAll(paths.StateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	complete := `{"id":"1","job":"ok","command":["true"],"started_at":"2026-01-01T00:00:00Z","finished_at":"2026-01-01T00:00:01Z","duration_ms":1,"exit_code":0,"status":"success","log_path":"ok.log"}` + "\n"
+	if err := os.WriteFile(paths.History, []byte(complete+`{"id":"2","job":"ok"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := DefaultConfig()
+	cfg.Jobs["ok"] = Job{Enabled: true, Command: []string{"sh", "-c", "echo ok"}}
+	records, err := Run(context.Background(), RunOptions{Config: cfg, Paths: paths, Names: []string{"ok"}})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(records) != 1 || records[0].Status != "success" {
+		t.Fatalf("records = %#v", records)
+	}
+	history, err := ReadHistory(paths.History)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(history) != 2 || history[0].ID != "1" || history[1].ID == "" || history[1].ID == "1" {
+		t.Fatalf("history = %#v", history)
+	}
+	data, err := os.ReadFile(paths.History)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		t.Fatalf("history file = %q, want complete JSONL", data)
+	}
+}
+
+func TestAppendHistoryWritesCompleteJSONLLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runs.jsonl")
+	record := RunRecord{
+		ID:         "rec1",
+		Job:        "ok",
+		Command:    []string{"echo", "ok"},
+		Status:     "success",
+		StartedAt:  "2026-08-29T00:00:00Z",
+		FinishedAt: "2026-08-29T00:00:01Z",
+		DurationMs: 1000,
+		LogPath:    "/tmp/ok.log",
+	}
+	if err := appendHistory(path, record); err != nil {
+		t.Fatalf("appendHistory: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		t.Fatalf("history = %q, want one newline-terminated JSONL line", data)
+	}
+	if bytes.Count(data, []byte{'\n'}) != 1 {
+		t.Fatalf("history = %q, want exactly one line", data)
+	}
+	history, err := ReadHistory(path)
+	if err != nil {
+		t.Fatalf("ReadHistory: %v", err)
+	}
+	if len(history) != 1 || history[0].ID != record.ID || history[0].Job != record.Job {
+		t.Fatalf("history = %#v", history)
+	}
+}
+
+func TestHistoryRetainsValidRecordAtEOF(t *testing.T) {
+	for _, prefix := range []string{"", "{\"id\":\"first\"}\n"} {
+		t.Run(prefix, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "runs.jsonl")
+			original := prefix + `{"id":"last","job":"ok","error":"` + strings.Repeat("x", 5000) + `"}` + "\r"
+			if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			history, err := ReadHistory(path)
+			if err != nil || len(history) == 0 || history[len(history)-1].ID != "last" {
+				t.Fatalf("valid EOF record lost: history=%v err=%v", history, err)
+			}
+			if err := appendHistory(path, RunRecord{ID: "next"}); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.HasPrefix(data, []byte(original+"\n")) {
+				t.Fatalf("append changed existing bytes: %q", data)
+			}
+			after, err := ReadHistory(path)
+			if err != nil || len(after) != len(history)+1 || after[len(after)-1].ID != "next" {
+				t.Fatalf("append history=%v err=%v", after, err)
+			}
+		})
+	}
+}
+
+func TestHistoryRejectsCorruptFinalRecord(t *testing.T) {
+	for _, tail := range []string{`{"id":!}`, `{"duration_ms":"wrong type"}`, `{"id":"one"}{"id":`, "{bad json}\n"} {
+		t.Run(tail, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "runs.jsonl")
+			original := []byte("{\"id\":\"keep\"}\n" + tail)
+			if err := os.WriteFile(path, original, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ReadHistory(path); err == nil {
+				t.Fatal("corruption must remain visible")
+			}
+			if !bytes.HasSuffix(original, []byte{'\n'}) {
+				if err := appendHistory(path, RunRecord{ID: "next"}); err == nil {
+					t.Fatal("append must reject corrupt tail")
+				}
+			}
+			data, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(data, original) {
+				t.Fatalf("corrupt history changed: %q err=%v", data, err)
+			}
+		})
+	}
+}
+
+func TestHistoryRecoversEveryPartialRecordPrefix(t *testing.T) {
+	// Every interrupted byte boundary of a normal encoded record is recoverable.
+	line, err := json.Marshal(RunRecord{ID: "partial", Job: "café", Status: "success"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "runs.jsonl")
+	prefix := []byte("{\"id\":\"keep\"}\n")
+	for cut := 1; cut < len(line); cut++ {
+		data := append(bytes.Clone(prefix), line[:cut]...)
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		history, err := ReadHistory(path)
+		if err != nil || len(history) != 1 || history[0].ID != "keep" {
+			t.Fatalf("cut %d: history=%v err=%v", cut, history, err)
+		}
+		if err := appendHistory(path, RunRecord{ID: "next"}); err != nil {
+			t.Fatalf("cut %d: append: %v", cut, err)
+		}
+		history, err = ReadHistory(path)
+		if err != nil || len(history) != 2 || history[0].ID != "keep" || history[1].ID != "next" {
+			t.Fatalf("cut %d: recovered history=%v err=%v", cut, history, err)
+		}
+	}
+}
+
+type failingHistoryFile struct {
+	*os.File
+	failWrite   bool
+	writeErr    error
+	truncateErr error
+	closeErr    error
+}
+
+func (f failingHistoryFile) Write(p []byte) (int, error) {
+	if !f.failWrite {
+		return f.File.Write(p)
+	}
+	n, err := f.File.Write(p[:len(p)/2])
+	return n, errors.Join(err, f.writeErr)
+}
+
+func (f failingHistoryFile) Truncate(size int64) error {
+	if f.truncateErr != nil {
+		return f.truncateErr
+	}
+	return f.File.Truncate(size)
+}
+
+func (f failingHistoryFile) Close() error {
+	return errors.Join(f.File.Close(), f.closeErr)
+}
+
+func TestHistoryWriteFailurePreservesPriorRecords(t *testing.T) {
+	writeErr := errors.New("injected disk write failure")
+	truncateErr := errors.New("injected truncate failure")
+	for _, tc := range []struct {
+		name        string
+		writeErr    error
+		truncateErr error
+	}{
+		{name: "short write"},
+		{name: "write error", writeErr: writeErr},
+		{name: "failed rollback", writeErr: writeErr, truncateErr: truncateErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "runs.jsonl")
+			original := []byte(`{"id":"keep"}`)
+			if err := os.WriteFile(path, original, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			file, err := os.OpenFile(path, os.O_RDWR, 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = appendHistoryFile(failingHistoryFile{File: file, failWrite: true, writeErr: tc.writeErr, truncateErr: tc.truncateErr}, RunRecord{ID: "failed"})
+			wantErr := tc.writeErr
+			if wantErr == nil {
+				wantErr = io.ErrShortWrite
+			}
+			if !errors.Is(err, wantErr) || (tc.truncateErr != nil && !errors.Is(err, truncateErr)) {
+				t.Fatalf("append error=%v, want write and cleanup failures", err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.truncateErr == nil && !bytes.Equal(data, original) {
+				t.Fatalf("rollback changed prior bytes: %q", data)
+			}
+			history, err := ReadHistory(path)
+			if err != nil || len(history) != 1 || history[0].ID != "keep" {
+				t.Fatalf("partial write hid prior record: %v, %v", history, err)
+			}
+			if err := appendHistory(path, RunRecord{ID: "next"}); err != nil {
+				t.Fatal(err)
+			}
+			history, err = ReadHistory(path)
+			if err != nil || len(history) != 2 || history[0].ID != "keep" || history[1].ID != "next" {
+				t.Fatalf("recovery history=%v err=%v", history, err)
+			}
+		})
+	}
+}
+
+func TestHistoryReturnsCloseFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runs.jsonl")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeErr := errors.New("injected close failure")
+	err = appendHistoryFile(failingHistoryFile{File: file, closeErr: closeErr}, RunRecord{ID: "complete"})
+	if !errors.Is(err, closeErr) {
+		t.Fatalf("close error lost: %v", err)
 	}
 }
