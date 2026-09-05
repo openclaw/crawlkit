@@ -6,7 +6,7 @@ owns tag creation, Developer ID signing, notarization, independent artifact
 verification, and GitHub Release publication. Do not create release tags or
 handle signing credentials locally.
 
-[v0.14.8](https://github.com/openclaw/crawlkit/releases/tag/v0.14.8) is published
+[v0.14.9](https://github.com/openclaw/crawlkit/releases/tag/v0.14.9) is published
 with signed CLI assets and is available from the Go module proxy. Its release
 notes match the dated section in [CHANGELOG.md](../CHANGELOG.md).
 
@@ -42,7 +42,7 @@ Homebrew handoff.
    `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_P8`. The shared workflow validates
    them before creating a tag.
 2. Choose an unused version and prepare a release PR from the current protected
-   `main` head. The next patch section is **v0.14.9 - Unreleased**; v0.14.8 is
+   `main` head. The next patch section is **v0.14.10 - Unreleased**; v0.14.9 is
    already published. Date the versioned changelog section and run (Node.js is
    required for the dispatch regression tests):
 
