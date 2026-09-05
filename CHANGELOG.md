@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## v0.14.9 - 2026-09-05
 
 **Highlights:** Safer snapshot shard paths and recovery from interrupted scheduler-history writes.
