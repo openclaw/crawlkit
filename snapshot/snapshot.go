@@ -512,7 +512,10 @@ func importTable(ctx context.Context, tx *sql.Tx, rootDir string, table TableMan
 	reportImportProgress(progress, ImportProgress{Phase: "table_start", Table: table.Name, FileCount: len(files), TotalRows: table.Rows})
 	totalRows := 0
 	for index, rel := range files {
-		path := filepath.Join(rootDir, filepath.FromSlash(rel))
+		path, err := confinedSnapshotFile(rootDir, rel)
+		if err != nil {
+			return totalRows, err
+		}
 		file, err := os.Open(path)
 		if err != nil {
 			return totalRows, fmt.Errorf("open %s: %w", rel, err)
@@ -801,6 +804,28 @@ func planTableMerge(previousFiles, currentFiles []FileManifest, current TableMan
 		return TableImportPlan{Table: current, Mode: TableImportSkip, Reason: "unchanged"}
 	}
 	return TableImportPlan{Table: current, Mode: TableImportFiles, Files: changed, Reason: "merge changed files"}
+}
+
+func confinedSnapshotFile(rootDir, rel string) (string, error) {
+	rel = strings.TrimSpace(rel)
+	if rel == "" || strings.Contains(rel, "\x00") {
+		return "", fmt.Errorf("snapshot file path %q is not under the snapshot root", rel)
+	}
+	clean := filepath.ToSlash(filepath.Clean(rel))
+	local := filepath.FromSlash(clean)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) || filepath.IsAbs(local) || filepath.VolumeName(local) != "" {
+		return "", fmt.Errorf("snapshot file path %q is not under the snapshot root", rel)
+	}
+	root := filepath.Clean(strings.TrimSpace(rootDir))
+	if root == "" || root == "." {
+		return "", errors.New("root dir is required")
+	}
+	path := filepath.Join(root, local)
+	inside, err := filepath.Rel(root, path)
+	if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) || filepath.IsAbs(inside) {
+		return "", fmt.Errorf("snapshot file path %q is not under the snapshot root", rel)
+	}
+	return path, nil
 }
 
 func tableShardDir(table string) (string, error) {

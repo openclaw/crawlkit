@@ -130,6 +130,115 @@ func TestExportRejectsUnsafeTablePath(t *testing.T) {
 	}
 }
 
+func TestImportRejectsUnsafeFilePath(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name   string
+		path   func(outside string) string
+		legacy bool
+	}{
+		{name: "parent directory", path: func(string) string { return "../secret.jsonl.gz" }},
+		{name: "absolute path", path: func(outside string) string { return outside }},
+		{name: "legacy file field", path: func(string) string { return "../secret.jsonl.gz" }, legacy: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			root := filepath.Join(base, "snapshot")
+			if err := os.MkdirAll(root, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			outside := filepath.Join(base, "secret.jsonl.gz")
+			writeGzipJSONL(t, outside, map[string]any{"id": "leaked", "body": "outside"})
+			rel := tc.path(outside)
+			table := TableManifest{
+				Name:    "things",
+				Columns: []string{"id", "body"},
+				Rows:    1,
+			}
+			if tc.legacy {
+				table.File = rel
+			} else {
+				table.Files = []string{rel}
+			}
+			if err := WriteManifest(root, Manifest{
+				Version:     1,
+				GeneratedAt: time.Date(2026, 5, 2, 10, 0, 0, 0, time.UTC),
+				Tables:      []TableManifest{table},
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			dst, err := store.Open(ctx, store.Options{
+				Path:   filepath.Join(t.TempDir(), "dst.db"),
+				Schema: `create table things(id text primary key, body text not null);`,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer dst.Close()
+			_, err = Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root})
+			if err == nil || !strings.Contains(err.Error(), "not under the snapshot root") {
+				t.Fatalf("expected confined import path error, got %v", err)
+			}
+			var count int
+			if err := dst.DB().QueryRowContext(ctx, `select count(*) from things`).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 0 {
+				t.Fatalf("escaped rows imported = %d", count)
+			}
+		})
+	}
+}
+
+func TestImportIncrementalRejectsUnsafeFilePath(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	root := filepath.Join(base, "snapshot")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(base, "secret.jsonl.gz")
+	writeGzipJSONL(t, outside, map[string]any{"id": "leaked", "body": "outside"})
+	current := Manifest{
+		Version:     1,
+		GeneratedAt: time.Date(2026, 5, 2, 10, 5, 0, 0, time.UTC),
+		Tables: []TableManifest{{
+			Name:    "things",
+			Files:   []string{"../secret.jsonl.gz"},
+			Columns: []string{"id", "body"},
+			Rows:    1,
+		}},
+	}
+	if err := WriteManifest(root, current); err != nil {
+		t.Fatal(err)
+	}
+
+	dst, err := store.Open(ctx, store.Options{
+		Path:   filepath.Join(t.TempDir(), "dst.db"),
+		Schema: `create table things(id text primary key, body text not null);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	if _, _, err := ImportIncremental(ctx, IncrementalImportOptions{
+		DB:       dst.DB(),
+		RootDir:  root,
+		Previous: Manifest{Version: 1},
+		Current:  current,
+	}); err == nil || !strings.Contains(err.Error(), "not under the snapshot root") {
+		t.Fatalf("expected confined incremental import path error, got %v", err)
+	}
+	var count int
+	if err := dst.DB().QueryRowContext(ctx, `select count(*) from things`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("escaped rows imported = %d", count)
+	}
+}
+
 func TestSyncSidecarTreeCopiesFingerprintsAndPrunes(t *testing.T) {
 	ctx := context.Background()
 	source := t.TempDir()
