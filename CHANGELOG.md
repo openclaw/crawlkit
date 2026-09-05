@@ -2,9 +2,12 @@
 
 ## v0.14.9 - Unreleased
 
+**Highlights:** Safer snapshot shard paths and recovery from interrupted scheduler-history writes.
+
+- Reject absolute and parent-traversing snapshot shard paths in full and incremental imports while preserving current-directory roots and literal filesystem names. Thanks @SebTardif.
 - Recover truncated scheduler history tails after interrupted writes while preserving valid final records without a newline and reporting write or cleanup failures. Thanks @SebTardif.
 - Update SQLite to v1.58.0 with its required libc v1.75.6 runtime, refresh x/crypto and go-runewidth, and prefer Go 1.27.1 while retaining the Go 1.27.0 minimum.
-- Refresh the pinned TruffleHog secret-scanning action to v3.97.4. Thanks @dependabot.
+- Refresh the pinned TruffleHog secret-scanning action to v3.97.4 and GitHub Script to v9.0.0. Thanks @dependabot.
 
 ## v0.14.8 - 2026-08-30
 

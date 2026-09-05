@@ -118,6 +118,8 @@ The `remote` package owns the Go client and v1 wire contract for hosted archives
 
 Tests and examples use temporary or in-memory data. They do not access app runtime stores such as `~/.config/gitcrawl`, `~/.slacrawl`, `~/.discrawl`, or `~/.notcrawl`.
 
+Snapshot imports reject absolute and parent-traversing shard paths while preserving literal root and shard names, including current-directory roots. This is a lexical check: snapshots must still come from a trusted filesystem tree because shard reads follow symlinks.
+
 Pass a plain filesystem path to `store.Open` unless SQLite driver parameters are intentional. A caller-supplied `file:` URI keeps its query parameters, which can override crawlkit's default pragmas or fail connection validation.
 
 ## Development

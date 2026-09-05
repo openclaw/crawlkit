@@ -807,25 +807,12 @@ func planTableMerge(previousFiles, currentFiles []FileManifest, current TableMan
 }
 
 func confinedSnapshotFile(rootDir, rel string) (string, error) {
-	rel = strings.TrimSpace(rel)
-	if rel == "" || strings.Contains(rel, "\x00") {
+	local := filepath.FromSlash(rel)
+	// Keep literal filesystem names; this checks traversal, not symlink targets.
+	if !filepath.IsLocal(local) || filepath.Clean(local) == "." || strings.ContainsRune(local, 0) {
 		return "", fmt.Errorf("snapshot file path %q is not under the snapshot root", rel)
 	}
-	clean := filepath.ToSlash(filepath.Clean(rel))
-	local := filepath.FromSlash(clean)
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) || filepath.IsAbs(local) || filepath.VolumeName(local) != "" {
-		return "", fmt.Errorf("snapshot file path %q is not under the snapshot root", rel)
-	}
-	root := filepath.Clean(strings.TrimSpace(rootDir))
-	if root == "" || root == "." {
-		return "", errors.New("root dir is required")
-	}
-	path := filepath.Join(root, local)
-	inside, err := filepath.Rel(root, path)
-	if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) || filepath.IsAbs(inside) {
-		return "", fmt.Errorf("snapshot file path %q is not under the snapshot root", rel)
-	}
-	return path, nil
+	return filepath.Join(rootDir, local), nil
 }
 
 func tableShardDir(table string) (string, error) {
