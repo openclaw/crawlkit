@@ -512,7 +512,10 @@ func importTable(ctx context.Context, tx *sql.Tx, rootDir string, table TableMan
 	reportImportProgress(progress, ImportProgress{Phase: "table_start", Table: table.Name, FileCount: len(files), TotalRows: table.Rows})
 	totalRows := 0
 	for index, rel := range files {
-		path := filepath.Join(rootDir, filepath.FromSlash(rel))
+		path, err := confinedSnapshotFile(rootDir, rel)
+		if err != nil {
+			return totalRows, err
+		}
 		file, err := os.Open(path)
 		if err != nil {
 			return totalRows, fmt.Errorf("open %s: %w", rel, err)
@@ -801,6 +804,15 @@ func planTableMerge(previousFiles, currentFiles []FileManifest, current TableMan
 		return TableImportPlan{Table: current, Mode: TableImportSkip, Reason: "unchanged"}
 	}
 	return TableImportPlan{Table: current, Mode: TableImportFiles, Files: changed, Reason: "merge changed files"}
+}
+
+func confinedSnapshotFile(rootDir, rel string) (string, error) {
+	local := filepath.FromSlash(rel)
+	// Keep literal filesystem names; this checks traversal, not symlink targets.
+	if !filepath.IsLocal(local) || filepath.Clean(local) == "." || strings.ContainsRune(local, 0) {
+		return "", fmt.Errorf("snapshot file path %q is not under the snapshot root", rel)
+	}
+	return filepath.Join(rootDir, local), nil
 }
 
 func tableShardDir(table string) (string, error) {
