@@ -54,6 +54,15 @@ custom JSON/text encoders own their transformation. The prior pack survives a
 refusal. This prevents silent loss, not full BLOB export support or recovery of
 binary/text distinctions already lost by old writers.
 
+Generic incremental deletes and `INSERT OR REPLACE` refuse inbound cascading,
+`SET NULL` or `SET DEFAULT` foreign keys and triggers on affected tables before
+`BeforeImport` runs. Otherwise skipped/unlisted tables can lose local history.
+The generic guard supports unshadowed main-schema tables and includes temporary
+triggers. Restrictive foreign keys keep normal transactional failure behavior.
+Dependency-aware custom `DeleteTable` and `ImportRow` callbacks retain their
+contract and own the safety of their writes; hooks must not invalidate the
+checked schema. Full import behavior is unchanged.
+
 Encrypted backup writers hold `.crawlkit-backup.lock` through publication and
 cleanup. This persistent local marker is not manifest-owned; never unlink it
 to release a writer. Publish only exact current/prior manifest paths when an

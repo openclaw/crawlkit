@@ -2,6 +2,9 @@
 
 ## v0.14.10 - Unreleased
 
+- Reject unsupported cascading foreign keys and triggers before generic
+  incremental snapshot mutation, preserving skipped and destination-only rows.
+  Dependency-aware custom importer callbacks retain their existing contract.
 - Preserve exact signed integers on snapshot import while retaining ordinary
   numeric callback types. Refuse unsafe v1 integers, BLOBs, invalid text and
   unrepresentable numbers before export promotion instead of silently losing data.

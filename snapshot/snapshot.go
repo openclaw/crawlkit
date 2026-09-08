@@ -326,6 +326,9 @@ func ImportIncremental(ctx context.Context, opts IncrementalImportOptions) (Mani
 			_ = tx.Rollback()
 		}
 	}()
+	if err := checkIncrementalDependencies(ctx, tx, plan, opts); err != nil {
+		return Manifest{}, plan, err
+	}
 	if opts.BeforeImport != nil {
 		if err := opts.BeforeImport(ctx, tx); err != nil {
 			return Manifest{}, plan, err
