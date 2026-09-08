@@ -6,6 +6,8 @@
   provider-less token login and polling, preserving loopback development.
 - Redact URL userinfo from Git command failures without changing successful
   archive output.
+- Stage SQLite captures before replacement, remove stale destination sidecars,
+  and preserve the previous bundle when capture or promotion fails.
 - Preserve sidecars when a configured source root is a symlink, and reject
   invalid source roots before creating the destination.
 - Publish newly generated backup identities without overwriting a concurrent
