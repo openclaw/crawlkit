@@ -15,6 +15,27 @@
 - `backup` writes age-encrypted JSONL/Gzip shards and manifests, manages recipients and identities, lists Git-backed history, and verifies historical restores.
 - `mirror` clones, initializes, pulls, commits, and pushes Git-backed archives. It also provides non-mutating fetches, immutable snapshot tags, Git-object reads, and history inspection.
 
+Snapshot exports use `tables/.generations/<32 lowercase hex>/<table>/<ordinal>.jsonl.gz`,
+where the ordinal has at least six digits. Manifest fields are unchanged;
+planners match these paths to legacy `tables/<table>/<ordinal>.jsonl.gz` IDs.
+Unchanged physical shards are reused only after comparing actual bytes.
+Old literal readers can consume the paths; old planners may request replacement.
+Strict downstream publication validators must explicitly admit this form.
+
+Export holds `.crawlkit-snapshot.lock`, stages closed/synced shards, and publishes
+the manifest last. Failures before promotion retain the prior pack. Cleanup
+deletes exact prior managed files only; unlisted files and directories are not
+recursively owned, and empty generation directories may remain. Post-promotion
+cleanup errors return the committed manifest. Readers must coordinate with
+pruning; this is not a read lease or a power-loss durability guarantee.
+
+All table reads use one transaction. `ReadTx` optionally borrows a caller's
+transaction without ending it, even on error. `FilterTx` runs after the legacy
+filter for admitted rows, using that same transaction; it must only read and
+must not commit or roll back. Legacy filter closures retain their own database
+bindings. The driver's `ReadOnly` option is not an authorization boundary for
+trusted callbacks.
+
 Encrypted backup writers hold `.crawlkit-backup.lock` through publication and
 cleanup. This persistent local marker is not manifest-owned; never unlink it
 to release a writer. Publish only exact current/prior manifest paths when an

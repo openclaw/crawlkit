@@ -2,6 +2,10 @@
 
 ## v0.14.10 - Unreleased
 
+- Stage snapshot exports in immutable generations and publish the manifest
+  last, preserving prior packs on failure and logical incremental shard IDs.
+  Read tables in one transaction, with additive caller-owned `ReadTx` and
+  transaction-aware `FilterTx` options.
 - Publish encrypted backup rotations with unique immutable shard and index
   paths under a held writer lock. Preserve the prior pack on failure, restrict
   cleanup to its manifest-owned paths, and report post-commit cleanup errors
