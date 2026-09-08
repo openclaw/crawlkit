@@ -5,28 +5,71 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 )
+
+type tableImportWork struct {
+	table TableManifest
+	mode  TableImportMode
+	files []FileManifest
+}
+
+func prepareIncrementalWork(plan ImportPlan, current map[string]TableManifest) ([]tableImportWork, error) {
+	work := make([]tableImportWork, 0, len(plan.Tables))
+	for _, planned := range plan.Tables {
+		switch planned.Mode {
+		case TableImportSkip:
+			continue
+		case TableImportReplace, TableImportFiles:
+		default:
+			return nil, fmt.Errorf("unknown table import mode %q for %s", planned.Mode, planned.Table.Name)
+		}
+		table, ok := current[planned.Table.Name]
+		if !ok {
+			return nil, fmt.Errorf("planned table %q is not in the current manifest", planned.Table.Name)
+		}
+		// Plans select work; only Current supplies its authoritative metadata.
+		planned.Table = table
+		if planned.Mode == TableImportFiles {
+			var err error
+			table, err = selectImportFiles(planned)
+			if err != nil {
+				return nil, err
+			}
+		}
+		files, err := importFileManifests(table)
+		if err != nil {
+			return nil, err
+		}
+		// Own the operative file slices so hooks cannot change the validated
+		// selection through caller inputs. Keep legacy metadata genuinely absent.
+		table.File = ""
+		table.Files = fileManifestPaths(files)
+		if len(table.FileManifests) > 0 {
+			table.FileManifests = files
+		} else {
+			table.FileManifests = nil
+		}
+		work = append(work, tableImportWork{table: table, mode: planned.Mode, files: files})
+	}
+	return work, nil
+}
 
 // Generic DELETE and INSERT OR REPLACE can change rows in tables omitted by
 // an incremental plan. Inspect the destination before any caller hooks mutate it.
 // Dependency-aware custom callbacks retain responsibility for their own writes.
-func checkIncrementalDependencies(ctx context.Context, tx *sql.Tx, plan ImportPlan, opts IncrementalImportOptions) error {
+func checkIncrementalDependencies(ctx context.Context, tx *sql.Tx, work []tableImportWork, opts IncrementalImportOptions) error {
 	checked := make(map[string]bool)
-	for _, table := range plan.Tables {
+	for _, item := range work {
 		generic := false
-		switch table.Mode {
-		case TableImportSkip:
-			continue
+		switch item.mode {
 		case TableImportReplace:
-			hasFiles := len(table.Table.Files) > 0 || strings.TrimSpace(table.Table.File) != ""
-			generic = opts.DeleteTable == nil || (opts.ImportRow == nil && hasFiles)
+			generic = opts.DeleteTable == nil || (opts.ImportRow == nil && len(item.files) > 0)
 		case TableImportFiles:
-			generic = opts.ImportRow == nil && len(table.Files) > 0
+			generic = opts.ImportRow == nil && len(item.files) > 0
 		default:
-			return fmt.Errorf("unknown table import mode %q for %s", table.Mode, table.Table.Name)
+			return fmt.Errorf("unknown table import mode %q for %s", item.mode, item.table.Name)
 		}
-		name := table.Table.Name
+		name := item.table.Name
 		if !generic || checked[name] {
 			continue
 		}

@@ -5,6 +5,7 @@
 - Reject unsupported cascading foreign keys and triggers before generic
   incremental snapshot mutation, preserving skipped and destination-only rows.
   Dependency-aware custom importer callbacks retain their existing contract.
+  Classify validated, manifest-selected work before dependency checks and hooks.
 - Preserve exact signed integers on snapshot import while retaining ordinary
   numeric callback types. Refuse unsafe v1 integers, BLOBs, invalid text and
   unrepresentable numbers before export promotion instead of silently losing data.
@@ -38,6 +39,7 @@
 - Reject newer SQLite schema versions before applying caller schema, release
   transactions when callbacks panic, and isolate unnamed in-memory stores while
   retaining explicitly named shared databases.
+- Verify compressed shard hashes, sizes, and decoded row counts before committing full or incremental snapshot imports; bind supplied plans to current manifest metadata, reject inconsistent file paths and modern table row totals, and roll back corrupt imports. Preserve legacy manifests without per-file metadata; their nonnegative table row totals remain advisory, including positive values.
 
 ## v0.14.9 - 2026-09-05
 
