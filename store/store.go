@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -57,6 +58,17 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		return nil, err
 	}
 	store := &Store{db: db, path: path}
+	if opts.SchemaVersion > 0 {
+		current, err := store.SchemaVersion(ctx)
+		if err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+		if current > opts.SchemaVersion {
+			_ = db.Close()
+			return nil, fmt.Errorf("database schema version %d is newer than supported version %d", current, opts.SchemaVersion)
+		}
+	}
 	if opts.Schema != "" {
 		if _, err := db.ExecContext(ctx, opts.Schema); err != nil {
 			_ = db.Close()
@@ -121,8 +133,8 @@ func (s *Store) WithTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
+	defer tx.Rollback()
 	if err := fn(tx); err != nil {
-		_ = tx.Rollback()
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -224,7 +236,7 @@ func readOnlyDSN(path string) string {
 
 func dsn(path, pragmas string) string {
 	if path == ":memory:" {
-		return "file::memory:?cache=shared&" + pragmas
+		return "file:crawlkit-" + rand.Text() + "?mode=memory&cache=shared&" + pragmas
 	}
 	if strings.HasPrefix(path, "file:") {
 		sep := "?"

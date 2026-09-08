@@ -3,12 +3,167 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestOpenRejectsNewerVersionBeforeSchema(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "archive.db")
+	st, err := Open(ctx, Options{Path: path, SchemaVersion: 9, Schema: `
+		create table retained(value text);
+		insert into retained values('original');
+	`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	rejected, err := Open(ctx, Options{Path: path, SchemaVersion: 8, Schema: `drop table retained;`})
+	if rejected != nil {
+		rejected.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "newer than supported") {
+		t.Fatalf("Open error = %v", err)
+	}
+	ro, err := OpenReadOnly(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ro.Close()
+	var value string
+	if err := ro.DB().QueryRowContext(ctx, `select value from retained`).Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	if value != "original" {
+		t.Fatalf("retained value = %q", value)
+	}
+}
+
+func TestOpenSchemaFailureDoesNotAdvanceVersion(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "archive.db")
+	st, err := Open(ctx, Options{Path: path, SchemaVersion: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	if _, err := Open(ctx, Options{Path: path, SchemaVersion: 3, Schema: `invalid SQL`}); err == nil {
+		t.Fatal("expected schema failure")
+	}
+	st, err = Open(ctx, Options{Path: path, SchemaVersion: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	version, err := st.SchemaVersion(ctx)
+	if err != nil || version != 2 {
+		t.Fatalf("version = %d, error = %v", version, err)
+	}
+}
+
+func TestWithTxRollsBackPanicAndReleasesConnection(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, Options{Path: filepath.Join(t.TempDir(), "archive.db"), Schema: `create table things(value text)`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	sentinel := errors.New("callback panic")
+	func() {
+		defer func() {
+			if got := recover(); got != sentinel {
+				t.Errorf("panic = %v, want original sentinel", got)
+			}
+		}()
+		_ = st.WithTx(ctx, func(tx *sql.Tx) error {
+			if _, err := tx.ExecContext(ctx, `insert into things values('uncommitted')`); err != nil {
+				t.Fatal(err)
+			}
+			panic(sentinel)
+		})
+	}()
+	queryCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	var count int
+	if err := st.DB().QueryRowContext(queryCtx, `select count(*) from things`).Scan(&count); err != nil {
+		t.Fatalf("connection not reusable: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("panic committed %d rows", count)
+	}
+	if err := st.WithTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `insert into things values('error')`); err != nil {
+			return err
+		}
+		return sentinel
+	}); err != sentinel {
+		t.Fatalf("callback error = %v", err)
+	}
+	if err := st.DB().QueryRowContext(ctx, `select count(*) from things`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("callback error count = %d, error = %v", count, err)
+	}
+}
+
+func TestAnonymousMemoryStoresAreIndependent(t *testing.T) {
+	ctx := context.Background()
+	a, err := Open(ctx, Options{Path: ":memory:", Schema: `create table things(value text); insert into things values('a');`, MaxOpenConns: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	b, err := Open(ctx, Options{Path: ":memory:", Schema: `create table things(value text); insert into things values('b');`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	for _, tc := range []struct {
+		store *Store
+		want  string
+	}{{a, "a"}, {b, "b"}} {
+		if tc.store.Path() != ":memory:" {
+			t.Fatalf("Path = %q", tc.store.Path())
+		}
+		var value string
+		if err := tc.store.DB().QueryRowContext(ctx, `select value from things`).Scan(&value); err != nil || value != tc.want {
+			t.Fatalf("value = %q, error = %v, want %q", value, err, tc.want)
+		}
+	}
+	held, err := a.DB().Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	var value string
+	if err := a.DB().QueryRowContext(ctx, `select value from things`).Scan(&value); err != nil || value != "a" {
+		t.Fatalf("second pooled connection value = %q, error = %v", value, err)
+	}
+}
+
+func TestExplicitNamedMemoryStoresRemainShared(t *testing.T) {
+	ctx := context.Background()
+	path := "file:explicit-store-test?mode=memory&cache=shared"
+	a, err := Open(ctx, Options{Path: path, Schema: `create table things(value text); insert into things values('shared');`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	b, err := Open(ctx, Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	var value string
+	if err := b.DB().QueryRowContext(ctx, `select value from things`).Scan(&value); err != nil || value != "shared" {
+		t.Fatalf("shared value = %q, error = %v", value, err)
+	}
+}
 
 func TestOpenAppliesSchemaPragmasAndPermissions(t *testing.T) {
 	ctx := context.Background()

@@ -2,6 +2,10 @@
 
 ## v0.14.10 - Unreleased
 
+- Reject newer SQLite schema versions before applying caller schema, release
+  transactions when callbacks panic, and isolate unnamed in-memory stores while
+  retaining explicitly named shared databases.
+
 ## v0.14.9 - 2026-09-05
 
 **Highlights:** Safer snapshot shard paths and recovery from interrupted scheduler-history writes.
