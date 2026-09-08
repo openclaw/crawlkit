@@ -2,6 +2,9 @@
 
 ## v0.14.10 - Unreleased
 
+- Hold a persistent OS lock for the complete scheduler run; repeated cleanup
+  cannot remove another owner's lock. Legacy PID locks require stopped-runner
+  migration; mixed old/new runners are not supported.
 - Require secure, same-origin credential transport for remote redirects and
   provider-less token login and polling, preserving loopback development.
 - Redact URL userinfo from Git command failures without changing successful

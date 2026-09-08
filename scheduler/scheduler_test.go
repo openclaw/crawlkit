@@ -124,7 +124,7 @@ func TestRunRecordsHistory(t *testing.T) {
 	}
 }
 
-func TestRunRecoversInvalidStaleLock(t *testing.T) {
+func TestRunRejectsAmbiguousLegacyLockBeforeJobs(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell command path differs on windows")
 	}
@@ -139,11 +139,8 @@ func TestRunRecoversInvalidStaleLock(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Jobs["ok"] = Job{Enabled: true, Command: []string{"sh", "-c", "echo ok"}}
 	records, err := Run(context.Background(), RunOptions{Config: cfg, Paths: paths})
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if len(records) != 1 || records[0].Status != "success" {
-		t.Fatalf("records = %#v", records)
+	if err == nil || !strings.Contains(err.Error(), "legacy or ambiguous") || len(records) != 0 {
+		t.Fatalf("ambiguous old lock did not stop jobs: records=%#v, error=%v", records, err)
 	}
 }
 
