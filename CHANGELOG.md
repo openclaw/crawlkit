@@ -2,6 +2,8 @@
 
 ## v0.14.10 - Unreleased
 
+- Verify compressed shard hashes, sizes, and decoded row counts before committing full or incremental snapshot imports; bind supplied plans to current manifest metadata, reject inconsistent file paths and modern table row totals, and roll back corrupt imports. Preserve legacy manifests without per-file metadata; their nonnegative table row totals remain advisory, including positive values.
+
 ## v0.14.9 - 2026-09-05
 
 **Highlights:** Safer snapshot shard paths and recovery from interrupted scheduler-history writes.
