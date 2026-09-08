@@ -104,9 +104,6 @@ func Pull(ctx context.Context, opts Options) error {
 
 func PullCurrent(ctx context.Context, opts Options) error {
 	opts = normalize(opts)
-	if opts.Remote != "" {
-		return Pull(ctx, opts)
-	}
 	if err := EnsureRepo(ctx, opts); err != nil {
 		return err
 	}
