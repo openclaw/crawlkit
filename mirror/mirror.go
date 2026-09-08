@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -104,9 +106,6 @@ func Pull(ctx context.Context, opts Options) error {
 
 func PullCurrent(ctx context.Context, opts Options) error {
 	opts = normalize(opts)
-	if opts.Remote != "" {
-		return Pull(ctx, opts)
-	}
 	if err := EnsureRepo(ctx, opts); err != nil {
 		return err
 	}
@@ -469,7 +468,7 @@ func isSQLiteSidecar(path string) bool {
 func run(ctx context.Context, dir, git string, args ...string) error {
 	out, err := output(ctx, dir, git, args...)
 	if err != nil {
-		return fmt.Errorf("%s %s: %w\n%s", git, strings.Join(args, " "), err, strings.TrimSpace(out))
+		return fmt.Errorf("%s %s: %w\n%s", git, redactGitURLs(strings.Join(args, " ")), err, strings.TrimSpace(out))
 	}
 	return nil
 }
@@ -480,7 +479,39 @@ func output(ctx context.Context, dir, git string, args ...string) (string, error
 		cmd.Dir = dir
 	}
 	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return redactGitURLs(string(out)), err
+	}
 	return string(out), err
+}
+
+var gitURLPattern = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"'<>]+`)
+
+func redactGitURLs(text string) string {
+	return gitURLPattern.ReplaceAllStringFunc(text, func(raw string) string {
+		parsed, err := url.Parse(raw)
+		if err == nil {
+			if parsed.User == nil {
+				return raw
+			}
+			parsed.User = url.User("REDACTED")
+			return parsed.String()
+		}
+		// Git also reports malformed URLs; invalid escapes must not bypass
+		// userinfo redaction in an otherwise recognizable authority.
+		scheme, rest, ok := strings.Cut(raw, "://")
+		if !ok {
+			return raw
+		}
+		authority := rest
+		if end := strings.IndexAny(rest, "/?#"); end >= 0 {
+			authority = rest[:end]
+		}
+		if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+			return scheme + "://REDACTED@" + rest[at+1:]
+		}
+		return raw
+	})
 }
 
 func isNonFastForward(out string) bool {

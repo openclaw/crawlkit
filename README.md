@@ -92,7 +92,22 @@ See the [package guide](docs/packages.md) for the complete inventory and [Go pac
 
 ## crawlctl
 
-`crawlctl` discovers installed crawl apps through their machine-readable metadata, runs configured refresh jobs under a single-process lock, and records JSONL run history.
+`crawlctl` discovers installed crawl apps through their machine-readable metadata, runs configured refresh jobs under a held OS lock, and records JSONL run history.
+
+The lock file is persistent: do not remove or replace it to unlock the runner.
+Closing the owning handle or exiting releases the lock. Keep its directory
+private; on Windows, file access follows the directory's ACLs. Unsupported OS
+locking fails closed.
+
+Stop all old runners before upgrading from PID-file locking. Legacy or ambiguous
+lock contents require an explicit stopped-runner migration: verify all old
+runners are stopped, archive that legacy file once, then start the new runner.
+There is no mixed old/new runner safety or automatic stale-PID reclamation.
+
+Default discovery checks `gitcrawl`, `discrawl`, `notcrawl`, `wacrawl`,
+`telecrawl`, `slacrawl`, `graincrawl`, `imsgcrawl`, `photoscrawl`, and `weicrawl`.
+Use `--app` to select binaries explicitly. Discovery does not automatically
+schedule source-specific commands such as Photos' `import_apple`.
 
 If a write is interrupted, history reads ignore a truncated final JSON value and the next run repairs that tail before appending. Valid final records without a trailing newline are retained; complete corrupt records still report an error.
 

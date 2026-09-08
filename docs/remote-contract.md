@@ -21,6 +21,14 @@ secrets, and deployment cadence.
 The Worker exposes `GET /v1/contract` without authentication. Clients can use
 that route to verify protocol support before login or before publishing.
 
+## Credential Transport
+
+Bearer requests, GitHub-token login and login polling require HTTPS, except
+for explicitly configured loopback HTTP development endpoints. Credential-bearing
+redirects must retain the original scheme, hostname and effective port, including
+307/308 redirects that replay a login body. Caller redirect policies may further
+restrict redirects; the client does not mutate the caller's HTTP client.
+
 ## Compatibility
 
 The v1 contract is additive:

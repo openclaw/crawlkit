@@ -1,7 +1,47 @@
 # Changelog
 
-## v0.14.10 - Unreleased
+## v0.15.0 - 2026-09-08
 
+- Reject unsupported cascading foreign keys and triggers before generic
+  incremental snapshot mutation, preserving skipped and destination-only rows.
+  Dependency-aware custom importer callbacks retain their existing contract.
+  Classify validated, manifest-selected work before dependency checks and hooks.
+- Preserve exact signed integers on snapshot import while retaining ordinary
+  numeric callback types. Refuse unsafe v1 integers, BLOBs, invalid text and
+  unrepresentable numbers before export promotion instead of silently losing data.
+- Stage snapshot exports in immutable generations and publish the manifest
+  last, preserving prior packs on failure and logical incremental shard IDs.
+  Read tables in one transaction, with additive caller-owned `ReadTx` and
+  transaction-aware `FilterTx` options.
+- Publish encrypted backup rotations with unique immutable shard and index
+  paths under a held writer lock. Preserve the prior pack on failure, restrict
+  cleanup to its manifest-owned paths, and report post-commit cleanup errors
+  together with the committed manifest.
+- Hold a persistent OS lock for the complete scheduler run; repeated cleanup
+  cannot remove another owner's lock. Legacy PID locks require stopped-runner
+  migration; stop all older runners before upgrading. Mixed old/new runners
+  are not supported.
+- Require secure, same-origin credential transport for remote redirects and
+  provider-less token login and polling, preserving loopback development.
+- Redact URL userinfo from Git command failures without changing successful
+  archive output.
+- Stage SQLite captures before replacement, remove stale destination sidecars,
+  and preserve the previous bundle when capture or promotion fails. Raw file
+  copies require a quiescent source or an app-owned coherent snapshot; staging
+  does not make copies from a live writer transactionally consistent.
+- Preserve sidecars when a configured source root is a symlink, and reject
+  invalid source roots before creating the destination.
+- Publish newly generated backup identities without overwriting a concurrent
+  creator's key.
+- Preserve unpublished local commits when `PullCurrent` receives an explicit
+  remote, and reject divergent history instead of resetting it.
+- Honor requested TOML permissions on existing files before writing replacement
+  content, including the private default.
+- Include Grain, iMessage, Photos, and WeChat in default metadata discovery
+  without automatically scheduling source-specific imports.
+- Reject newer SQLite schema versions before applying caller schema, release
+  transactions when callbacks panic, and isolate unnamed in-memory stores while
+  retaining explicitly named shared databases.
 - Verify compressed shard hashes, sizes, and decoded row counts before committing full or incremental snapshot imports; bind supplied plans to current manifest metadata, reject inconsistent file paths and modern table row totals, and roll back corrupt imports. Preserve legacy manifests without per-file metadata; their nonnegative table row totals remain advisory, including positive values.
 
 ## v0.14.9 - 2026-09-05

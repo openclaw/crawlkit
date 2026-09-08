@@ -26,11 +26,14 @@ const ManifestName = "manifest.json"
 const defaultMaxShardBytes int64 = 40 * 1024 * 1024
 
 type ExportOptions struct {
-	DB            *sql.DB
+	DB *sql.DB
+	// ReadTx is optional and caller-owned. Export never commits or rolls it back.
+	ReadTx        *sql.Tx
 	RootDir       string
 	Tables        []string
 	MaxShardBytes int64
 	Filter        RowFilter
+	FilterTx      RowFilterTx
 	Sidecars      []Sidecar
 	Now           func() time.Time
 }
@@ -48,6 +51,10 @@ type ImportOptions struct {
 }
 
 type RowFilter func(table string, row map[string]any) (bool, error)
+
+// RowFilterTx runs after Filter for admitted rows, using the export transaction.
+// It must not mutate the database or end the transaction.
+type RowFilterTx func(ctx context.Context, tx *sql.Tx, table string, row map[string]any) (bool, error)
 
 type RowImportFunc func(ctx context.Context, tx *sql.Tx, table string, row map[string]any) error
 
@@ -141,47 +148,7 @@ type IncrementalImportOptions struct {
 }
 
 func Export(ctx context.Context, opts ExportOptions) (Manifest, error) {
-	if opts.DB == nil {
-		return Manifest{}, errors.New("db is required")
-	}
-	if strings.TrimSpace(opts.RootDir) == "" {
-		return Manifest{}, errors.New("root dir is required")
-	}
-	if len(opts.Tables) == 0 {
-		return Manifest{}, errors.New("at least one table is required")
-	}
-	now := opts.Now
-	if now == nil {
-		now = func() time.Time { return time.Now().UTC() }
-	}
-	maxShardBytes := opts.MaxShardBytes
-	if maxShardBytes == 0 {
-		maxShardBytes = defaultMaxShardBytes
-	}
-	tablesDir := filepath.Join(opts.RootDir, "tables")
-	if err := os.RemoveAll(tablesDir); err != nil {
-		return Manifest{}, fmt.Errorf("reset tables dir: %w", err)
-	}
-	if err := os.MkdirAll(tablesDir, 0o755); err != nil {
-		return Manifest{}, fmt.Errorf("create tables dir: %w", err)
-	}
-	manifest := Manifest{
-		Version:     1,
-		GeneratedAt: now().UTC(),
-		Sidecars:    opts.Sidecars,
-		Files:       map[string]string{"manifest": ManifestName},
-	}
-	for _, table := range opts.Tables {
-		entry, err := exportTable(ctx, opts.DB, opts.RootDir, table, maxShardBytes, opts.Filter)
-		if err != nil {
-			return Manifest{}, err
-		}
-		manifest.Tables = append(manifest.Tables, entry)
-	}
-	if err := WriteManifest(opts.RootDir, manifest); err != nil {
-		return Manifest{}, err
-	}
-	return manifest, nil
+	return exportSnapshot(ctx, opts)
 }
 
 func Import(ctx context.Context, opts ImportOptions) (Manifest, error) {
@@ -369,6 +336,10 @@ func ImportIncremental(ctx context.Context, opts IncrementalImportOptions) (Mani
 		}
 		activeTables[tablePlan.Table.Name] = true
 	}
+	work, err := prepareIncrementalWork(plan, currentTables)
+	if err != nil {
+		return Manifest{}, plan, err
+	}
 	tx, err := opts.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return Manifest{}, plan, fmt.Errorf("begin incremental import tx: %w", err)
@@ -379,45 +350,26 @@ func ImportIncremental(ctx context.Context, opts IncrementalImportOptions) (Mani
 			_ = tx.Rollback()
 		}
 	}()
+	if err := checkIncrementalDependencies(ctx, tx, work, opts); err != nil {
+		return Manifest{}, plan, err
+	}
 	if opts.BeforeImport != nil {
 		if err := opts.BeforeImport(ctx, tx); err != nil {
 			return Manifest{}, plan, err
 		}
 	}
-	for _, tablePlan := range plan.Tables {
-		if tablePlan.Mode != TableImportSkip {
-			table, ok := currentTables[tablePlan.Table.Name]
-			if !ok {
-				return Manifest{}, plan, fmt.Errorf("planned table %q is not in the current manifest", tablePlan.Table.Name)
+	for _, item := range work {
+		table := item.table
+		if item.mode == TableImportReplace {
+			if err := deleteImportTable(ctx, tx, table.Name, opts.DeleteTable); err != nil {
+				return Manifest{}, plan, err
 			}
-			// Plans select work; only the current manifest supplies integrity metadata.
-			tablePlan.Table = table
 		}
-		switch tablePlan.Mode {
-		case TableImportSkip:
-			continue
-		case TableImportReplace:
-			if err := deleteImportTable(ctx, tx, tablePlan.Table.Name, opts.DeleteTable); err != nil {
-				return Manifest{}, plan, err
-			}
-			rows, err := importTable(ctx, tx, opts.RootDir, tablePlan.Table, opts.Filter, opts.ImportRow, opts.Progress)
-			if err != nil {
-				return Manifest{}, plan, err
-			}
-			reportImportProgress(opts.Progress, ImportProgress{Phase: "table_done", Table: tablePlan.Table.Name, Rows: rows, TotalRows: tablePlan.Table.Rows})
-		case TableImportFiles:
-			table, err := selectImportFiles(tablePlan)
-			if err != nil {
-				return Manifest{}, plan, err
-			}
-			rows, err := importTable(ctx, tx, opts.RootDir, table, opts.Filter, opts.ImportRow, opts.Progress)
-			if err != nil {
-				return Manifest{}, plan, err
-			}
-			reportImportProgress(opts.Progress, ImportProgress{Phase: "table_done", Table: tablePlan.Table.Name, Rows: rows, TotalRows: table.Rows})
-		default:
-			return Manifest{}, plan, fmt.Errorf("unknown table import mode %q for %s", tablePlan.Mode, tablePlan.Table.Name)
+		rows, err := importTable(ctx, tx, opts.RootDir, table, opts.Filter, opts.ImportRow, opts.Progress)
+		if err != nil {
+			return Manifest{}, plan, err
 		}
+		reportImportProgress(opts.Progress, ImportProgress{Phase: "table_done", Table: table.Name, Rows: rows, TotalRows: table.Rows})
 	}
 	if opts.AfterImport != nil {
 		if err := opts.AfterImport(ctx, tx); err != nil {
@@ -461,12 +413,13 @@ func WriteManifest(rootDir string, manifest Manifest) error {
 	return nil
 }
 
-func exportTable(ctx context.Context, db *sql.DB, rootDir, table string, maxShardBytes int64, filter RowFilter) (TableManifest, error) {
+func exportTable(ctx context.Context, tx *sql.Tx, root *os.Root, generation, table string, maxShardBytes int64, filter RowFilter, filterTx RowFilterTx, created func(string)) (TableManifest, error) {
 	relDir, err := tableShardDir(table)
 	if err != nil {
 		return TableManifest{}, err
 	}
-	rows, err := db.QueryContext(ctx, "select * from "+store.QuoteIdent(table))
+	relDir = generation + "/" + table
+	rows, err := tx.QueryContext(ctx, "select * from "+store.QuoteIdent(table))
 	if err != nil {
 		return TableManifest{}, fmt.Errorf("query table %s: %w", table, err)
 	}
@@ -476,15 +429,15 @@ func exportTable(ctx context.Context, db *sql.DB, rootDir, table string, maxShar
 		return TableManifest{}, err
 	}
 	writer := &shardWriter{
-		rootDir:       rootDir,
+		root:          root,
 		relDir:        relDir,
 		maxShardBytes: maxShardBytes,
+		created:       created,
 	}
-	if err := os.MkdirAll(filepath.Join(rootDir, filepath.FromSlash(relDir)), 0o755); err != nil {
+	if err := root.MkdirAll(filepath.FromSlash(relDir), 0o755); err != nil {
 		return TableManifest{}, fmt.Errorf("create table dir %s: %w", table, err)
 	}
 	defer writer.close()
-	enc := json.NewEncoder(writer)
 	count := 0
 	for rows.Next() {
 		values := make([]any, len(cols))
@@ -496,8 +449,12 @@ func exportTable(ctx context.Context, db *sql.DB, rootDir, table string, maxShar
 			return TableManifest{}, fmt.Errorf("scan table %s: %w", table, err)
 		}
 		row := make(map[string]any, len(cols))
+		blobs := make(map[string]string)
 		for i, col := range cols {
 			row[col] = exportValue(values[i])
+			if blob, ok := values[i].([]byte); ok {
+				blobs[col] = string(blob)
+			}
 		}
 		if filter != nil {
 			keep, err := filter(table, row)
@@ -508,11 +465,24 @@ func exportTable(ctx context.Context, db *sql.DB, rootDir, table string, maxShar
 				continue
 			}
 		}
+		if filterTx != nil {
+			keep, err := filterTx(ctx, tx, table, row)
+			if err != nil {
+				return TableManifest{}, fmt.Errorf("filter table %s in export transaction: %w", table, err)
+			}
+			if !keep {
+				continue
+			}
+		}
+		data, err := encodeSnapshotRow(row, blobs)
+		if err != nil {
+			return TableManifest{}, fmt.Errorf("encode table %s: %w", table, err)
+		}
 		if err := writer.rotateIfNeeded(); err != nil {
 			return TableManifest{}, err
 		}
-		if err := enc.Encode(row); err != nil {
-			return TableManifest{}, fmt.Errorf("encode table %s: %w", table, err)
+		if _, err := writer.Write(data); err != nil {
+			return TableManifest{}, fmt.Errorf("write table %s: %w", table, err)
 		}
 		count++
 		if err := writer.finishRow(); err != nil {
@@ -586,8 +556,8 @@ func importJSONLGzip(ctx context.Context, tx *sql.Tx, reader io.Reader, table st
 	rows := 0
 	decodedRows := 0
 	for scanner.Scan() {
-		var row map[string]any
-		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+		row, err := decodeSnapshotRow(scanner.Bytes(), false)
+		if err != nil {
 			return rows, fmt.Errorf("decode %s row: %w", table, err)
 		}
 		decodedRows++
@@ -673,7 +643,8 @@ func insertRow(ctx context.Context, tx *sql.Tx, table string, row map[string]any
 }
 
 type shardWriter struct {
-	rootDir       string
+	root          *os.Root
+	created       func(string)
 	relDir        string
 	maxShardBytes int64
 	nextShard     int
@@ -698,11 +669,11 @@ func (w *shardWriter) Write(p []byte) (int, error) {
 
 func (w *shardWriter) open() error {
 	rel := filepath.ToSlash(filepath.Join(w.relDir, fmt.Sprintf("%06d.jsonl.gz", w.nextShard)))
-	path := filepath.Join(w.rootDir, filepath.FromSlash(rel))
-	file, err := os.Create(path)
+	file, err := w.root.OpenFile(filepath.FromSlash(rel), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", rel, err)
 	}
+	w.created(rel)
 	w.nextShard++
 	w.rowsInShard = 0
 	w.files = append(w.files, rel)
@@ -744,6 +715,9 @@ func (w *shardWriter) close() error {
 		w.gz = nil
 	}
 	if w.file != nil {
+		if err := w.file.Sync(); err != nil && closeErr == nil {
+			closeErr = err
+		}
 		if err := w.file.Close(); err != nil && closeErr == nil {
 			closeErr = err
 		}
@@ -798,7 +772,7 @@ func planTableIncrement(previous, current TableManifest, merge bool) TableImport
 	if !allFilesHaveFingerprints(previousFiles) || !allFilesHaveFingerprints(currentFiles) {
 		return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "missing file fingerprints"}
 	}
-	if sameFileManifests(previousFiles, currentFiles) {
+	if sameLogicalFileManifests(current.Name, previousFiles, currentFiles) {
 		return TableImportPlan{Table: current, Mode: TableImportSkip, Reason: "unchanged"}
 	}
 	if merge {
@@ -808,7 +782,7 @@ func planTableIncrement(previous, current TableManifest, merge bool) TableImport
 		return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "files removed"}
 	}
 	for i := 0; i < len(previousFiles)-1; i++ {
-		if !sameFileManifest(previousFiles[i], currentFiles[i]) {
+		if !sameLogicalFileManifest(current.Name, previousFiles[i], currentFiles[i]) {
 			return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "non-tail file changed"}
 		}
 	}
@@ -816,10 +790,10 @@ func planTableIncrement(previous, current TableManifest, merge bool) TableImport
 	if len(previousFiles) > 0 {
 		oldTail := previousFiles[len(previousFiles)-1]
 		newTail := currentFiles[len(previousFiles)-1]
-		if oldTail.Path != newTail.Path {
+		if logicalFileKey(current.Name, oldTail.Path) != logicalFileKey(current.Name, newTail.Path) {
 			return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "tail path changed"}
 		}
-		if !sameFileManifest(oldTail, newTail) {
+		if !sameLogicalFileManifest(current.Name, oldTail, newTail) {
 			return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "tail file changed"}
 		}
 	}
@@ -835,19 +809,20 @@ func planTableIncrement(previous, current TableManifest, merge bool) TableImport
 func planTableMerge(previousFiles, currentFiles []FileManifest, current TableManifest) TableImportPlan {
 	previousByPath := make(map[string]FileManifest, len(previousFiles))
 	for _, file := range previousFiles {
-		previousByPath[file.Path] = file
+		previousByPath[logicalFileKey(current.Name, file.Path)] = file
 	}
 	currentPaths := make(map[string]struct{}, len(currentFiles))
 	changed := make([]FileManifest, 0, len(currentFiles))
 	for _, file := range currentFiles {
-		currentPaths[file.Path] = struct{}{}
-		previous, ok := previousByPath[file.Path]
-		if !ok || !sameFileManifest(previous, file) {
+		key := logicalFileKey(current.Name, file.Path)
+		currentPaths[key] = struct{}{}
+		previous, ok := previousByPath[key]
+		if !ok || !sameLogicalFileManifest(current.Name, previous, file) {
 			changed = append(changed, file)
 		}
 	}
 	for _, file := range previousFiles {
-		if _, ok := currentPaths[file.Path]; !ok {
+		if _, ok := currentPaths[logicalFileKey(current.Name, file.Path)]; !ok {
 			return TableImportPlan{Table: current, Mode: TableImportReplace, Files: currentFiles, Reason: "files removed"}
 		}
 	}
@@ -1004,18 +979,6 @@ func selectImportFiles(plan TableImportPlan) (TableManifest, error) {
 func allFilesHaveFingerprints(files []FileManifest) bool {
 	for _, file := range files {
 		if file.Path == "" || file.SHA256 == "" {
-			return false
-		}
-	}
-	return true
-}
-
-func sameFileManifests(a, b []FileManifest) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if !sameFileManifest(a[i], b[i]) {
 			return false
 		}
 	}

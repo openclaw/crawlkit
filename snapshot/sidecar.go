@@ -38,12 +38,19 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 		return nil, err
 	}
 	targetRoot := filepath.Join(root, filepath.FromSlash(targetRel))
-	if err := os.MkdirAll(targetRoot, 0o755); err != nil {
-		return nil, fmt.Errorf("create sidecar target: %w", err)
-	}
 	sourceRoot, err := filepath.EvalSymlinks(source)
 	if err != nil {
 		return nil, fmt.Errorf("resolve sidecar source: %w", err)
+	}
+	sourceInfo, err := os.Stat(sourceRoot)
+	if err != nil {
+		return nil, fmt.Errorf("stat sidecar source: %w", err)
+	}
+	if !sourceInfo.IsDir() {
+		return nil, fmt.Errorf("sidecar source is not a directory: %s", source)
+	}
+	if err := os.MkdirAll(targetRoot, 0o755); err != nil {
+		return nil, fmt.Errorf("create sidecar target: %w", err)
 	}
 	targetRoot, err = filepath.EvalSymlinks(targetRoot)
 	if err != nil {
@@ -54,14 +61,14 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 	}
 	keep := map[string]struct{}{}
 	var sidecars []Sidecar
-	err = filepath.WalkDir(source, func(sourcePath string, entry os.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(sourceRoot, func(sourcePath string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if sourcePath == source || entry.IsDir() {
+		if sourcePath == sourceRoot || entry.IsDir() {
 			return nil
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -74,7 +81,7 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("sidecar source is not a regular file: %s", sourcePath)
 		}
-		rel, err := filepath.Rel(source, sourcePath)
+		rel, err := filepath.Rel(sourceRoot, sourcePath)
 		if err != nil {
 			return err
 		}

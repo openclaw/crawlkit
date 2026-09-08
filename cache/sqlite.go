@@ -26,7 +26,8 @@ type SQLiteSnapshot struct {
 
 // SnapshotSQLite copies a SQLite database and its optional WAL/SHM sidecars.
 // The caller owns DestinationDir and decides whether snapshots are temporary
-// or retained.
+// or retained. The caller must exclude concurrent destination readers/writers
+// during replacement; publishing three fixed filenames is not atomic.
 func SnapshotSQLite(opts SQLiteSnapshotOptions) (SQLiteSnapshot, error) {
 	source := strings.TrimSpace(opts.SourcePath)
 	if source == "" {
@@ -53,19 +54,101 @@ func SnapshotSQLite(opts SQLiteSnapshotOptions) (SQLiteSnapshot, error) {
 	if err := os.MkdirAll(destination, 0o700); err != nil {
 		return SQLiteSnapshot{}, fmt.Errorf("create sqlite snapshot dir: %w", err)
 	}
+	stage, err := os.MkdirTemp(destination, ".sqlite-snapshot-")
+	if err != nil {
+		return SQLiteSnapshot{}, fmt.Errorf("create sqlite snapshot staging dir: %w", err)
+	}
+	retainStage := false
+	defer func() {
+		if !retainStage {
+			_ = os.RemoveAll(stage)
+		}
+	}()
+	for _, dir := range []string{"next", "previous"} {
+		if err := os.Mkdir(filepath.Join(stage, dir), 0o700); err != nil {
+			return SQLiteSnapshot{}, err
+		}
+	}
+	stagedPath := filepath.Join(stage, "next", name)
 
 	result := SQLiteSnapshot{SourcePath: source, Path: filepath.Join(destination, name)}
+	copiedSuffixes := map[string]bool{}
 	for _, suffix := range []string{"", "-wal", "-shm"} {
-		size, copied, err := copyOptionalFile(source+suffix, result.Path+suffix, opts.MaxFileBytes)
+		size, copied, err := copyOptionalFile(source+suffix, stagedPath+suffix, opts.MaxFileBytes)
 		if err != nil {
 			return SQLiteSnapshot{}, err
 		}
+		if suffix == "" && !copied {
+			return SQLiteSnapshot{}, errors.New("sqlite source disappeared during capture")
+		}
 		if copied {
+			copiedSuffixes[suffix] = true
 			result.Files = append(result.Files, result.Path+suffix)
 			result.SizeBytes += size
 		}
 	}
+	retainStage, err = publishSQLiteBundle(stagedPath, filepath.Join(stage, "previous", name), result.Path, copiedSuffixes)
+	if err != nil {
+		return SQLiteSnapshot{}, err
+	}
+	if err := os.RemoveAll(stage); err != nil {
+		retainStage = true
+		return result, fmt.Errorf("sqlite snapshot committed; staging cleanup failed: %w", err)
+	}
 	return result, nil
+}
+
+func publishSQLiteBundle(staged, previous, target string, copied map[string]bool) (bool, error) {
+	suffixes := []string{"", "-wal", "-shm"}
+	var old, published []string
+	for _, suffix := range suffixes {
+		info, err := os.Lstat(target + suffix)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		if !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+			return false, fmt.Errorf("sqlite snapshot destination is not a file: %s", target+suffix)
+		}
+		old = append(old, suffix)
+	}
+	var moved []string
+	rollback := func(cause error) (bool, error) {
+		var restoreErr error
+		for _, suffix := range published {
+			if err := os.Remove(target + suffix); err != nil {
+				restoreErr = errors.Join(restoreErr, err)
+			}
+		}
+		for _, suffix := range moved {
+			if err := os.Rename(previous+suffix, target+suffix); err != nil {
+				restoreErr = errors.Join(restoreErr, err)
+			}
+		}
+		if restoreErr != nil {
+			return true, errors.Join(cause, fmt.Errorf("restore previous sqlite snapshot; recovery files retained at %s: %w", filepath.Dir(previous), restoreErr))
+		}
+		return false, cause
+	}
+	for _, suffix := range old {
+		if err := os.Rename(target+suffix, previous+suffix); err != nil {
+			return rollback(err)
+		}
+		moved = append(moved, suffix)
+	}
+	// Install the new sidecars before making their corresponding main visible.
+	for _, suffix := range []string{"-wal", "-shm", ""} {
+		if !copied[suffix] {
+			continue
+		}
+		if err := os.Rename(staged+suffix, target+suffix); err != nil {
+			return rollback(err)
+		}
+		published = append(published, suffix)
+	}
+	return false, nil
 }
 
 func SQLiteModifiedAfter(path string, cutoff time.Time) bool {
