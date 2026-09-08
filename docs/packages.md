@@ -36,6 +36,24 @@ must not commit or roll back. Legacy filter closures retain their own database
 bindings. The driver's `ReadOnly` option is not an authorization boundary for
 trusted callbacks.
 
+Snapshot rows remain v1 JSON objects; no new wire format is enabled. Import
+callbacks still receive ordinary numbers as `float64`. Exact integral tokens
+outside +/- (2^53-1), including decimal/exponent spellings, become `int64` when
+they fit; no `json.Number` escapes to callers. Integers outside signed 64-bit
+range, oversized fractional magnitudes, overflow, nonzero underflow, numeric
+tokens over 4096 bytes and invalid Unicode fail transactionally. Ordinary
+fractional values retain float64 rounding.
+
+V1 export refuses admitted BLOBs and integers outside +/- (2^53-1), including
+integral-looking REALs, before publishing the manifest. It also refuses invalid
+UTF-8 and numbers the reader cannot represent. Excluded rows do not fail.
+Filters retain the legacy BLOB-as-string input and may remove unsupported cells
+or replace them with an explicit supported representation, such as prefixed
+base64 text; an unchanged implicit BLOB string is not sufficient. Explicit
+custom JSON/text encoders own their transformation. The prior pack survives a
+refusal. This prevents silent loss, not full BLOB export support or recovery of
+binary/text distinctions already lost by old writers.
+
 Encrypted backup writers hold `.crawlkit-backup.lock` through publication and
 cleanup. This persistent local marker is not manifest-owned; never unlink it
 to release a writer. Publish only exact current/prior manifest paths when an

@@ -426,7 +426,6 @@ func exportTable(ctx context.Context, tx *sql.Tx, root *os.Root, generation, tab
 		return TableManifest{}, fmt.Errorf("create table dir %s: %w", table, err)
 	}
 	defer writer.close()
-	enc := json.NewEncoder(writer)
 	count := 0
 	for rows.Next() {
 		values := make([]any, len(cols))
@@ -438,8 +437,12 @@ func exportTable(ctx context.Context, tx *sql.Tx, root *os.Root, generation, tab
 			return TableManifest{}, fmt.Errorf("scan table %s: %w", table, err)
 		}
 		row := make(map[string]any, len(cols))
+		blobs := make(map[string]string)
 		for i, col := range cols {
 			row[col] = exportValue(values[i])
+			if blob, ok := values[i].([]byte); ok {
+				blobs[col] = string(blob)
+			}
 		}
 		if filter != nil {
 			keep, err := filter(table, row)
@@ -459,11 +462,15 @@ func exportTable(ctx context.Context, tx *sql.Tx, root *os.Root, generation, tab
 				continue
 			}
 		}
+		data, err := encodeSnapshotRow(row, blobs)
+		if err != nil {
+			return TableManifest{}, fmt.Errorf("encode table %s: %w", table, err)
+		}
 		if err := writer.rotateIfNeeded(); err != nil {
 			return TableManifest{}, err
 		}
-		if err := enc.Encode(row); err != nil {
-			return TableManifest{}, fmt.Errorf("encode table %s: %w", table, err)
+		if _, err := writer.Write(data); err != nil {
+			return TableManifest{}, fmt.Errorf("write table %s: %w", table, err)
 		}
 		count++
 		if err := writer.finishRow(); err != nil {
@@ -526,8 +533,8 @@ func importJSONLGzip(ctx context.Context, tx *sql.Tx, reader io.Reader, table st
 	scanner.Buffer(make([]byte, 0, 1024*1024), 64*1024*1024)
 	rows := 0
 	for scanner.Scan() {
-		var row map[string]any
-		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+		row, err := decodeSnapshotRow(scanner.Bytes(), false)
+		if err != nil {
 			return rows, fmt.Errorf("decode %s row: %w", table, err)
 		}
 		if len(row) == 0 {

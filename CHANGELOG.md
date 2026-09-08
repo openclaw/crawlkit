@@ -2,6 +2,9 @@
 
 ## v0.14.10 - Unreleased
 
+- Preserve exact signed integers on snapshot import while retaining ordinary
+  numeric callback types. Refuse unsafe v1 integers, BLOBs, invalid text and
+  unrepresentable numbers before export promotion instead of silently losing data.
 - Stage snapshot exports in immutable generations and publish the manifest
   last, preserving prior packs on failure and logical incremental shard IDs.
   Read tables in one transaction, with additive caller-owned `ReadTx` and
