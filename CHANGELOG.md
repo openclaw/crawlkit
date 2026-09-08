@@ -2,6 +2,8 @@
 
 ## v0.14.10 - Unreleased
 
+- Require secure, same-origin credential transport for remote redirects and
+  provider-less token login and polling, preserving loopback development.
 - Preserve sidecars when a configured source root is a symlink, and reject
   invalid source roots before creating the destination.
 - Publish newly generated backup identities without overwriting a concurrent

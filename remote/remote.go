@@ -152,7 +152,7 @@ func NewClient(opts Options) (*Client, error) {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, fmt.Errorf("invalid remote endpoint %q", endpoint)
 	}
-	if opts.TokenProvider != nil && parsed.Scheme != "https" && !isLocalHTTPHost(parsed.Hostname()) {
+	if opts.TokenProvider != nil && !credentialTransportAllowed(parsed) {
 		return nil, fmt.Errorf("remote endpoint %q cannot use bearer auth over %s", endpoint, parsed.Scheme)
 	}
 	client := opts.HTTPClient
@@ -174,6 +174,25 @@ func NewClient(opts Options) (*Client, error) {
 func isLocalHTTPHost(host string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
 	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
+func credentialTransportAllowed(endpoint *url.URL) bool {
+	return endpoint.Scheme == "https" ||
+		(endpoint.Scheme == "http" && isLocalHTTPHost(endpoint.Hostname()))
+}
+
+func sameOrigin(left, right *url.URL) bool {
+	port := func(u *url.URL) string {
+		if explicit := u.Port(); explicit != "" {
+			return explicit
+		}
+		if u.Scheme == "https" {
+			return "443"
+		}
+		return "80"
+	}
+	return left.Scheme == right.Scheme &&
+		strings.EqualFold(left.Hostname(), right.Hostname()) && port(left) == port(right)
 }
 
 func NewClientFromConfig(cfg Config, opts Options) (*Client, error) {
@@ -483,7 +502,7 @@ func (c *Client) publishStatus(ctx context.Context, app, archive, snapshotID str
 	if err != nil {
 		return out, err
 	}
-	err = c.doRequest(ctx, req, false, &out, true)
+	err = c.doRequest(ctx, req, false, &out, true, true)
 	if err == nil && snapshotID != "" {
 		if out.App != app || out.Archive != archive {
 			return PublisherStatus{}, fmt.Errorf(
@@ -1812,7 +1831,12 @@ func (c *Client) do(ctx context.Context, method, route string, input, output any
 	if err != nil {
 		return err
 	}
-	return c.doRequest(ctx, req, input != nil, output, auth)
+	credentials := auth
+	switch input.(type) {
+	case GitHubTokenLoginRequest, *GitHubTokenLoginRequest, LoginPollRequest, *LoginPollRequest:
+		credentials = true
+	}
+	return c.doRequest(ctx, req, input != nil, output, auth, credentials)
 }
 
 func (c *Client) doRaw(ctx context.Context, method, route string, body io.Reader, size int64, headers http.Header, output any, auth bool) error {
@@ -1830,10 +1854,16 @@ func (c *Client) doRaw(ctx context.Context, method, route string, body io.Reader
 			req.Header.Add(name, value)
 		}
 	}
-	return c.doRequest(ctx, req, true, output, auth)
+	return c.doRequest(ctx, req, true, output, auth, auth)
 }
 
-func (c *Client) doRequest(ctx context.Context, req *http.Request, hasBody bool, output any, auth bool) error {
+func (c *Client) doRequest(ctx context.Context, req *http.Request, hasBody bool, output any, auth, credentials bool) error {
+	if req.URL.User != nil || req.Header.Get("Authorization") != "" {
+		credentials = true
+	}
+	if credentials && !credentialTransportAllowed(req.URL) {
+		return errors.New("remote credentials require HTTPS except for loopback HTTP")
+	}
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("user-agent", c.userAgent)
 	if hasBody && req.Header.Get("content-type") == "" {
@@ -1849,7 +1879,35 @@ func (c *Client) doRequest(ctx context.Context, req *http.Request, hasBody bool,
 		}
 		req.Header.Set("authorization", "Bearer "+token)
 	}
-	resp, err := c.httpClient.Do(req)
+	httpClient := c.httpClient
+	if credentials {
+		// Keep the caller's client reusable; this policy belongs to this request.
+		client := *httpClient
+		policy := client.CheckRedirect
+		origin := *req.URL
+		checkOrigin := func(next *http.Request) error {
+			if !credentialTransportAllowed(next.URL) || !sameOrigin(&origin, next.URL) {
+				return errors.New("remote credential redirect must retain the original scheme, host and port")
+			}
+			return nil
+		}
+		client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+			if err := checkOrigin(next); err != nil {
+				return err
+			}
+			if policy != nil {
+				if err := policy(next, via); err != nil {
+					return err
+				}
+			} else if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			// A caller policy can modify next.URL as well as accept or reject it.
+			return checkOrigin(next)
+		}
+		httpClient = &client
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
