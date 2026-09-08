@@ -985,18 +985,6 @@ func allFilesHaveFingerprints(files []FileManifest) bool {
 	return true
 }
 
-func sameFileManifests(a, b []FileManifest) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if !sameFileManifest(a[i], b[i]) {
-			return false
-		}
-	}
-	return true
-}
-
 func sameFileManifest(a, b FileManifest) bool {
 	return a.Path == b.Path && a.Rows == b.Rows && a.Size == b.Size && a.SHA256 == b.SHA256
 }
