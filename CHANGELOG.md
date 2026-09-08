@@ -2,6 +2,8 @@
 
 ## v0.14.10 - Unreleased
 
+- Honor requested TOML permissions on existing files before writing replacement
+  content, including the private default.
 - Include Grain, iMessage, Photos, and WeChat in default metadata discovery
   without automatically scheduling source-specific imports.
 - Reject newer SQLite schema versions before applying caller schema, release

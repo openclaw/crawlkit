@@ -7,6 +7,85 @@ import (
 	"testing"
 )
 
+func TestWriteTOMLHonorsReplacementPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits")
+	}
+	for _, mode := range []os.FileMode{0, 0o600, 0o640, 0o644} {
+		t.Run(mode.String(), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte("value = 'old'\n"), 0o666); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, 0o666); err != nil {
+				t.Fatal(err)
+			}
+			if err := WriteTOML(path, map[string]string{"value": "replacement"}, mode); err != nil {
+				t.Fatal(err)
+			}
+			want := mode
+			if want == 0 {
+				want = 0o600
+			}
+			info, err := os.Stat(path)
+			if err != nil || info.Mode().Perm() != want {
+				t.Fatalf("mode = %v, error = %v, want %o", info, err, want)
+			}
+		})
+	}
+}
+
+func TestWriteTOMLPreservesFileOnMarshalFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	before := []byte("value = 'old'\n")
+	if err := os.WriteFile(path, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteTOML(path, map[string]any{"unsupported": make(chan int)}, 0); err == nil {
+		t.Fatal("expected marshal failure")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != string(before) {
+		t.Fatalf("existing config changed: %q, %v", data, err)
+	}
+}
+
+func TestWriteTOMLPreservesLinkSemantics(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX link and permission fixtures")
+	}
+	for _, kind := range []string{"symlink", "hardlink", "dangling symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, "target.toml")
+			link := filepath.Join(dir, "config.toml")
+			if kind != "dangling symlink" {
+				if err := os.WriteFile(target, []byte("old = true\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			create := os.Symlink
+			if kind == "hardlink" {
+				create = os.Link
+			}
+			if err := create(target, link); err != nil {
+				t.Skipf("link unavailable: %v", err)
+			}
+			if err := WriteTOML(link, map[string]bool{"updated": true}, 0); err != nil {
+				t.Fatal(err)
+			}
+			var got map[string]bool
+			if err := LoadTOML(target, &got); err != nil || !got["updated"] {
+				t.Fatalf("linked target = %v, error = %v", got, err)
+			}
+			info, err := os.Stat(target)
+			if err != nil || info.Mode().Perm() != 0o600 {
+				t.Fatalf("linked target mode = %v, error = %v", info, err)
+			}
+		})
+	}
+}
+
 func TestDefaultPathsUseConfigDir(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)

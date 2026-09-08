@@ -298,7 +298,23 @@ func WriteTOML(path string, src any, perm os.FileMode) error {
 	if perm == 0 {
 		perm = 0o600
 	}
-	return os.WriteFile(resolved, data, perm)
+	// Apply permissions before truncation so replacement secrets are never
+	// written using a pre-existing file's more permissive mode.
+	file, err := os.OpenFile(resolved, os.O_WRONLY|os.O_CREATE, perm)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if err := file.Chmod(perm); err != nil {
+		return err
+	}
+	if err := file.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		return err
+	}
+	return file.Close()
 }
 
 func TokenDiagnosticForEnv(env string) TokenDiagnostic {
