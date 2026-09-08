@@ -2,6 +2,8 @@
 
 ## v0.14.10 - Unreleased
 
+- Include Grain, iMessage, Photos, and WeChat in default metadata discovery
+  without automatically scheduling source-specific imports.
 - Reject newer SQLite schema versions before applying caller schema, release
   transactions when callbacks panic, and isolate unnamed in-memory stores while
   retaining explicitly named shared databases.

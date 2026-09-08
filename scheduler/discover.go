@@ -39,7 +39,7 @@ func Discover(ctx context.Context, binaries []string) []App {
 }
 
 func DefaultBinaries() []string {
-	return []string{"gitcrawl", "discrawl", "notcrawl", "wacrawl", "telecrawl", "slacrawl"}
+	return []string{"gitcrawl", "discrawl", "notcrawl", "wacrawl", "telecrawl", "slacrawl", "graincrawl", "imsgcrawl", "photoscrawl", "weicrawl"}
 }
 
 func discoverOne(ctx context.Context, binary string) App {
