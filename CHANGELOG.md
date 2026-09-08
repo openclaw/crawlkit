@@ -2,6 +2,8 @@
 
 ## v0.14.10 - Unreleased
 
+- Preserve sidecars when a configured source root is a symlink, and reject
+  invalid source roots before creating the destination.
 - Publish newly generated backup identities without overwriting a concurrent
   creator's key.
 - Preserve unpublished local commits when `PullCurrent` receives an explicit
