@@ -339,6 +339,16 @@ func ImportIncremental(ctx context.Context, opts IncrementalImportOptions) (Mani
 			return Manifest{}, ImportPlan{}, err
 		}
 	}
+	currentTables := make(map[string]TableManifest, len(current.Tables))
+	for _, table := range current.Tables {
+		if _, exists := currentTables[table.Name]; exists {
+			return Manifest{}, ImportPlan{}, fmt.Errorf("duplicate table %q in the current manifest", table.Name)
+		}
+		if _, err := importFileManifests(table); err != nil {
+			return Manifest{}, ImportPlan{}, err
+		}
+		currentTables[table.Name] = table
+	}
 	plan := opts.Plan
 	if len(plan.Tables) == 0 && !plan.Full && plan.Reason == "" {
 		plan = PlanIncrementalImport(opts.Previous, current)
@@ -348,6 +358,16 @@ func ImportIncremental(ctx context.Context, opts IncrementalImportOptions) (Mani
 	}
 	if !plan.Changed() {
 		return current, plan, nil
+	}
+	activeTables := make(map[string]bool, len(plan.Tables))
+	for _, tablePlan := range plan.Tables {
+		if tablePlan.Mode == TableImportSkip {
+			continue
+		}
+		if activeTables[tablePlan.Table.Name] {
+			return Manifest{}, plan, fmt.Errorf("duplicate active plan for table %q", tablePlan.Table.Name)
+		}
+		activeTables[tablePlan.Table.Name] = true
 	}
 	tx, err := opts.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -365,6 +385,14 @@ func ImportIncremental(ctx context.Context, opts IncrementalImportOptions) (Mani
 		}
 	}
 	for _, tablePlan := range plan.Tables {
+		if tablePlan.Mode != TableImportSkip {
+			table, ok := currentTables[tablePlan.Table.Name]
+			if !ok {
+				return Manifest{}, plan, fmt.Errorf("planned table %q is not in the current manifest", tablePlan.Table.Name)
+			}
+			// Plans select work; only the current manifest supplies integrity metadata.
+			tablePlan.Table = table
+		}
 		switch tablePlan.Mode {
 		case TableImportSkip:
 			continue
@@ -378,11 +406,10 @@ func ImportIncremental(ctx context.Context, opts IncrementalImportOptions) (Mani
 			}
 			reportImportProgress(opts.Progress, ImportProgress{Phase: "table_done", Table: tablePlan.Table.Name, Rows: rows, TotalRows: tablePlan.Table.Rows})
 		case TableImportFiles:
-			table := tablePlan.Table
-			table.File = ""
-			table.Files = fileManifestPaths(tablePlan.Files)
-			table.FileManifests = tablePlan.Files
-			table.Rows = fileManifestRows(tablePlan.Files)
+			table, err := selectImportFiles(tablePlan)
+			if err != nil {
+				return Manifest{}, plan, err
+			}
 			rows, err := importTable(ctx, tx, opts.RootDir, table, opts.Filter, opts.ImportRow, opts.Progress)
 			if err != nil {
 				return Manifest{}, plan, err
@@ -502,16 +529,17 @@ func exportTable(ctx context.Context, db *sql.DB, rootDir, table string, maxShar
 }
 
 func importTable(ctx context.Context, tx *sql.Tx, rootDir string, table TableManifest, filter RowFilter, importRow RowImportFunc, progress func(ImportProgress)) (int, error) {
-	files := table.Files
-	if len(files) == 0 && strings.TrimSpace(table.File) != "" {
-		files = []string{table.File}
+	files, err := importFileManifests(table)
+	if err != nil {
+		return 0, err
 	}
 	if len(files) == 0 {
 		return 0, nil
 	}
 	reportImportProgress(progress, ImportProgress{Phase: "table_start", Table: table.Name, FileCount: len(files), TotalRows: table.Rows})
 	totalRows := 0
-	for index, rel := range files {
+	for index, entry := range files {
+		rel := entry.Path
 		path, err := confinedSnapshotFile(rootDir, rel)
 		if err != nil {
 			return totalRows, err
@@ -522,10 +550,14 @@ func importTable(ctx context.Context, tx *sql.Tx, rootDir string, table TableMan
 		}
 		fileProgress := ImportProgress{Phase: "file_start", Table: table.Name, File: rel, FileIndex: index + 1, FileCount: len(files), TotalRows: table.Rows}
 		reportImportProgress(progress, fileProgress)
-		rows, err := importJSONLGzip(ctx, tx, file, table.Name, filter, importRow)
+		var expected *FileManifest
+		if len(table.FileManifests) > 0 {
+			expected = &entry
+		}
+		rows, err := importJSONLGzip(ctx, tx, file, table.Name, filter, importRow, expected)
 		if err != nil {
 			_ = file.Close()
-			return totalRows, err
+			return totalRows, fmt.Errorf("import %s: %w", rel, err)
 		}
 		if err := file.Close(); err != nil {
 			return totalRows, fmt.Errorf("close %s: %w", rel, err)
@@ -538,7 +570,12 @@ func importTable(ctx context.Context, tx *sql.Tx, rootDir string, table TableMan
 	return totalRows, nil
 }
 
-func importJSONLGzip(ctx context.Context, tx *sql.Tx, reader io.Reader, table string, filter RowFilter, importRow RowImportFunc) (int, error) {
+func importJSONLGzip(ctx context.Context, tx *sql.Tx, reader io.Reader, table string, filter RowFilter, importRow RowImportFunc, expected *FileManifest) (int, error) {
+	hasher := sha256.New()
+	counter := &countingWriter{w: hasher}
+	if expected != nil {
+		reader = io.TeeReader(reader, counter)
+	}
 	gz, err := gzip.NewReader(reader)
 	if err != nil {
 		return 0, fmt.Errorf("open gzip for %s: %w", table, err)
@@ -547,11 +584,13 @@ func importJSONLGzip(ctx context.Context, tx *sql.Tx, reader io.Reader, table st
 	scanner := bufio.NewScanner(gz)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 64*1024*1024)
 	rows := 0
+	decodedRows := 0
 	for scanner.Scan() {
 		var row map[string]any
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
 			return rows, fmt.Errorf("decode %s row: %w", table, err)
 		}
+		decodedRows++
 		if len(row) == 0 {
 			continue
 		}
@@ -573,8 +612,20 @@ func importJSONLGzip(ctx context.Context, tx *sql.Tx, reader io.Reader, table st
 		}
 		rows++
 	}
+	// Scan through gzip EOF: Close alone does not verify the gzip checksum.
 	if err := scanner.Err(); err != nil {
 		return rows, fmt.Errorf("scan %s rows: %w", table, err)
+	}
+	if expected != nil {
+		if expected.Size != 0 && counter.n != expected.Size {
+			return rows, fmt.Errorf("compressed size mismatch: got %d, want %d", counter.n, expected.Size)
+		}
+		if expected.SHA256 != "" && !strings.EqualFold(hex.EncodeToString(hasher.Sum(nil)), expected.SHA256) {
+			return rows, errors.New("compressed SHA256 mismatch")
+		}
+		if decodedRows != expected.Rows {
+			return rows, fmt.Errorf("row count mismatch: got %d, want %d", decodedRows, expected.Rows)
+		}
 	}
 	return rows, nil
 }
@@ -841,6 +892,113 @@ func tableFileManifests(table TableManifest) []FileManifest {
 		out = append(out, FileManifest{Path: file})
 	}
 	return out
+}
+
+func importFileManifests(table TableManifest) ([]FileManifest, error) {
+	if table.Rows < 0 {
+		return nil, fmt.Errorf("table %s: negative row count", table.Name)
+	}
+	entries := tableFileManifests(table)
+	modern := len(table.FileManifests) > 0
+	remainingRows := table.Rows
+	byPath := make(map[string]FileManifest, len(entries))
+	for _, file := range entries {
+		// Use the same lexical path identity as opening the shard.
+		key, err := confinedSnapshotFile(".", file.Path)
+		if err != nil {
+			return nil, fmt.Errorf("table %s: %w", table.Name, err)
+		}
+		if _, exists := byPath[key]; exists {
+			return nil, fmt.Errorf("table %s: duplicate file manifest path %q", table.Name, file.Path)
+		}
+		byPath[key] = file
+		if modern {
+			if file.Rows < 0 {
+				return nil, fmt.Errorf("table %s: negative row count for %q", table.Name, file.Path)
+			}
+			// Subtract from the declared total to avoid overflowing a sum of rows.
+			if file.Rows > remainingRows {
+				return nil, fmt.Errorf("table %s: row count does not match file manifests", table.Name)
+			}
+			remainingRows -= file.Rows
+		}
+	}
+	if !modern {
+		// Legacy table totals remain advisory, including positive values.
+		return entries, nil
+	}
+	if remainingRows != 0 {
+		return nil, fmt.Errorf("table %s: row count does not match file manifests", table.Name)
+	}
+	paths := table.Files
+	if table.File != "" {
+		key, err := confinedSnapshotFile(".", table.File)
+		if err != nil {
+			return nil, fmt.Errorf("table %s: %w", table.Name, err)
+		}
+		if len(paths) == 0 {
+			paths = []string{table.File}
+		} else if len(paths) != 1 {
+			return nil, fmt.Errorf("table %s: inconsistent file paths", table.Name)
+		} else if listedKey, err := confinedSnapshotFile(".", paths[0]); err != nil || listedKey != key {
+			return nil, fmt.Errorf("table %s: inconsistent file paths", table.Name)
+		}
+	}
+	if len(paths) == 0 {
+		paths = fileManifestPaths(table.FileManifests)
+	}
+	files := make([]FileManifest, 0, len(paths))
+	for _, path := range paths {
+		key, err := confinedSnapshotFile(".", path)
+		if err != nil {
+			return nil, fmt.Errorf("table %s: %w", table.Name, err)
+		}
+		file, ok := byPath[key]
+		if !ok {
+			return nil, fmt.Errorf("table %s: missing file manifest for %q", table.Name, path)
+		}
+		file.Path = path
+		files = append(files, file)
+		delete(byPath, key)
+	}
+	if len(byPath) != 0 {
+		return nil, fmt.Errorf("table %s: file manifests do not match file paths", table.Name)
+	}
+	return files, nil
+}
+
+func selectImportFiles(plan TableImportPlan) (TableManifest, error) {
+	table := plan.Table
+	files, err := importFileManifests(table)
+	if err != nil {
+		return TableManifest{}, err
+	}
+	modern := len(table.FileManifests) > 0
+	byPath := make(map[string]FileManifest, len(files))
+	for _, file := range files {
+		key, _ := confinedSnapshotFile(".", file.Path) // Validated above.
+		byPath[key] = file
+	}
+	for _, file := range plan.Files {
+		key, err := confinedSnapshotFile(".", file.Path)
+		if err != nil {
+			return TableManifest{}, fmt.Errorf("table %s: %w", table.Name, err)
+		}
+		expected, ok := byPath[key]
+		expected.Path = file.Path
+		if !ok || (modern && !sameFileManifest(file, expected)) {
+			return TableManifest{}, fmt.Errorf("table %s: inconsistent planned file manifest for %q", table.Name, file.Path)
+		}
+		delete(byPath, key)
+	}
+	if modern {
+		table.FileManifests = plan.Files
+	}
+	// Legacy plans synthesize zero-valued metadata; those rows are unknown.
+	table.File = ""
+	table.Files = fileManifestPaths(plan.Files)
+	table.Rows = fileManifestRows(plan.Files)
+	return table, nil
 }
 
 func allFilesHaveFingerprints(files []FileManifest) bool {
