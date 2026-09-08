@@ -2,6 +2,10 @@
 
 ## v0.14.10 - Unreleased
 
+- Publish encrypted backup rotations with unique immutable shard and index
+  paths under a held writer lock. Preserve the prior pack on failure, restrict
+  cleanup to its manifest-owned paths, and report post-commit cleanup errors
+  together with the committed manifest.
 - Hold a persistent OS lock for the complete scheduler run; repeated cleanup
   cannot remove another owner's lock. Legacy PID locks require stopped-runner
   migration; mixed old/new runners are not supported.

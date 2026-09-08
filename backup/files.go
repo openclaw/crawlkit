@@ -105,7 +105,7 @@ func CollectFiles(ctx context.Context, root, prefix string) ([]File, error) {
 	return files, nil
 }
 
-func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reuseEncrypted bool) ([]FileEntry, []fileIndexRecord, error) {
+func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reuseEncrypted bool, recordCreated func(string)) ([]FileEntry, []fileIndexRecord, error) {
 	ordered := append([]File(nil), files...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Path < ordered[j].Path })
 	oldByHash := make(map[string]indexedFile, len(old.Files))
@@ -181,6 +181,7 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 			return nil, nil, err
 		}
 		keepTemp = false
+		recordCreated(shard)
 		if err := syncDir(filepath.Dir(target)); err != nil {
 			return nil, nil, err
 		}

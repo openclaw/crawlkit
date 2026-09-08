@@ -15,6 +15,19 @@
 - `backup` writes age-encrypted JSONL/Gzip shards and manifests, manages recipients and identities, lists Git-backed history, and verifies historical restores.
 - `mirror` clones, initializes, pulls, commits, and pushes Git-backed archives. It also provides non-mutating fetches, immutable snapshot tags, Git-object reads, and history inspection.
 
+Encrypted backup writers hold `.crawlkit-backup.lock` through publication and
+cleanup. This persistent local marker is not manifest-owned; never unlink it
+to release a writer. Publish only exact current/prior manifest paths when an
+app stages a backup for Git. Generic `mirror.Commit` remains unchanged.
+
+New encrypted shards and file indexes use unique physical names; legacy
+logical names and manifest fields remain readable. The manifest is published
+last. A failure before publication preserves the prior pack. A cleanup error
+after publication returns the committed manifest and an explicit cleanup
+error. Cleanup removes only exact prior manifest-owned objects, not unrelated
+files. Callers must coordinate readers with pruning; this is not a concurrent
+reader lease or a power-loss durability guarantee.
+
 ## Search
 
 - `embed` provides OpenAI-compatible, Ollama, and llama.cpp embedding clients plus probe diagnostics.

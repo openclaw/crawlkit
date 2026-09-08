@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -14,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/openclaw/crawlkit/internal/filelock"
 )
 
 const FormatVersion = 1
@@ -63,7 +68,10 @@ func WriteSnapshot(ctx context.Context, cfg Config, shards []Shard, old Manifest
 	return WriteSnapshotWithFiles(ctx, cfg, shards, nil, old)
 }
 
-func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, files []File, old Manifest) (Manifest, error) {
+// WriteSnapshotWithFiles publishes immutable objects followed by the manifest.
+// Writers for the same root are excluded by a persistent OS lock. After the
+// manifest commits, a cleanup error returns the populated committed manifest.
+func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, files []File, old Manifest) (result Manifest, resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return Manifest{}, err
 	}
@@ -76,6 +84,40 @@ func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, fil
 			return Manifest{}, fmt.Errorf("backup shard uses reserved file index namespace: %s", shard.Path)
 		}
 	}
+	if err := os.MkdirAll(cfg.Repo, 0o700); err != nil {
+		return Manifest{}, err
+	}
+	lock, err := filelock.Acquire(filepath.Join(cfg.Repo, ".crawlkit-backup.lock"))
+	if err != nil {
+		return Manifest{}, fmt.Errorf("lock backup writer: %w", err)
+	}
+	defer lock.Close()
+	current, err := ReadManifest(cfg.Repo)
+	currentExists := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return Manifest{}, err
+	}
+	var created []string
+	recordCreated := func(rel string) { created = append(created, rel) }
+	recordShard := func(entry ShardEntry) {
+		if _, reused := old.Entry(entry.Path); !reused {
+			recordCreated(entry.Path)
+		}
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			for _, rel := range created {
+				target, err := ResolveShardPath(cfg.Repo, rel)
+				if err == nil {
+					err = os.Remove(target)
+				}
+				if err != nil && !errors.Is(err, os.ErrNotExist) {
+					resultErr = errors.Join(resultErr, fmt.Errorf("remove unpublished backup object: %w", err))
+				}
+			}
+		}
+	}()
 	recipients := normalizedStrings(cfg.Recipients)
 	reuseEncrypted := sameStrings(old.Recipients, recipients)
 	manifest := Manifest{
@@ -100,6 +142,7 @@ func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, fil
 		if err != nil {
 			return Manifest{}, err
 		}
+		recordShard(entry)
 		if err := ctx.Err(); err != nil {
 			return Manifest{}, err
 		}
@@ -110,7 +153,7 @@ func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, fil
 		manifest.Counts[countKey] += rows
 		manifest.Shards = append(manifest.Shards, entry)
 	}
-	filesManifest, fileIndex, err := writeFiles(ctx, cfg, old, files, reuseEncrypted)
+	filesManifest, fileIndex, err := writeFiles(ctx, cfg, old, files, reuseEncrypted, recordCreated)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -124,11 +167,12 @@ func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, fil
 		if err != nil {
 			return Manifest{}, err
 		}
+		recordShard(entry)
 		manifest.Shards = append(manifest.Shards, entry)
 	}
 	sort.Slice(manifest.Shards, func(i, j int) bool { return manifest.Shards[i].Path < manifest.Shards[j].Path })
-	if EquivalentManifest(old, manifest) {
-		return old, nil
+	if currentExists && EquivalentManifest(current, manifest) {
+		return current, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return Manifest{}, err
@@ -136,11 +180,9 @@ func WriteSnapshotWithFiles(ctx context.Context, cfg Config, shards []Shard, fil
 	if err := writeManifest(ctx, cfg.Repo, manifest); err != nil {
 		return Manifest{}, err
 	}
-	if err := ctx.Err(); err != nil {
-		return Manifest{}, err
-	}
-	if err := removeStaleBackupFiles(ctx, cfg.Repo, manifest.Shards, manifest.Files, true); err != nil {
-		return Manifest{}, err
+	committed = true
+	if err := removePreviousBackupFiles(ctx, cfg.Repo, current, manifest); err != nil {
+		return manifest, fmt.Errorf("backup manifest committed; cleanup failed: %w", err)
 	}
 	return manifest, nil
 }
@@ -181,24 +223,29 @@ func writeShard(ctx context.Context, cfg Config, old Manifest, table, rel string
 		return ShardEntry{}, err
 	}
 	hash := SHA256Hex(plaintext)
-	targetRel := rel
-	oldEntry, hasOldEntry := old.logicalEntry(table, rel)
-	if hasOldEntry {
-		if oldEntry.SHA256 != hash || !reuseEncrypted {
-			targetRel = versionedShardPath(rel, hash)
-		} else {
-			targetRel = oldEntry.Path
-		}
-	}
-	target, err := ResolveShardPath(cfg.Repo, targetRel)
+	rel, err := cleanShardPath(rel)
 	if err != nil {
 		return ShardEntry{}, err
 	}
-	if reuseEncrypted && hasOldEntry && oldEntry.Path == targetRel && oldEntry.SHA256 == hash {
-		if info, err := os.Stat(target); err == nil {
+	oldEntry, hasOldEntry := old.logicalEntry(table, rel)
+	if reuseEncrypted && hasOldEntry && oldEntry.SHA256 == hash {
+		target, err := ResolveShardPath(cfg.Repo, oldEntry.Path)
+		if err != nil {
+			return ShardEntry{}, err
+		}
+		if info, err := os.Stat(target); err == nil && info.Mode().IsRegular() {
 			oldEntry.Bytes = info.Size()
 			return oldEntry, nil
 		}
+	}
+	var generation [16]byte
+	if _, err := rand.Read(generation[:]); err != nil {
+		return ShardEntry{}, err
+	}
+	targetRel := strings.TrimSuffix(versionedShardPath(rel, hash), ".age") + "-" + hex.EncodeToString(generation[:]) + ".age"
+	target, err := ResolveShardPath(cfg.Repo, targetRel)
+	if err != nil {
+		return ShardEntry{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return ShardEntry{}, err
@@ -213,7 +260,7 @@ func writeShard(ctx context.Context, cfg Config, old Manifest, table, rel string
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return ShardEntry{}, err
 	}
-	if err := writeFileAtomicContext(ctx, target, encrypted, 0o600); err != nil {
+	if err := writeNewShard(ctx, target, encrypted); err != nil {
 		return ShardEntry{}, err
 	}
 	return ShardEntry{Table: table, Path: targetRel, Rows: rows, SHA256: hash, Bytes: int64(len(encrypted))}, nil
@@ -224,7 +271,12 @@ func (m Manifest) logicalEntry(table, rel string) (ShardEntry, bool) {
 		return entry, true
 	}
 	for _, entry := range m.Shards {
-		if entry.Table == table && entry.Path == versionedShardPath(rel, entry.SHA256) {
+		legacy := versionedShardPath(rel, entry.SHA256)
+		suffix, generated := strings.CutPrefix(entry.Path, strings.TrimSuffix(legacy, ".age")+"-")
+		generation := strings.TrimSuffix(suffix, ".age")
+		_, hexErr := hex.DecodeString(generation)
+		if entry.Table == table && (entry.Path == legacy ||
+			(generated && strings.HasSuffix(suffix, ".age") && len(generation) == 32 && hexErr == nil && strings.ToLower(generation) == generation)) {
 			return entry, true
 		}
 	}
@@ -237,6 +289,37 @@ func versionedShardPath(rel, hash string) string {
 		hash = hash[:12]
 	}
 	return prefix + "-" + hash + ".age"
+}
+
+func writeNewShard(ctx context.Context, target string, data []byte) error {
+	file, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	complete := false
+	defer func() {
+		_ = file.Close()
+		if !complete {
+			_ = os.Remove(target)
+		}
+	}()
+	if _, err := file.Write(data); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := syncDir(filepath.Dir(target)); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	complete = true
+	return nil
 }
 
 func DecryptShardFile(cfg Config, shard ShardEntry) ([]byte, error) {
@@ -446,6 +529,50 @@ func EquivalentManifest(a, b Manifest) bool {
 
 func RemoveStaleShards(repo string, shards []ShardEntry) error {
 	return removeStaleShards(context.Background(), repo, shards)
+}
+
+func removePreviousBackupFiles(ctx context.Context, repo string, previous, current Manifest) error {
+	paths := func(manifest Manifest) (map[string]bool, error) {
+		out := make(map[string]bool, len(manifest.Shards)+len(manifest.Files))
+		for _, shard := range manifest.Shards {
+			target, err := ResolveShardPath(repo, shard.Path)
+			if err != nil {
+				return nil, err
+			}
+			out[target] = true
+		}
+		for _, file := range manifest.Files {
+			target, err := ResolveShardPath(repo, file.Shard)
+			if err != nil {
+				return nil, err
+			}
+			out[target] = true
+		}
+		return out, nil
+	}
+	keep, err := paths(current)
+	if err != nil {
+		return err
+	}
+	prior, err := paths(previous)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for target := range prior {
+		if keep[target] {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 func removeStaleShards(ctx context.Context, repo string, shards []ShardEntry) error {
