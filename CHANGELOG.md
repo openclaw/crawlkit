@@ -2,6 +2,8 @@
 
 ## v0.14.10 - Unreleased
 
+- Publish newly generated backup identities without overwriting a concurrent
+  creator's key.
 - Preserve unpublished local commits when `PullCurrent` receives an explicit
   remote, and reject divergent history instead of resetting it.
 - Honor requested TOML permissions on existing files before writing replacement

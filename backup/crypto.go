@@ -36,7 +36,29 @@ func EnsureIdentity(path string) (string, error) {
 		return "", err
 	}
 	data := []byte(identity.String() + "\n")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	file, err := os.CreateTemp(filepath.Dir(path), ".identity-")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+	if _, err := file.Write(data); err != nil {
+		return "", err
+	}
+	if err := file.Sync(); err != nil {
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	// Publish a complete key without replacing a concurrent creator's identity.
+	if err := os.Link(file.Name(), path); err != nil {
+		if os.IsExist(err) {
+			return RecipientFromIdentity(path)
+		}
+		return "", err
+	}
+	if err := syncDir(filepath.Dir(path)); err != nil {
 		return "", err
 	}
 	return identity.Recipient().String(), nil
