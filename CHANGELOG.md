@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.14.10 - Unreleased
+## v0.15.0 - 2026-09-08
 
 - Reject unsupported cascading foreign keys and triggers before generic
   incremental snapshot mutation, preserving skipped and destination-only rows.
@@ -19,13 +19,16 @@
   together with the committed manifest.
 - Hold a persistent OS lock for the complete scheduler run; repeated cleanup
   cannot remove another owner's lock. Legacy PID locks require stopped-runner
-  migration; mixed old/new runners are not supported.
+  migration; stop all older runners before upgrading. Mixed old/new runners
+  are not supported.
 - Require secure, same-origin credential transport for remote redirects and
   provider-less token login and polling, preserving loopback development.
 - Redact URL userinfo from Git command failures without changing successful
   archive output.
 - Stage SQLite captures before replacement, remove stale destination sidecars,
-  and preserve the previous bundle when capture or promotion fails.
+  and preserve the previous bundle when capture or promotion fails. Raw file
+  copies require a quiescent source or an app-owned coherent snapshot; staging
+  does not make copies from a live writer transactionally consistent.
 - Preserve sidecars when a configured source root is a symlink, and reject
   invalid source roots before creating the destination.
 - Publish newly generated backup identities without overwriting a concurrent

@@ -42,9 +42,11 @@ Homebrew handoff.
    `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_P8`. The shared workflow validates
    them before creating a tag.
 2. Choose an unused version and prepare a release PR from the current protected
-   `main` head. The next patch section is **v0.14.10 - Unreleased**; v0.14.9 is
-   already published. Date the versioned changelog section and run (Node.js is
-   required for the dispatch regression tests):
+   `main` head. **v0.15.0 - 2026-09-08** is prepared for the broader shared
+   infrastructure changes; v0.14.9 remains the published release until the
+   unified workflow publishes v0.15.0. Confirm the version is still unused and
+   the changelog section is dated, then run (Node.js is required for the dispatch
+   regression tests):
 
    ```bash
    make check
