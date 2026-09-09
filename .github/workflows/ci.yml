@@ -32,6 +32,38 @@ jobs:
       - run: GOWORK=off go test ./...
       - run: GOWORK=off go test -race ./...
 
+  downstream:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CRAWLKIT_BASELINE_SHA: 26a574e53b485cd2191df603f02d17fab6d3c4af
+      CRAWLKIT_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      GITCRAWL_SHA: dab4d849f9562306da41267cda2b2fd6868a41a8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CRAWLKIT_CANDIDATE_SHA }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CRAWLKIT_BASELINE_SHA }}
+          path: baseline
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: openclaw/gitcrawl
+          ref: ${{ env.GITCRAWL_SHA }}
+          path: gitcrawl
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Compare pinned downstream CLI suites
+        run: bash candidate/.github/scripts/downstream-compat.sh candidate baseline gitcrawl
+
   windows-test:
     runs-on: windows-latest
     steps:
