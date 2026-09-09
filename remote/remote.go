@@ -226,6 +226,7 @@ type ArchiveSnapshot struct {
 	CoverageComplete   bool     `json:"coverage_complete,omitempty"`
 	PublishedAt        string   `json:"published_at,omitempty"`
 	CutoverAt          string   `json:"cutover_at,omitempty"`
+	Warnings           []string `json:"warnings,omitempty"`
 }
 
 type ArchivePublish struct {
@@ -339,6 +340,7 @@ type IngestManifest struct {
 	SnapshotID    string   `json:"snapshot_id,omitempty"`
 	SourceSHA256  string   `json:"source_sha256,omitempty"`
 	Capabilities  []string `json:"capabilities,omitempty"`
+	Warnings      []string `json:"warnings,omitempty"`
 }
 
 type IngestRequest struct {

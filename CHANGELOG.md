@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.15.1 - 2026-09-09
+
+- Preserve optional caller-owned warnings in remote ingest manifests and archive
+  snapshot metadata without changing the v1 protocol or legacy JSON payloads.
+
 ## v0.15.0 - 2026-09-08
 
 - Reject unsupported cascading foreign keys and triggers before generic
