@@ -30,7 +30,7 @@ test('manual qualification selects one pinned app without repeating ordinary CI'
   assert.match(workflow, /group: crawlkit-downstream-manual\n      cancel-in-progress: false/);
   for (const sha of [
     'ffaff3a72d91c5a1c2c6bf882412ef6e73e6dc78',
-    '9e8a981f39563aa73fb096eb903e801ac625fb84',
+    '2aef26b2df8a11d16a1e8d2d611a7082b6b7ba71',
     '5b2af061b057618eee38e322d801d54ca9ffba36',
   ]) assert.ok(workflow.includes(sha));
 });
