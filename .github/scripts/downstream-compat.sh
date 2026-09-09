@@ -67,7 +67,19 @@ PY
 fi
 
 [[ $(uname -s) == Linux ]] || { echo "Linux is required" >&2; exit 2; }
-[[ $# == 3 ]] || { echo "usage: $0 CANDIDATE BASELINE GITCRAWL" >&2; exit 2; }
+[[ $# == 3 || $# == 4 ]] ||
+  { echo "usage: $0 CANDIDATE BASELINE DOWNSTREAM [slacrawl|discrawl|notcrawl]" >&2; exit 2; }
+app=${4:-gitcrawl}
+suite=./internal/cli
+downstream_sha=${GITCRAWL_SHA:-}
+if [[ $# == 4 ]]; then
+  case "$app" in
+    slacrawl|discrawl|notcrawl) ;;
+    *) echo "unsupported downstream app: $app" >&2; exit 2 ;;
+  esac
+  suite=./...
+  downstream_sha=${DOWNSTREAM_SHA:?}
+fi
 for tool in go git lsof tar sha256sum sudo unshare ip setpriv timeout python3; do
   command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 2; }
 done
@@ -81,7 +93,7 @@ timeout --version
 
 candidate=$(realpath "$1")
 baseline=$(realpath "$2")
-gitcrawl=$(realpath "$3")
+downstream=$(realpath "$3")
 script=$(realpath "$0")
 work=$(mktemp -d "${RUNNER_TEMP:?}/crawlkit-downstream.XXXXXX")
 mkdir -p "$work/gomodcache" "$work/gopath" "$work/gocache"
@@ -98,7 +110,7 @@ verify_checkout() {
 
 verify_checkout "$candidate" "${CRAWLKIT_CANDIDATE_SHA:?}"
 verify_checkout "$baseline" "${CRAWLKIT_BASELINE_SHA:?}"
-verify_checkout "$gitcrawl" "${GITCRAWL_SHA:?}"
+verify_checkout "$downstream" "$downstream_sha"
 go version
 lsof -v 2>&1
 sha256sum "$(command -v go)" "$(command -v lsof)"
@@ -246,7 +258,7 @@ for name in baseline candidate; do
   [[ $name == baseline ]] || library=$candidate
   mkdir -p "$phase"/{source,library,modules,home,config,cache,data,state,tmp}
   mkdir -m 700 "$phase/runtime"
-  git -C "$gitcrawl" archive HEAD | tar -xf - -C "$phase/source"
+  git -C "$downstream" archive HEAD | tar -xf - -C "$phase/source"
   git -C "$library" archive HEAD | tar -xf - -C "$phase/library"
   fingerprint "$phase" > "$phase/source.sha256"
   cp "$phase/source/go.mod" "$phase/modules/go.mod"
@@ -259,40 +271,87 @@ for name in baseline candidate; do
     # Normalize only private test inputs for the linked library's requirements.
     phase_env "$phase" GOPROXY=https://proxy.golang.org \
       GOFLAGS="-modfile=$phase/modules/go.mod -mod=mod -p=2" \
-      go list -deps -test ./internal/cli > "$phase/packages.txt"
+      go list -deps -test "$suite" > "$phase/packages.txt"
     phase_env "$phase" GOPROXY=off \
       GOFLAGS="-modfile=$phase/modules/go.mod -mod=readonly -p=2" \
-      go list -m -json github.com/openclaw/crawlkit
+      go list -m -json github.com/openclaw/crawlkit > "$phase/crawlkit.json"
+    cat "$phase/crawlkit.json"
+    phase_env "$phase" python3 - "$phase/library" "$phase/crawlkit.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+library = Path(sys.argv[1]).resolve()
+module = json.loads(Path(sys.argv[2]).read_text())
+assert module["Path"] == "github.com/openclaw/crawlkit", "wrong module identity"
+assert Path(module["Dir"]).resolve() == library, "wrong Crawlkit source directory"
+assert Path(module["Replace"]["Dir"]).resolve() == library, "wrong test replacement"
+assert Path(module["GoMod"]).resolve() == library / "go.mod", "wrong Crawlkit modfile"
+PY
     phase_env "$phase" GOPROXY=off \
       GOFLAGS="-modfile=$phase/modules/go.mod -mod=readonly -p=2" \
       go list -deps -test -f '{{with .Module}}{{.Path}} {{.Version}}{{end}}' \
-      ./internal/cli | sort -u > "$phase/modules.txt"
+      "$suite" | sort -u > "$phase/modules.txt"
   )
   sha256sum "$phase/modules/go.mod" "$phase/modules/go.sum" > "$phase/modules.sha256"
   printf '%s dependency inputs:\n' "$name"
   cat "$phase/modules.txt" "$phase/modules.sha256" "$phase/source.sha256"
+  if [[ $app != gitcrawl ]]; then
+    printf '::group::%s private module inputs\n' "$name"
+    cat "$phase/modules/go.mod" "$phase/modules/go.sum"
+    printf '::endgroup::\n'
+  fi
 done
 
 result=0
-for name in baseline candidate; do
-  phase="$work/$name"
-  printf '::group::%s unchanged CLI suite\n' "$name"
-  if run_isolated "$phase" 6m 10s go test -count=1 -timeout=3m ./internal/cli \
-    2>&1 | tee "$phase/tests.log"; then
+run_step() {
+  local phase=$1 label=$2 duration=$3
+  local log="$work/$name/$label.log"
+  shift 3
+  printf '::group::%s %s\n' "$name" "$label"
+  printf '%q ' "$@"
+  printf '\n'
+  if run_isolated "$phase" "$duration" 10s "$@" 2>&1 | tee "$log"; then
     status=0
   else
     status=$?
     result=1
   fi
-  printf '::endgroup::\n%s CLI exit: %s\n' "$name" "$status"
+  printf '::endgroup::\n%s %s exit: %s\n' "$name" "$label" "$status"
+  sha256sum "$log"
+  printf '%s %s exit: %s\n' "$name" "$label" "$status" >> "${GITHUB_STEP_SUMMARY:?}"
+}
+
+for name in baseline candidate; do
+  phase="$work/$name"
+  run_step "$phase" tests 6m go test -count=1 -timeout=3m "$suite"
+  if [[ $app != gitcrawl ]]; then
+    mkdir -p "$phase/bin"
+    run_step "$phase" build 2m go build -o "$phase/bin/$app" "./cmd/$app"
+    if [[ $status == 0 ]]; then
+      phase_env "$phase" GOPROXY=off go version -m "$phase/bin/$app"
+      sha256sum "$phase/bin/$app"
+      smoke="$phase/smoke"
+      mkdir -p "$smoke"/{source,home,config,cache,data,state,tmp}
+      mkdir -m 700 "$smoke/runtime"
+      run_step "$smoke" smokes 2m python3 "$candidate/.github/scripts/downstream-smoke.py" \
+        run "$app" "$phase/bin/$app" "$smoke" "$phase/smoke-evidence"
+    else
+      echo "$name smokes unavailable: build failed" >> "${GITHUB_STEP_SUMMARY:?}"
+    fi
+  fi
   fingerprint "$phase" > "$phase/source-after.sha256"
   cmp "$phase/source.sha256" "$phase/source-after.sha256"
   sha256sum --check "$phase/modules.sha256"
-  sha256sum "$phase/tests.log"
-  printf '%s CLI exit: %s\n' "$name" "$status" >> "${GITHUB_STEP_SUMMARY:?}"
 done
 
+if [[ $app != gitcrawl ]]; then
+  if ! phase_env "$work/candidate" python3 "$candidate/.github/scripts/downstream-smoke.py" \
+    compare "$work/baseline/smoke-evidence/result.json" "$work/candidate/smoke-evidence/result.json"; then
+    result=1
+  fi
+fi
 verify_checkout "$candidate" "$CRAWLKIT_CANDIDATE_SHA"
 verify_checkout "$baseline" "$CRAWLKIT_BASELINE_SHA"
-verify_checkout "$gitcrawl" "$GITCRAWL_SHA"
+verify_checkout "$downstream" "$downstream_sha"
 exit "$result"

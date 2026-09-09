@@ -4,12 +4,20 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Pinned downstream app to qualify
+        required: true
+        type: choice
+        options: [slacrawl, discrawl, notcrawl]
 
 permissions:
   contents: read
 
 jobs:
   test:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -33,6 +41,7 @@ jobs:
       - run: GOWORK=off go test -race ./...
 
   downstream:
+    if: github.event_name != 'workflow_dispatch'
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -64,7 +73,55 @@ jobs:
       - name: Compare pinned downstream CLI suites
         run: bash candidate/.github/scripts/downstream-compat.sh candidate baseline gitcrawl
 
+  downstream-app:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: crawlkit-downstream-manual
+      cancel-in-progress: false
+    env:
+      CRAWLKIT_BASELINE_SHA: 26a574e53b485cd2191df603f02d17fab6d3c4af
+      CRAWLKIT_CANDIDATE_SHA: ${{ github.sha }}
+      DOWNSTREAM_APP: ${{ inputs.app }}
+    steps:
+      - name: Resolve pinned public app
+        id: app
+        run: |
+          case "$DOWNSTREAM_APP" in
+            slacrawl) sha=ffaff3a72d91c5a1c2c6bf882412ef6e73e6dc78 ;;
+            discrawl) sha=9e8a981f39563aa73fb096eb903e801ac625fb84 ;;
+            notcrawl) sha=5b2af061b057618eee38e322d801d54ca9ffba36 ;;
+            *) echo "unsupported downstream app" >&2; exit 2 ;;
+          esac
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CRAWLKIT_CANDIDATE_SHA }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CRAWLKIT_BASELINE_SHA }}
+          path: baseline
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: openclaw/${{ inputs.app }}
+          ref: ${{ steps.app.outputs.sha }}
+          path: downstream
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Compare pinned app tests, builds, and read-only smokes
+        env:
+          DOWNSTREAM_SHA: ${{ steps.app.outputs.sha }}
+        run: bash candidate/.github/scripts/downstream-compat.sh candidate baseline downstream "$DOWNSTREAM_APP"
+
   windows-test:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
