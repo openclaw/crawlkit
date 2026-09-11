@@ -572,3 +572,128 @@ func TestCancellationCleanupHasOneBatchBudget(t *testing.T) {
 		}
 	})
 }
+
+type cancelPersistenceQueue struct {
+	budgetQueue
+	cancel      context.CancelFunc
+	stage       string
+	outcome     string
+	unavailable bool
+	writes      int
+	released    []string
+	canceledAt  time.Time
+}
+
+func (q *cancelPersistenceQueue) Claim(ctx context.Context, req ClaimRequest) ([]Job[string], error) {
+	jobs, err := q.budgetQueue.Claim(ctx, req)
+	switch q.stage {
+	case "oversize":
+		jobs = append(jobs, Job[string]{Key: "extra", Revision: "1", Token: "dummy"})
+	case "invalid":
+		jobs[0].Revision = ""
+	}
+	return jobs, err
+}
+
+func (q *cancelPersistenceQueue) persist(ctx context.Context) (bool, error) {
+	q.writes++
+	if q.writes > 1 {
+		return false, ctx.Err()
+	}
+	q.canceledAt = time.Now()
+	q.cancel()
+	switch q.outcome {
+	case "accepted":
+		return true, nil
+	case "superseded":
+		return false, nil
+	default:
+		return false, ctx.Err()
+	}
+}
+
+func (q *cancelPersistenceQueue) Complete(ctx context.Context, _ Job[string], _ string, _ time.Time) (bool, error) {
+	return q.persist(ctx)
+}
+
+func (q *cancelPersistenceQueue) Retry(ctx context.Context, _ Job[string], _ Retry) (bool, error) {
+	return q.persist(ctx)
+}
+
+func (q *cancelPersistenceQueue) Release(ctx context.Context, job Job[string], _ time.Time) (bool, error) {
+	q.released = append(q.released, job.Key)
+	if q.canceledAt.IsZero() {
+		q.canceledAt = time.Now()
+		q.cancel()
+	}
+	if q.unavailable {
+		<-ctx.Done()
+		return false, ctx.Err()
+	}
+	return true, nil
+}
+
+func TestCancellationDuringPersistenceBoundsRunShutdown(t *testing.T) {
+	for _, stage := range []string{"retry", "complete", "oversize", "invalid"} {
+		for _, outcome := range []string{"error", "accepted", "superseded"} {
+			if (stage == "oversize" || stage == "invalid") && outcome != "error" {
+				continue
+			}
+			for _, unavailable := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/unavailable=%t", stage, outcome, unavailable), func(t *testing.T) {
+					synctest.Test(t, func(t *testing.T) {
+						ctx, cancel := context.WithCancel(context.Background())
+						defer cancel()
+						q := &cancelPersistenceQueue{cancel: cancel, stage: stage, outcome: outcome, unavailable: unavailable}
+						opts := Options{Kind: "documents", Concurrency: 1}
+						handler := func(ctx context.Context, jobs []Job[string]) ([]string, error) {
+							if stage == "retry" {
+								return nil, errors.New("provider unavailable")
+							}
+							return upper(ctx, jobs)
+						}
+						r, err := New[string, string](q, handler, opts)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if err := r.Run(ctx); err != nil {
+							t.Fatal(err)
+						}
+						wantTime := time.Duration(0)
+						wantReleases, wantWrites := r.opts.BatchSize, 1
+						if stage == "oversize" {
+							wantReleases++
+						}
+						if stage == "oversize" || stage == "invalid" {
+							wantWrites = 0
+						} else if outcome != "error" {
+							wantReleases--
+						}
+						if unavailable {
+							wantTime = r.opts.StoreTimeout
+							wantReleases = 1
+						}
+						if elapsed := time.Since(q.canceledAt); elapsed != wantTime {
+							t.Errorf("shutdown after cancellation took %s; want %s", elapsed, wantTime)
+						}
+						if q.writes != wantWrites || len(q.released) != wantReleases {
+							t.Errorf("writes=%d releases=%d; want %d and %d", q.writes, len(q.released), wantWrites, wantReleases)
+						}
+						s := r.Status()
+						var completed, retried, superseded int64
+						if outcome == "accepted" && stage == "complete" {
+							completed = 1
+						} else if outcome == "accepted" && stage == "retry" {
+							retried = 1
+						} else if outcome == "superseded" {
+							superseded = 1
+						}
+						if s.State != "stopped" || s.InFlight != 0 || s.Completed != completed || s.Retried != retried || s.Superseded != superseded || s.Failed != 0 {
+							t.Fatalf("unexpected final status: %+v", s)
+						}
+					})
+				})
+			}
+		}
+	}
+}
