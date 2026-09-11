@@ -295,9 +295,7 @@ func (r *Runner[P, R]) process(ctx context.Context, jobs []Job[P]) {
 	}
 	cancel()
 	if ctx.Err() != nil {
-		for _, job := range jobs {
-			r.release(job)
-		}
+		r.releaseBatch(jobs)
 		return
 	}
 	if err == nil && len(results) != len(jobs) {
@@ -309,8 +307,8 @@ func (r *Runner[P, R]) process(ctx context.Context, jobs []Job[P]) {
 	}
 	for i, job := range jobs {
 		if ctx.Err() != nil {
-			r.release(job)
-			continue
+			r.releaseBatch(jobs[i:])
+			return
 		}
 		call, cancel := context.WithTimeout(ctx, r.opts.StoreTimeout)
 		accepted, err := r.queue.Complete(call, job, results[i], time.Now().UTC())
@@ -408,6 +406,23 @@ func (r *Runner[P, R]) backoff(attempt int) time.Duration {
 	}
 	return delay
 }
+
+// Cancellation gets one bounded cleanup budget for the batch. If storage is
+// unavailable, remaining claims are recovered by lease expiry rather than
+// delaying process shutdown by one timeout per job.
+func (r *Runner[P, R]) releaseBatch(jobs []Job[P]) {
+	ctx, cancel := context.WithTimeout(context.Background(), r.opts.StoreTimeout)
+	defer cancel()
+	for _, job := range jobs {
+		if ctx.Err() != nil {
+			return
+		}
+		if _, err := r.queue.Release(ctx, job, time.Now().UTC()); err != nil {
+			r.problem("queue_release_failed")
+		}
+	}
+}
+
 func (r *Runner[P, R]) release(job Job[P]) {
 	ctx, cancel := context.WithTimeout(context.Background(), r.opts.StoreTimeout)
 	defer cancel()

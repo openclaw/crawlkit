@@ -524,3 +524,31 @@ func TestLeaseBudgetIncludesSlowFailureCleanup(t *testing.T) {
 		})
 	}
 }
+
+func TestCancellationCleanupHasOneBatchBudget(t *testing.T) {
+	q := &slowCleanupQueue{testQueue: newQueue(t)}
+	for i := 0; i < 8; i++ {
+		q.put(t, fmt.Sprint(i), "1", "payload", Fresh)
+	}
+	opts := fastOpts()
+	opts.BatchSize = 8
+	opts.StoreTimeout = 20 * time.Millisecond
+	r, err := New[string, string](q, upper, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := r.claim(context.Background(), Fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	r.process(ctx, jobs)
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("shutdown cleanup used per-job deadlines: %s", elapsed)
+	}
+	if q.count("pending") != 8 {
+		t.Fatal("cancellation lost work")
+	}
+}
