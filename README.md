@@ -86,6 +86,7 @@ first crawl
 | Search | `embed`, `vector` | Embedding providers, vector encoding, exact search, and result fusion |
 | App contracts | `control`, `output`, `progress` | Machine-readable metadata, output formats, and CI-safe progress logs |
 | Remote archives | `remote` | Provider-neutral HTTP client and versioned archive protocol |
+| Background processing | `worker` | Bounded continuous workers over application-owned durable queues |
 | User surfaces | `scheduler`, `tui`, `releasecheck` | Refresh jobs, terminal browsing, and release notices |
 
 See the [package guide](docs/packages.md) for the complete inventory and [Go package reference](https://pkg.go.dev/github.com/openclaw/crawlkit) for exported APIs.
@@ -122,6 +123,8 @@ If a write is interrupted, history reads ignore a truncated final JSON value and
 | `uninstall` | Remove an installed periodic schedule |
 
 Scheduling uses launchd on macOS, systemd user units on Linux, Task Scheduler on Windows, and cron rendering as the portable fallback.
+
+See [Background workers](docs/background-workers.md) for content-triggered processing alongside ingestion.
 
 ## Boundaries
 
