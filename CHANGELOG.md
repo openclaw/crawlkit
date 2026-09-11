@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v0.16.0 - 2026-09-11
+
+- Add the generic `worker` runtime for continuous processing over application-owned
+  durable queues, with bounded batches, fresh-input priority, cancellation,
+  retry/backoff, and safe status snapshots.
+- Define revision and lease fencing contracts so background results cannot
+  overwrite newer input; applications retain their schemas, eligibility rules,
+  transactions, and result persistence.
+- Budget leases for slow storage failure cleanup and bound shutdown cleanup for
+  the entire batch. SQLite-backed recovery tests and controlled-clock regressions
+  cover edits, deletes, expired ownership, duplicate completion, and slow cleanup.
+
 ## v0.15.1 - 2026-09-09
 
 - Preserve optional caller-owned warnings in remote ingest manifests and archive
