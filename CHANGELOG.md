@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.16.1 - 2026-09-11
+
+- Bound worker shutdown when cancellation arrives during retry or completion
+  persistence. Remaining claims share one cleanup deadline instead of waiting
+  a separate storage timeout per job; rejected batches use the same bound.
+
 ## v0.16.0 - 2026-09-11
 
 - Add the generic `worker` runtime for continuous processing over application-owned

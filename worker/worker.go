@@ -248,9 +248,7 @@ func (r *Runner[P, R]) loop(ctx context.Context) {
 		}
 		if len(jobs) > r.opts.BatchSize { // A broken adapter must not bypass the bound.
 			r.problem("queue_batch_limit_exceeded")
-			for _, job := range jobs {
-				r.release(job)
-			}
+			r.releaseBatch(jobs)
 			if !r.wait(ctx, r.opts.PollEvery, false) {
 				return
 			}
@@ -264,9 +262,7 @@ func (r *Runner[P, R]) loop(ctx context.Context) {
 		}
 		if !valid {
 			r.problem("queue_invalid_claim")
-			for _, job := range jobs {
-				r.release(job)
-			}
+			r.releaseBatch(jobs)
 			if !r.wait(ctx, r.opts.PollEvery, false) {
 				return
 			}
@@ -315,6 +311,10 @@ func (r *Runner[P, R]) process(ctx context.Context, jobs []Job[P]) {
 		cancel()
 		if err != nil {
 			r.problem("queue_complete_failed")
+			if ctx.Err() != nil {
+				r.releaseBatch(jobs[i:])
+				return
+			}
 			r.release(job)
 			continue
 		}
@@ -354,7 +354,11 @@ func (r *Runner[P, R]) fail(ctx context.Context, jobs []Job[P], cause error) {
 		code = "handler_failed"
 	}
 	r.problem(code)
-	for _, job := range jobs {
+	for i, job := range jobs {
+		if ctx.Err() != nil {
+			r.releaseBatch(jobs[i:])
+			return
+		}
 		delay := r.backoff(job.Attempts)
 		if failure.RetryAfter > delay {
 			delay = failure.RetryAfter
@@ -375,6 +379,10 @@ func (r *Runner[P, R]) fail(ctx context.Context, jobs []Job[P], cause error) {
 		cancel()
 		if err != nil {
 			r.problem("queue_retry_failed")
+			if ctx.Err() != nil {
+				r.releaseBatch(jobs[i:])
+				return
+			}
 			r.release(job)
 			continue
 		}
