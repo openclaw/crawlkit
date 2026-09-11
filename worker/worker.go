@@ -142,9 +142,13 @@ func New[P, R any](queue Queue[P, R], handler Handler[P, R], opts Options) (*Run
 	if opts.StoreTimeout == 0 {
 		opts.StoreTimeout = 5 * time.Second
 	}
-	// A batch may need a bounded store operation for every result. No heartbeat
+	// Every result may need both a bounded store operation and failure cleanup. No heartbeat
 	// is necessary: the lease covers processing plus the entire completion budget.
-	minimumLease := opts.TaskTimeout + time.Duration(opts.BatchSize+2)*opts.StoreTimeout
+	availableOperations := (time.Duration(1<<63-1) - opts.TaskTimeout) / opts.StoreTimeout
+	if availableOperations < 2 || uint64(opts.BatchSize) > uint64((availableOperations-2)/2) {
+		return nil, errors.New("worker lease budget overflows duration")
+	}
+	minimumLease := opts.TaskTimeout + (2*time.Duration(opts.BatchSize)+2)*opts.StoreTimeout
 	if opts.LeaseDuration == 0 {
 		opts.LeaseDuration = minimumLease
 	}

@@ -40,7 +40,7 @@ Two workers, up to 64 items per batch, a 250 ms collection window and one-second
 fallback polling. Claims prefer fresh work four times then catch-up once, with
 unused capacity borrowed. Each kind has its own resource bounds. The default
 handler deadline is two minutes; storage calls have five-second deadlines.
-Leases must cover the full handler plus bounded completion budget; explicit
+Leases must cover the full handler plus bounded completion and failure-cleanup budget; explicit
 shorter leases are rejected. No unbounded in-memory backlog is accumulated.
 
 Failures carry safe error codes, never raw inputs or provider responses. Unknown

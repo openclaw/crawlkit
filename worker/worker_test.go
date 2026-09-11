@@ -460,3 +460,67 @@ func TestIndependentTaskKinds(t *testing.T) {
 	}
 	stop()
 }
+
+type slowCleanupQueue struct {
+	*testQueue
+}
+
+func (q *slowCleanupQueue) Complete(ctx context.Context, j Job[string], r string, now time.Time) (bool, error) {
+	if j.Key != "z" {
+		<-ctx.Done()
+		return false, ctx.Err()
+	}
+	return q.testQueue.Complete(ctx, j, r, now)
+}
+func (q *slowCleanupQueue) Retry(ctx context.Context, j Job[string], r Retry) (bool, error) {
+	if j.Key != "z" {
+		<-ctx.Done()
+		return false, ctx.Err()
+	}
+	return q.testQueue.Retry(ctx, j, r)
+}
+func (q *slowCleanupQueue) Release(ctx context.Context, j Job[string], now time.Time) (bool, error) {
+	<-ctx.Done()
+	return false, ctx.Err()
+}
+func TestLeaseBudgetIncludesSlowFailureCleanup(t *testing.T) {
+	for _, failRetry := range []bool{false, true} {
+		t.Run(fmt.Sprint(failRetry), func(t *testing.T) {
+			q := &slowCleanupQueue{testQueue: newQueue(t)}
+			for _, key := range []string{"a", "b", "c", "d", "e", "f", "g", "z"} {
+				q.put(t, key, "1", "input", Fresh)
+			}
+			opts := fastOpts()
+			opts.BatchSize = 8
+			opts.StoreTimeout = 20 * time.Millisecond
+			opts.TaskTimeout = 200 * time.Millisecond
+			handler := func(ctx context.Context, j []Job[string]) ([]string, error) {
+				select {
+				case <-time.After(150 * time.Millisecond):
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+				if failRetry {
+					return nil, &Failure{Code: "retry"}
+				}
+				return upper(ctx, j)
+			}
+			r, err := New[string, string](q, handler, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			jobs, err := r.claim(context.Background(), Fresh)
+			if err != nil || len(jobs) != 8 {
+				t.Fatal(jobs, err)
+			}
+			r.process(context.Background(), jobs)
+			if failRetry {
+				if r.Status().Retried != 1 {
+					t.Fatal("late retry lost its lease during earlier cleanup:", r.Status())
+				}
+			} else if q.count("done") != 1 {
+				t.Fatal("late result lost its lease during earlier cleanup:", r.Status())
+			}
+		})
+	}
+}
