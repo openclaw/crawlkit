@@ -93,6 +93,10 @@ reader lease or a power-loss durability guarantee.
 
 The service boundary is defined in [Remote Contract](remote-contract.md). The Cloudflare Worker and D1 deployment remain outside this module.
 
+## Background processing
+
+- `worker` runs generic batched handlers over app-owned durable queues with revision fencing, expiring leases, priority, retries, cancellation, and status. See [Background workers](background-workers.md).
+
 ## User surfaces
 
 - `scheduler` discovers crawl apps, expands job config, prevents concurrent runs, records JSONL history, and renders or installs native schedules.

@@ -63,6 +63,8 @@ parsers, and product-specific ranking in the apps.
 - Stable cross-crawler interchange DTOs such as the narrow contact-export
   envelope. Apps still own contact selection, normalization, and ranking.
 
+- Generic continuous worker lifecycle and bounded execution over app-owned durable queue adapters; applications retain source revisions, transactions, eligibility and result persistence.
+
 ## does not own
 
 `crawlkit` should not own these surfaces:
