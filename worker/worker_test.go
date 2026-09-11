@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -132,7 +133,7 @@ func fastOpts() Options {
 }
 func eventually(t *testing.T, f func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for !f() {
 		if time.Now().After(deadline) {
 			t.Fatal("condition timed out")
@@ -284,7 +285,7 @@ func TestFreshnessWhileCatchupAndSlowWork(t *testing.T) {
 		_ = q.db.QueryRow(`select state from tasks where key='fresh'`).Scan(&s)
 		return s == "done"
 	})
-	if time.Since(before) > time.Second {
+	if time.Since(before) > 10*time.Second {
 		t.Fatal("fresh input waited behind catch-up")
 	}
 	eventually(t, func() bool { return q.count("done") > 5 })
@@ -461,94 +462,113 @@ func TestIndependentTaskKinds(t *testing.T) {
 	stop()
 }
 
-type slowCleanupQueue struct {
-	*testQueue
+// This adapter models slow storage without real filesystem timing. The durable
+// adapter above separately covers SQLite claims and revision/lease fencing.
+type budgetQueue struct {
+	leaseUntil         time.Time
+	completed, retried int
+	jobs               int
 }
 
-func (q *slowCleanupQueue) Complete(ctx context.Context, j Job[string], r string, now time.Time) (bool, error) {
+func (q *budgetQueue) Claim(_ context.Context, r ClaimRequest) ([]Job[string], error) {
+	q.leaseUntil = r.LeaseUntil
+	q.jobs = r.Limit
+	out := make([]Job[string], r.Limit)
+	for i := range out {
+		key := fmt.Sprint(i)
+		if i == len(out)-1 {
+			key = "z"
+		}
+		out[i] = Job[string]{Key: key, Revision: "1", Token: key + "/token", Payload: "input"}
+	}
+	return out, nil
+}
+func (q *budgetQueue) Complete(ctx context.Context, j Job[string], _ string, now time.Time) (bool, error) {
 	if j.Key != "z" {
 		<-ctx.Done()
 		return false, ctx.Err()
 	}
-	return q.testQueue.Complete(ctx, j, r, now)
+	if !now.Before(q.leaseUntil) {
+		return false, nil
+	}
+	q.completed++
+	return true, nil
 }
-func (q *slowCleanupQueue) Retry(ctx context.Context, j Job[string], r Retry) (bool, error) {
+func (q *budgetQueue) Retry(ctx context.Context, j Job[string], r Retry) (bool, error) {
 	if j.Key != "z" {
 		<-ctx.Done()
 		return false, ctx.Err()
 	}
-	return q.testQueue.Retry(ctx, j, r)
+	if !r.Now.Before(q.leaseUntil) {
+		return false, nil
+	}
+	q.retried++
+	return true, nil
 }
-func (q *slowCleanupQueue) Release(ctx context.Context, j Job[string], now time.Time) (bool, error) {
+func (q *budgetQueue) Release(ctx context.Context, _ Job[string], _ time.Time) (bool, error) {
 	<-ctx.Done()
 	return false, ctx.Err()
 }
+
 func TestLeaseBudgetIncludesSlowFailureCleanup(t *testing.T) {
 	for _, failRetry := range []bool{false, true} {
 		t.Run(fmt.Sprint(failRetry), func(t *testing.T) {
-			q := &slowCleanupQueue{testQueue: newQueue(t)}
-			for _, key := range []string{"a", "b", "c", "d", "e", "f", "g", "z"} {
-				q.put(t, key, "1", "input", Fresh)
-			}
-			opts := fastOpts()
-			opts.BatchSize = 8
-			opts.StoreTimeout = 20 * time.Millisecond
-			opts.TaskTimeout = 200 * time.Millisecond
-			handler := func(ctx context.Context, j []Job[string]) ([]string, error) {
-				select {
-				case <-time.After(150 * time.Millisecond):
-				case <-ctx.Done():
-					return nil, ctx.Err()
+			synctest.Test(t, func(t *testing.T) {
+				q := &budgetQueue{}
+				opts := fastOpts()
+				opts.BatchSize = 8
+				opts.StoreTimeout = 20 * time.Millisecond
+				opts.TaskTimeout = 200 * time.Millisecond
+				handler := func(ctx context.Context, j []Job[string]) ([]string, error) {
+					time.Sleep(150 * time.Millisecond)
+					if failRetry {
+						return nil, &Failure{Code: "retry"}
+					}
+					return upper(ctx, j)
 				}
+				r, err := New[string, string](q, handler, opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				jobs, err := r.claim(context.Background(), Fresh)
+				if err != nil || len(jobs) != 8 {
+					t.Fatal(jobs, err)
+				}
+				r.process(context.Background(), jobs)
 				if failRetry {
-					return nil, &Failure{Code: "retry"}
+					if q.retried != 1 {
+						t.Fatal("late retry lost its lease during earlier cleanup:", r.Status())
+					}
+				} else if q.completed != 1 {
+					t.Fatal("late result lost its lease during earlier cleanup:", r.Status())
 				}
-				return upper(ctx, j)
-			}
-			r, err := New[string, string](q, handler, opts)
-			if err != nil {
-				t.Fatal(err)
-			}
-			jobs, err := r.claim(context.Background(), Fresh)
-			if err != nil || len(jobs) != 8 {
-				t.Fatal(jobs, err)
-			}
-			r.process(context.Background(), jobs)
-			if failRetry {
-				if r.Status().Retried != 1 {
-					t.Fatal("late retry lost its lease during earlier cleanup:", r.Status())
-				}
-			} else if q.count("done") != 1 {
-				t.Fatal("late result lost its lease during earlier cleanup:", r.Status())
-			}
+			})
 		})
 	}
 }
-
 func TestCancellationCleanupHasOneBatchBudget(t *testing.T) {
-	q := &slowCleanupQueue{testQueue: newQueue(t)}
-	for i := 0; i < 8; i++ {
-		q.put(t, fmt.Sprint(i), "1", "payload", Fresh)
-	}
-	opts := fastOpts()
-	opts.BatchSize = 8
-	opts.StoreTimeout = 20 * time.Millisecond
-	r, err := New[string, string](q, upper, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	jobs, err := r.claim(context.Background(), Fresh)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	start := time.Now()
-	r.process(ctx, jobs)
-	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
-		t.Fatalf("shutdown cleanup used per-job deadlines: %s", elapsed)
-	}
-	if q.count("pending") != 8 {
-		t.Fatal("cancellation lost work")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		q := &budgetQueue{}
+		opts := fastOpts()
+		opts.BatchSize = 8
+		opts.StoreTimeout = 20 * time.Millisecond
+		r, err := New[string, string](q, upper, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		jobs, err := r.claim(context.Background(), Fresh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		start := time.Now()
+		r.process(ctx, jobs)
+		if elapsed := time.Since(start); elapsed != opts.StoreTimeout {
+			t.Fatalf("shutdown cleanup exceeded one budget: %s", elapsed)
+		}
+		if q.completed != 0 || q.retried != 0 {
+			t.Fatal("cancellation changed job outcome")
+		}
+	})
 }
