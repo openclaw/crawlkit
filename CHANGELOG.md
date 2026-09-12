@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.16.2 - 2026-09-11
+
+**Highlights:** Updated runtime dependencies and refreshed analysis tooling.
 
 - Refresh operating-system support to x/sys v0.48.0, cryptography to x/crypto v0.57.0, Unicode text handling to x/text v0.42.0, and terminal character widths to go-runewidth v0.0.30 while retaining the Go 1.27.0 minimum. Thanks @dependabot.
 - Update deadcode to v0.50.0, govulncheck to v1.8.0, and the pinned CodeQL action to v4.38.0.
