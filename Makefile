@@ -51,9 +51,9 @@ lint: vet
 	@set -e; \
 	output_file="$$(mktemp)"; \
 	trap 'rm -f "$$output_file"' 0; \
-	GOWORK=off go run golang.org/x/tools/cmd/deadcode@v0.49.0 -test ./... > "$$output_file"; \
+	GOWORK=off go run golang.org/x/tools/cmd/deadcode@v0.50.0 -test ./... > "$$output_file"; \
 	if [ -s "$$output_file" ]; then cat "$$output_file"; exit 1; fi
-	GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+	GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
 check: tidy-check fmt lint test test-race test-release
 
