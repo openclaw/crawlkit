@@ -112,6 +112,11 @@ schedule source-specific commands such as Photos' `import_apple`.
 
 If a write is interrupted, history reads ignore a truncated final JSON value and the next run repairs that tail before appending. Valid final records without a trailing newline are retained; complete corrupt records still report an error.
 
+History reads accept the full records written by the runner, including long
+command arguments. Explicit configuration paths work without a home directory;
+default and `~/` paths still require one. Saving a controller configuration
+applies private file permissions before replacing existing content.
+
 | Command | Purpose |
 | --- | --- |
 | `init` | Discover crawl apps and write a controller config |

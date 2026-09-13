@@ -123,26 +123,27 @@ func ReadHistory(path string) ([]RunRecord, error) {
 	}
 	defer file.Close()
 	var records []RunRecord
-	scanner := bufio.NewScanner(file)
-	terminated := false
-	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
-		advance, token, err := bufio.ScanLines(data, atEOF)
-		if advance > 0 {
-			terminated = data[advance-1] == '\n'
+	reader := bufio.NewReader(file)
+	for {
+		line, readErr := reader.ReadBytes('\n')
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return records, readErr
 		}
-		return advance, token, err
-	})
-	for scanner.Scan() {
+		if len(line) == 0 {
+			return records, nil
+		}
 		var record RunRecord
-		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
-			if !terminated && incompleteHistoryRecord(scanner.Bytes()) {
-				break
+		if err := json.Unmarshal(line, &record); err != nil {
+			if errors.Is(readErr, io.EOF) && incompleteHistoryRecord(line) {
+				return records, nil
 			}
 			return nil, err
 		}
 		records = append(records, record)
+		if errors.Is(readErr, io.EOF) {
+			return records, nil
+		}
 	}
-	return records, scanner.Err()
 }
 
 func LastRecords(records []RunRecord) map[string]RunRecord {

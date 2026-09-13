@@ -46,13 +46,17 @@ type Paths struct {
 }
 
 func DefaultPaths(configPath string) (Paths, error) {
-	app := config.App{Name: "crawlctl", PlatformDirs: true}
-	defaults, err := app.DefaultPaths()
-	if err != nil {
-		return Paths{}, err
+	trimmed := strings.TrimSpace(configPath)
+	customConfig := trimmed != ""
+	var defaults config.Paths
+	if !customConfig || trimmed == "~" || strings.HasPrefix(trimmed, "~/") {
+		var err error
+		defaults, err = (config.App{Name: "crawlctl", PlatformDirs: true}).DefaultPaths()
+		if err != nil {
+			return Paths{}, err
+		}
 	}
-	customConfig := strings.TrimSpace(configPath) != ""
-	if strings.TrimSpace(configPath) == "" {
+	if !customConfig {
 		configPath = defaults.ConfigPath
 	} else {
 		configPath = config.ExpandHome(configPath)
@@ -63,9 +67,6 @@ func DefaultPaths(configPath string) (Paths, error) {
 	if customConfig {
 		logDir = filepath.Join(base, "logs")
 		stateDir = filepath.Join(base, "state")
-	}
-	if strings.TrimSpace(logDir) == "" {
-		logDir = filepath.Join(base, "logs")
 	}
 	return Paths{
 		ConfigPath: configPath,
@@ -119,14 +120,7 @@ func Save(path string, cfg Config, force bool) (Paths, error) {
 			return paths, err
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(paths.ConfigPath), 0o755); err != nil {
-		return paths, err
-	}
-	data, err := toml.Marshal(cfg)
-	if err != nil {
-		return paths, err
-	}
-	if err := os.WriteFile(paths.ConfigPath, data, 0o600); err != nil {
+	if err := config.WriteTOML(paths.ConfigPath, cfg, 0o600); err != nil {
 		return paths, err
 	}
 	return paths, nil

@@ -4,6 +4,9 @@
 
 - Preserve file and SQLite capture contents when `MaxFileBytes` is the maximum signed 64-bit value; keep overflow-free bounded reads for growing sources.
 - Publish changes to zero-row backup counter keys while reusing unchanged encrypted shards.
+- Apply private permissions before overwriting existing controller configurations.
+- Allow explicit controller configuration paths without a home directory while preserving default and tilde-path validation.
+- Read and repair long scheduler history records without blocking later runs or status checks.
 - Run the same validation gates locally and in Linux CI, including formatting, and cancel superseded automatic CI runs.
 
 ## 0.16.2 - 2026-09-11
