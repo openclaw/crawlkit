@@ -460,7 +460,7 @@ func TestProviderValidationEdges(t *testing.T) {
 	require.Equal(t, []string{"abc"}, trimInputs([]string{"abc"}, 0))
 	_, err = inferDimensions([][]float32{{}})
 	require.ErrorContains(t, err, "empty vector")
-	_, err = inferDimensions64([][]float64{{1}, {1, 2}})
+	_, err = inferDimensions([][]float64{{1}, {1, 2}})
 	require.ErrorContains(t, err, "dimensions mismatch")
 }
 

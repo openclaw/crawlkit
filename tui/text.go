@@ -16,12 +16,12 @@ func overlayBlock(base, block string, x, y, width int) string {
 			continue
 		}
 		baseLine := baseLines[row]
-		prefix := strings.Repeat(" ", maxInt(0, x))
+		prefix := strings.Repeat(" ", max(0, x))
 		if x > 0 && baseLine != "" {
 			prefix = padCells(ansi.Cut(baseLine, 0, x), x)
 		}
 		lineWidth := ansi.StringWidth(line)
-		suffixStart := maxInt(0, x+lineWidth)
+		suffixStart := max(0, x+lineWidth)
 		suffix := ""
 		if suffixStart < ansi.StringWidth(baseLine) {
 			suffix = ansi.Cut(baseLine, suffixStart, width)
@@ -79,7 +79,7 @@ func wrap(value string, width int) string {
 }
 
 func wrapPlain(value string, width int) []string {
-	width = maxInt(20, width)
+	width = max(20, width)
 	words := strings.Fields(value)
 	if len(words) == 0 {
 		return []string{""}
@@ -113,7 +113,7 @@ func wrapPlain(value string, width int) []string {
 }
 
 func wrapLines(value string, width int) []string {
-	width = maxInt(width, 1)
+	width = max(width, 1)
 	var out []string
 	for _, line := range strings.Split(strings.TrimSpace(value), "\n") {
 		line = strings.TrimSpace(line)
@@ -140,8 +140,8 @@ func padCells(value string, width int) string {
 }
 
 func fitBlock(value string, width, height int) string {
-	width = maxInt(width, 1)
-	height = maxInt(height, 1)
+	width = max(width, 1)
+	height = max(height, 1)
 	lines := strings.Split(value, "\n")
 	if len(lines) > height {
 		lines = lines[:height]
@@ -167,18 +167,4 @@ func clampInt(value, min, max int) int {
 		return max
 	}
 	return value
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

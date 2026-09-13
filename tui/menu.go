@@ -121,7 +121,7 @@ func (m model) menuIndexAtMouse(x, y int) (int, bool) {
 }
 
 func (m *model) updateMenuKey(key tea.KeyMsg) tea.Cmd {
-	page := maxInt(1, m.menuVisibleCount())
+	page := max(1, m.menuVisibleCount())
 	if index, ok := visibleMenuShortcutIndex(key.String(), m.menuItems, m.menuOff, page); ok {
 		m.menuIndex = index
 		return m.runMenuItem(m.menuItems[m.menuIndex])
@@ -498,8 +498,8 @@ func (m model) menuLines(width int) []string {
 	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(palette.accent)).Render(m.displayMenuTitle())
 	lines := []string{title, dim(actionMenuSubtitle(m.menuContext)), ""}
 	visible := m.menuVisibleCount()
-	start := clampInt(m.menuOff, 0, maxInt(0, len(m.menuItems)-visible))
-	end := minInt(len(m.menuItems), start+visible)
+	start := clampInt(m.menuOff, 0, max(0, len(m.menuItems)-visible))
+	end := min(len(m.menuItems), start+visible)
 	shortcut := 0
 	for i := start; i < end; i++ {
 		item := m.menuItems[i]
@@ -608,9 +608,9 @@ func (m model) renderFloatingMenu(view string) string {
 	if m.menuRect.w <= 0 || m.menuRect.h <= 0 {
 		return view
 	}
-	lines := m.menuLines(maxInt(1, m.menuRect.w-2))
-	if len(lines) > maxInt(0, m.menuRect.h-2) {
-		lines = lines[:maxInt(0, m.menuRect.h-2)]
+	lines := m.menuLines(max(1, m.menuRect.w-2))
+	if len(lines) > max(0, m.menuRect.h-2) {
+		lines = lines[:max(0, m.menuRect.h-2)]
 	}
 	box := floatingMenuStyle(m.menuRect.w, m.menuRect.h, actionMenuColors(m.menuContext)).Render(strings.Join(lines, "\n"))
 	return overlayBlock(view, box, m.menuRect.x, m.menuRect.y, m.width)
@@ -620,17 +620,17 @@ func (m *model) placeFloatingMenu(x, y int) {
 	if !m.menuOpen {
 		return
 	}
-	maxWidth := maxInt(24, m.width-2)
-	width := clampInt(m.preferredMenuWidth(), 34, minInt(58, maxWidth))
-	availableHeight := maxInt(1, m.height-3)
-	visibleRows := minInt(maxInt(1, len(m.menuItems)), 12)
-	height := minInt(visibleRows+7, availableHeight)
-	if height < minInt(8, availableHeight) {
-		height = minInt(8, availableHeight)
+	maxWidth := max(24, m.width-2)
+	width := clampInt(m.preferredMenuWidth(), 34, min(58, maxWidth))
+	availableHeight := max(1, m.height-3)
+	visibleRows := min(max(1, len(m.menuItems)), 12)
+	height := min(visibleRows+7, availableHeight)
+	if height < min(8, availableHeight) {
+		height = min(8, availableHeight)
 	}
-	maxX := maxInt(0, m.width-width)
+	maxX := max(0, m.width-width)
 	minY := 1
-	maxY := maxInt(minY, m.height-2-height)
+	maxY := max(minY, m.height-2-height)
 	m.menuFloating = true
 	m.menuRect = rect{
 		x: clampInt(x+1, 0, maxX),
@@ -644,16 +644,16 @@ func (m *model) placeFloatingMenu(x, y int) {
 func (m model) preferredMenuWidth() int {
 	width := lipgloss.Width(firstNonEmpty(m.menuTitle, "Actions")) + 4
 	for _, item := range m.menuItems {
-		width = maxInt(width, lipgloss.Width(item.label)+8)
+		width = max(width, lipgloss.Width(item.label)+8)
 	}
 	return width
 }
 
 func (m model) menuVisibleCount() int {
 	if m.menuFloating && m.menuRect.h > 0 {
-		return maxInt(1, m.menuRect.h-7)
+		return max(1, m.menuRect.h-7)
 	}
-	return maxInt(1, m.layout().detail.h-7)
+	return max(1, m.layout().detail.h-7)
 }
 
 func visibleMenuShortcutIndex(key string, items []menuItem, menuOff, visible int) (int, bool) {
@@ -662,7 +662,7 @@ func visibleMenuShortcutIndex(key string, items []menuItem, menuOff, visible int
 	}
 	target := int(key[0] - '0')
 	shortcut := 0
-	end := minInt(len(items), menuOff+maxInt(1, visible))
+	end := min(len(items), menuOff+max(1, visible))
 	for index := menuOff; index < end; index++ {
 		if !items[index].selectable() {
 			continue
@@ -690,7 +690,7 @@ func (m model) lastSelectableMenuIndex() int {
 			return index
 		}
 	}
-	return maxInt(0, len(m.menuItems)-1)
+	return max(0, len(m.menuItems)-1)
 }
 
 func (m model) nextSelectableMenuIndex(delta int) int {
@@ -737,13 +737,13 @@ func (m *model) keepMenuVisible() {
 	if m.menuIndex >= m.menuOff+visible {
 		m.menuOff = m.menuIndex - visible + 1
 	}
-	m.menuOff = clampInt(m.menuOff, 0, maxInt(0, len(m.menuItems)-visible))
+	m.menuOff = clampInt(m.menuOff, 0, max(0, len(m.menuItems)-visible))
 }
 
 func floatingMenuStyle(width, height int, palette actionMenuPalette) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Width(maxInt(1, width-2)).
-		Height(maxInt(1, height-2)).
+		Width(max(1, width-2)).
+		Height(max(1, height-2)).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(palette.accent)).
 		Background(lipgloss.Color(palette.background)).
@@ -752,7 +752,7 @@ func floatingMenuStyle(width, height int, palette actionMenuPalette) lipgloss.St
 
 func selectedMenuLineStyle(width int, palette actionMenuPalette) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Width(maxInt(1, width)).
+		Width(max(1, width)).
 		Background(lipgloss.Color(palette.selectedBG)).
 		Foreground(lipgloss.Color(palette.selectedFG)).
 		Bold(true)

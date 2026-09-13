@@ -338,7 +338,7 @@ func trimInputs(inputs []string, maxChars int) []string {
 	return out
 }
 
-func inferDimensions(vectors [][]float32) (int, error) {
+func inferDimensions[T ~float32 | ~float64](vectors [][]T) (int, error) {
 	dimensions := 0
 	for _, vector := range vectors {
 		if len(vector) == 0 {
@@ -355,40 +355,12 @@ func inferDimensions(vectors [][]float32) (int, error) {
 	return dimensions, nil
 }
 
-func inferDimensions64(vectors [][]float64) (int, error) {
-	dimensions := 0
-	for _, vector := range vectors {
-		if len(vector) == 0 {
-			return 0, errors.New("embedding response contained an empty vector")
-		}
-		if dimensions == 0 {
-			dimensions = len(vector)
-			continue
-		}
-		if len(vector) != dimensions {
-			return 0, fmt.Errorf("embedding response dimensions mismatch: got %d want %d", len(vector), dimensions)
-		}
-	}
-	return dimensions, nil
-}
-
-func float32VectorsTo64(vectors [][]float32) [][]float64 {
-	out := make([][]float64, len(vectors))
+func convertVectors[To, From ~float32 | ~float64](vectors [][]From) [][]To {
+	out := make([][]To, len(vectors))
 	for i, vector := range vectors {
-		out[i] = make([]float64, len(vector))
+		out[i] = make([]To, len(vector))
 		for j, value := range vector {
-			out[i][j] = float64(value)
-		}
-	}
-	return out
-}
-
-func float64VectorsTo32(vectors [][]float64) [][]float32 {
-	out := make([][]float32, len(vectors))
-	for i, vector := range vectors {
-		out[i] = make([]float32, len(vector))
-		for j, value := range vector {
-			out[i][j] = float32(value)
+			out[i][j] = To(value)
 		}
 	}
 	return out

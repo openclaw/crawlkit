@@ -158,19 +158,19 @@ func (m model) focusedPageSize() int {
 	layout := m.layout()
 	switch m.focus {
 	case focusContext:
-		return maxInt(1, rowsViewportHeight(layout.context.h))
+		return max(1, rowsViewportHeight(layout.context.h))
 	case focusDetail:
 		if m.detailView.Height > 0 {
-			return maxInt(1, m.detailView.Height)
+			return max(1, m.detailView.Height)
 		}
-		return maxInt(1, layout.detail.h-2)
+		return max(1, layout.detail.h-2)
 	default:
 		return m.pageSize()
 	}
 }
 
 func (m model) maxContextOffset() int {
-	return maxInt(0, len(m.currentContextRows())-rowsViewportHeight(m.layout().context.h))
+	return max(0, len(m.currentContextRows())-rowsViewportHeight(m.layout().context.h))
 }
 
 func (m *model) applyFilter() {
@@ -211,7 +211,7 @@ func (m *model) ensureVisible() {
 	if groupIndex >= m.offset+page {
 		m.offset = groupIndex - page + 1
 	}
-	m.offset = clampInt(m.offset, 0, maxInt(len(m.groups)-1, 0))
+	m.offset = clampInt(m.offset, 0, max(len(m.groups)-1, 0))
 	memberPage := rowsViewportHeight(m.layout().context.h)
 	contextRowIndex := m.currentContextRowOffset()
 	if contextRowIndex < m.contextOffset {
@@ -224,5 +224,5 @@ func (m *model) ensureVisible() {
 }
 
 func (m model) pageSize() int {
-	return maxInt(1, rowsViewportHeight(m.layout().rows.h))
+	return max(1, rowsViewportHeight(m.layout().rows.h))
 }

@@ -1,6 +1,10 @@
 # Cloudflare remote archives
 
-Status: implementation spec with local Worker/D1 prototype.
+Historical design: this document records the original Worker/D1 proposal.
+The current client and additive v1 contract live in `crawlkit/remote`; the
+service lives in `openclaw/crawl-remote`. See [Remote Contract](remote-contract.md)
+for current ownership and compatibility rules. Statements below about planned
+work or the original app state are design context, not a deployment inventory.
 
 This spec covers an additive remote archive option for `crawlkit`,
 `openclaw/gitcrawl`, and `openclaw/discrawl`.

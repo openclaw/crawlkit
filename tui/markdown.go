@@ -8,14 +8,14 @@ import (
 )
 
 func tuiRule(width int) string {
-	return strings.Repeat("-", minInt(72, maxInt(12, width)))
+	return strings.Repeat("-", min(72, max(12, width)))
 }
 
 func markdownLines(value string, width int) []string {
 	if strings.TrimSpace(value) == "" {
 		return nil
 	}
-	width = maxInt(20, width)
+	width = max(20, width)
 	var lines []string
 	inFence := false
 	blankRun := 0
@@ -64,7 +64,7 @@ func markdownLines(value string, width int) []string {
 }
 
 func appendWrappedStyled(lines []string, prefix, value string, width int, styler func(string) string) []string {
-	contentWidth := maxInt(8, width-lipgloss.Width(prefix))
+	contentWidth := max(8, width-lipgloss.Width(prefix))
 	wrapped := wrapPlain(value, contentWidth)
 	if len(wrapped) == 0 {
 		return lines

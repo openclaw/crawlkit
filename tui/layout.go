@@ -56,17 +56,17 @@ type itemGroup struct {
 }
 
 func (m model) layout() archiveLayout {
-	width := maxInt(m.width, 80)
+	width := max(m.width, 80)
 	height := m.height
 	if height <= 0 {
 		height = 24
 	}
-	bodyH := maxInt(8, height-3)
+	bodyH := max(8, height-3)
 	if width >= 140 {
 		if m.layoutMode == layoutModeRightStack {
-			rowsW := maxInt(56, width*44/100)
+			rowsW := max(56, width*44/100)
 			rightW := width - rowsW
-			contextH := clampInt(maxInt(8, bodyH*42/100), 1, maxInt(1, bodyH-1))
+			contextH := clampInt(max(8, bodyH*42/100), 1, max(1, bodyH-1))
 			return archiveLayout{
 				rows:    rect{x: 0, y: 1, w: rowsW, h: bodyH},
 				context: rect{x: rowsW, y: 1, w: rightW, h: contextH},
@@ -74,9 +74,9 @@ func (m model) layout() archiveLayout {
 				mode:    string(layoutModeRightStack),
 			}
 		}
-		rowsW := maxInt(48, width*34/100)
-		contextW := maxInt(40, width*30/100)
-		detailW := maxInt(42, width-rowsW-contextW)
+		rowsW := max(48, width*34/100)
+		contextW := max(40, width*30/100)
+		detailW := max(42, width-rowsW-contextW)
 		return archiveLayout{
 			rows:    rect{x: 0, y: 1, w: rowsW, h: bodyH},
 			context: rect{x: rowsW, y: 1, w: contextW, h: bodyH},
@@ -85,7 +85,7 @@ func (m model) layout() archiveLayout {
 		}
 	}
 	if width >= 100 {
-		topH := clampInt(maxInt(8, bodyH/2), 1, maxInt(1, bodyH-1))
+		topH := clampInt(max(8, bodyH/2), 1, max(1, bodyH-1))
 		rowsW := width / 2
 		return archiveLayout{
 			rows:    rect{x: 0, y: 1, w: rowsW, h: topH},
@@ -95,9 +95,9 @@ func (m model) layout() archiveLayout {
 			mode:    "split",
 		}
 	}
-	rowsH := clampInt(maxInt(7, bodyH*36/100), 1, maxInt(1, bodyH-2))
-	contextH := clampInt(maxInt(6, bodyH*28/100), 1, maxInt(1, bodyH-rowsH-1))
-	detailH := maxInt(6, bodyH-rowsH-contextH)
+	rowsH := clampInt(max(7, bodyH*36/100), 1, max(1, bodyH-2))
+	contextH := clampInt(max(6, bodyH*28/100), 1, max(1, bodyH-rowsH-1))
+	detailH := max(6, bodyH-rowsH-contextH)
 	return archiveLayout{
 		rows:    rect{x: 0, y: 1, w: width, h: rowsH},
 		context: rect{x: 0, y: 1 + rowsH, w: width, h: contextH},
@@ -108,7 +108,7 @@ func (m model) layout() archiveLayout {
 }
 
 func (l archiveLayout) footerY() int {
-	return maxInt(l.rows.y+l.rows.h, maxInt(l.context.y+l.context.h, l.detail.y+l.detail.h))
+	return max(l.rows.y+l.rows.h, max(l.context.y+l.context.h, l.detail.y+l.detail.h))
 }
 
 func (m model) paneAt(x, y int) paneFocus {
@@ -135,8 +135,8 @@ func paneStyle(pane, focus paneFocus, width, height int, accent string) lipgloss
 		borderColor = "#f7f7ff"
 	}
 	return lipgloss.NewStyle().
-		Width(maxInt(1, width-2)).
-		Height(maxInt(1, height-2)).
+		Width(max(1, width-2)).
+		Height(max(1, height-2)).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(borderColor)).
 		Foreground(lipgloss.Color(archiveTextFG)).
@@ -148,18 +148,18 @@ func pane(title, subtitle string, lines []string, rect rect, paneFocus paneFocus
 }
 
 func paneScrolled(title, subtitle string, lines []string, rect rect, paneFocus paneFocus, focus paneFocus, accent string, scrollOffset int) string {
-	width := maxInt(rect.w, 12)
-	height := maxInt(rect.h, 3)
+	width := max(rect.w, 12)
+	height := max(rect.h, 3)
 	contentW := paneContentWidth(width)
 	contentH := paneContentHeight(height)
 	body := flattenedPaneLines(lines, contentW)
 	if len(body) == 0 {
 		body = append(body, "")
 	}
-	maxOffset := maxInt(0, len(body)-contentH)
+	maxOffset := max(0, len(body)-contentH)
 	scrollOffset = clampInt(scrollOffset, 0, maxOffset)
 	if maxOffset > 0 {
-		visibleEnd := minInt(len(body), scrollOffset+contentH)
+		visibleEnd := min(len(body), scrollOffset+contentH)
 		scrollLabel := fmt.Sprintf("%d-%d/%d", scrollOffset+1, visibleEnd, len(body))
 		if strings.TrimSpace(subtitle) == "" {
 			subtitle = scrollLabel
@@ -172,7 +172,7 @@ func paneScrolled(title, subtitle string, lines []string, rect rect, paneFocus p
 		titleLine += "  " + subtitle
 	}
 	header := paneTitleForWidth(paneFocus, focus, titleLine, contentW)
-	body = append([]string(nil), body[scrollOffset:minInt(len(body), scrollOffset+contentH)]...)
+	body = append([]string(nil), body[scrollOffset:min(len(body), scrollOffset+contentH)]...)
 	for len(body) < contentH {
 		body = append(body, "")
 	}
@@ -189,17 +189,17 @@ func flattenedPaneLines(lines []string, width int) []string {
 }
 
 func paneContentWidth(width int) int {
-	return maxInt(1, width-4)
+	return max(1, width-4)
 }
 
 func paneContentHeight(height int) int {
-	return maxInt(1, height-3)
+	return max(1, height-3)
 }
 
 func rowsViewportHeight(height int) int {
-	return maxInt(1, paneContentHeight(height)-1)
+	return max(1, paneContentHeight(height)-1)
 }
 
 func tableViewportWidth(rect rect) int {
-	return maxInt(1, rect.w-4)
+	return max(1, rect.w-4)
 }
