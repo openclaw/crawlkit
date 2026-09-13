@@ -127,6 +127,7 @@ Scheduling uses launchd on macOS, systemd user units on Linux, Task Scheduler on
 Systemd plans preserve literal argument text, including quotes, percent signs,
 and dollar signs. Executable paths must follow systemd rules: quotes,
 backslashes, and control characters are rejected before installation.
+Dry-run previews can still render plans for another operating system.
 
 See [Background workers](docs/background-workers.md) for content-triggered processing alongside ingestion.
 

@@ -31,6 +31,10 @@ type InstallPlan struct {
 }
 
 func PlanInstall(opts InstallOptions) (InstallPlan, error) {
+	return planInstall(opts, false)
+}
+
+func planInstall(opts InstallOptions, installing bool) (InstallPlan, error) {
 	paths := opts.Paths
 	if strings.TrimSpace(opts.ConfigPath) != "" && strings.TrimSpace(paths.ConfigPath) != "" {
 		defaults, err := DefaultPaths(opts.ConfigPath)
@@ -77,6 +81,9 @@ func PlanInstall(opts InstallOptions) (InstallPlan, error) {
 		home, _ := os.UserHomeDir()
 		return InstallPlan{Backend: backend, Path: filepath.Join(home, "Library", "LaunchAgents", "org.openclaw.crawlctl.plist"), Content: content}, nil
 	case "systemd":
+		if installing && (strings.ContainsAny(exe, "\"'\\") || strings.IndexFunc(exe, func(r rune) bool { return r < ' ' || r == 0x7f }) >= 0) {
+			return InstallPlan{}, fmt.Errorf("systemd executable path contains unsupported characters: %q", exe)
+		}
 		service, timer, err := renderSystemd(args, duration)
 		if err != nil {
 			return InstallPlan{}, err
@@ -106,7 +113,7 @@ func PlanInstall(opts InstallOptions) (InstallPlan, error) {
 }
 
 func Install(opts InstallOptions) (InstallPlan, error) {
-	plan, err := PlanInstall(opts)
+	plan, err := planInstall(opts, !opts.DryRun)
 	if err != nil || opts.DryRun {
 		return plan, err
 	}
@@ -217,9 +224,6 @@ func renderLaunchd(args []string, paths Paths, every time.Duration) (string, err
 }
 
 func renderSystemd(args []string, every time.Duration) (string, string, error) {
-	if strings.ContainsAny(args[0], "\"'\\") || strings.IndexFunc(args[0], func(r rune) bool { return r < ' ' || r == 0x7f }) >= 0 {
-		return "", "", fmt.Errorf("systemd executable path contains unsupported characters: %q", args[0])
-	}
 	service, err := executeTemplate(systemdServiceTemplate, map[string]any{"Command": systemdQuoteArgs(args)})
 	if err != nil {
 		return "", "", err
