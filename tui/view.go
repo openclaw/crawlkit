@@ -8,7 +8,7 @@ import (
 )
 
 func (m model) View() string {
-	width := maxInt(m.width, 40)
+	width := max(m.width, 40)
 	height := m.height
 	if height <= 0 {
 		height = 12
@@ -35,7 +35,7 @@ func (m model) View() string {
 			body = lipgloss.JoinHorizontal(lipgloss.Top, rows, context, detail)
 		}
 	}
-	body = fitBlock(body, width, maxInt(1, layout.footerY()-1))
+	body = fitBlock(body, width, max(1, layout.footerY()-1))
 	view := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 	if m.menuOpen && m.menuFloating {
 		view = m.renderFloatingMenu(view)
@@ -61,7 +61,7 @@ func (m model) renderHeader(width int) string {
 	} else if m.menuOpen {
 		line += "  menu> " + m.displayMenuTitle()
 	}
-	return titleStyle(width).Render(padCells(" "+truncateCells(line, maxInt(1, width-2)), width))
+	return titleStyle(width).Render(padCells(" "+truncateCells(line, max(1, width-2)), width))
 }
 
 func (m model) renderRowsPane(rect rect) string {
@@ -150,7 +150,7 @@ func (m *model) configureDetailViewport(rect rect, lines []string) {
 	}
 	content := append([]string{paneTitleWithLabelForWidth(m.detailPaneTitle(), focusDetail, m.focus, title, paneContentWidth(rect.w))}, lines...)
 	m.detailView.Width = paneContentWidth(rect.w)
-	m.detailView.Height = maxInt(1, rect.h-2)
+	m.detailView.Height = max(1, rect.h-2)
 	m.detailView.MouseWheelEnabled = true
 	m.detailView.MouseWheelDelta = 3
 	m.detailView.SetContent(strings.Join(content, "\n"))
@@ -171,18 +171,18 @@ func (m model) renderFooter(width int) string {
 	}
 	controls := footerControls(width)
 	bg, fg := footerPalette(m.sourceKind)
-	statusLine := padCells(" "+truncateCells(line, maxInt(1, width-2)), width)
-	controlsLine := padCells(" "+truncateCells(controls, maxInt(1, width-2)), width)
+	statusLine := padCells(" "+truncateCells(line, max(1, width-2)), width)
+	controlsLine := padCells(" "+truncateCells(controls, max(1, width-2)), width)
 	return lipgloss.NewStyle().Width(width).Height(2).Background(bg).Foreground(fg).Render(statusLine + "\n" + controlsLine)
 }
 
 func footerControls(width int) string {
 	full := "Tab focus  click select  right-click menu  a actions  header sort  wheel scroll  / filter  # jump  o open  c copy  s sort  m members  v group  d detail  r refresh  l layout  ? help  q quit"
-	if lipgloss.Width(full) <= maxInt(1, width-2) {
+	if lipgloss.Width(full) <= max(1, width-2) {
 		return full
 	}
 	compact := "Tab focus  click select  right-click menu  a actions  wheel scroll  / filter  # jump  r refresh  ? help  q quit"
-	if lipgloss.Width(compact) <= maxInt(1, width-2) {
+	if lipgloss.Width(compact) <= max(1, width-2) {
 		return compact
 	}
 	return "Tab focus click right-click menu a actions / filter # jump ? help q quit"
@@ -345,7 +345,7 @@ func paneTitleForWidth(pane, focus paneFocus, suffix string, width int) string {
 		prefix = "[*] "
 	}
 	if width > 0 {
-		label = truncateCells(label, maxInt(1, width-lipgloss.Width(prefix)))
+		label = truncateCells(label, max(1, width-lipgloss.Width(prefix)))
 	}
 	return bold(prefix + label)
 }
@@ -367,7 +367,7 @@ func paneTitleWithLabelForWidth(label string, pane, focus paneFocus, suffix stri
 		prefix = "[*] "
 	}
 	if width > 0 {
-		label = truncateCells(label, maxInt(1, width-lipgloss.Width(prefix)))
+		label = truncateCells(label, max(1, width-lipgloss.Width(prefix)))
 	}
 	return bold(prefix + label)
 }

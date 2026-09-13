@@ -22,12 +22,6 @@ func dim(value string) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color(archiveMutedFG)).Render(value)
 }
 
-func tagStyle(width int) lipgloss.Style {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(archiveSubtleAccentFG)).
-		Width(width)
-}
-
 func rowStyle(width int, selected bool, focused bool, inactive bool) lipgloss.Style {
 	style := lipgloss.NewStyle().Width(width)
 	if selected {

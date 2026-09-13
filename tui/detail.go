@@ -13,7 +13,7 @@ func (m model) detailLines(item Item) []string {
 }
 
 func (m model) detailLinesForWidth(item Item, width int) []string {
-	width = maxInt(20, width)
+	width = max(20, width)
 	switch m.layoutPreset {
 	case LayoutChat:
 		return m.chatDetailLines(item, width)
@@ -77,10 +77,6 @@ func (m model) chatDetailLines(item Item, width int) []string {
 		return []string{"No detail for this message."}
 	}
 	return lines
-}
-
-func documentDetailLines(item Item) []string {
-	return documentDetailLinesForWidth(item, 1000, false)
 }
 
 func documentDetailLinesForWidth(item Item, width int, compact bool) []string {
@@ -259,7 +255,7 @@ func appendLimitedDetailLines(out, lines []string, limit int) []string {
 
 func prefixedMarkdownLines(value, prefix string, width int) []string {
 	prefix = strings.TrimRight(prefix, "\t")
-	raw := markdownLines(value, maxInt(8, width-lipgloss.Width(prefix)))
+	raw := markdownLines(value, max(8, width-lipgloss.Width(prefix)))
 	out := make([]string, 0, len(raw))
 	for _, line := range raw {
 		if line == "" {
@@ -348,8 +344,8 @@ func (m model) conversationSection(selected Item, width int) (string, []string) 
 		return "", nil
 	}
 	radius := 8
-	start := maxInt(0, selectedIndex-radius)
-	end := minInt(len(members), selectedIndex+radius+1)
+	start := max(0, selectedIndex-radius)
+	end := min(len(members), selectedIndex+radius+1)
 	var lines []string
 	for _, itemIndex := range members[start:end] {
 		if itemIndex < 0 || itemIndex >= len(m.items) {

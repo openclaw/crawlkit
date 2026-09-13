@@ -7,7 +7,7 @@
 - `config` provides TOML loading, standard config paths, opt-in platform-native runtime directories, legacy-path fallback, and token diagnostics.
 - `store` provides SQLite open, read-only, transaction, query, schema-version, FTS5 term, and optimization helpers.
 - `state` provides generic crawler cursors and freshness records, including mapped adapters for existing app table layouts.
-- `cache` provides read-only local cache files and consistent SQLite database, WAL, and SHM snapshots.
+- `cache` provides read-only local cache files and staged SQLite database, WAL, and SHM captures. Callers must supply a quiescent source or an application-owned coherent snapshot; copying files from a live writer does not provide a transactional snapshot.
 
 ## Portable archives
 

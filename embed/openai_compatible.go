@@ -76,7 +76,7 @@ func (p *openAICompatibleProvider) Embed(ctx context.Context, inputs []string) (
 		seen[index] = true
 		vectors[index] = item.Embedding
 	}
-	dimensions, err := inferDimensions64(vectors)
+	dimensions, err := inferDimensions(vectors)
 	if err != nil {
 		return EmbeddingBatch{}, err
 	}
@@ -84,5 +84,5 @@ func (p *openAICompatibleProvider) Embed(ctx context.Context, inputs []string) (
 	if model == "" {
 		model = p.model
 	}
-	return EmbeddingBatch{Model: model, Dimensions: dimensions, Vectors: float64VectorsTo32(vectors), Vectors64: vectors}, nil
+	return EmbeddingBatch{Model: model, Dimensions: dimensions, Vectors: convertVectors[float32](vectors), Vectors64: vectors}, nil
 }

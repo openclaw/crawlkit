@@ -92,7 +92,6 @@ type providerSettings struct {
 	MaxInputChars int
 	Dimensions    int
 	UserAgent     string
-	Timeout       time.Duration
 	HTTPClient    *http.Client
 }
 
@@ -122,7 +121,7 @@ func WithUserAgent(userAgent string) Option {
 }
 
 func NewProvider(cfg Config, opts ...Option) (Provider, error) {
-	settings, err := resolveProviderConfig(cfg, true, opts...)
+	settings, err := resolveProviderConfig(cfg, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +129,7 @@ func NewProvider(cfg Config, opts ...Option) (Provider, error) {
 }
 
 func CheckProvider(ctx context.Context, cfg Config) CheckResult {
-	settings, err := resolveProviderConfig(cfg, true, WithRequestTimeout(DefaultProbeTimeout))
+	settings, err := resolveProviderConfig(cfg, WithRequestTimeout(DefaultProbeTimeout))
 	if err != nil {
 		return CheckResult{
 			Provider: normalizedProviderName(cfg.Provider),
@@ -166,7 +165,7 @@ func CheckProvider(ctx context.Context, cfg Config) CheckResult {
 	return result
 }
 
-func resolveProviderConfig(cfg Config, validateAPIKey bool, opts ...Option) (providerSettings, error) {
+func resolveProviderConfig(cfg Config, opts ...Option) (providerSettings, error) {
 	options := providerOptions{}
 	for _, opt := range opts {
 		opt(&options)
@@ -220,7 +219,7 @@ func resolveProviderConfig(cfg Config, validateAPIKey bool, opts ...Option) (pro
 		apiKey = *options.apiKeyOverride
 	} else {
 		var err error
-		apiKey, err = resolveAPIKey(name, cfg.APIKeyEnv, validateAPIKey)
+		apiKey, err = resolveAPIKey(name, cfg.APIKeyEnv)
 		if err != nil {
 			return providerSettings{}, err
 		}
@@ -240,7 +239,6 @@ func resolveProviderConfig(cfg Config, validateAPIKey bool, opts ...Option) (pro
 		MaxInputChars: maxInputChars,
 		Dimensions:    cfg.Dimensions,
 		UserAgent:     firstNonEmpty(options.userAgent, cfg.UserAgent),
-		Timeout:       timeout,
 		HTTPClient:    client,
 	}, nil
 }
@@ -256,7 +254,7 @@ func newProvider(settings providerSettings) (Provider, error) {
 	}
 }
 
-func resolveAPIKey(provider, apiKeyEnv string, validate bool) (string, error) {
+func resolveAPIKey(provider, apiKeyEnv string) (string, error) {
 	envName := strings.TrimSpace(apiKeyEnv)
 	required := provider == ProviderOpenAI
 	if envName == "" {
@@ -268,10 +266,7 @@ func resolveAPIKey(provider, apiKeyEnv string, validate bool) (string, error) {
 	}
 	value := strings.TrimSpace(os.Getenv(envName))
 	if value == "" {
-		if required || validate {
-			return "", fmt.Errorf("embedding provider %q requires API key env %s", provider, envName)
-		}
-		return "", nil
+		return "", fmt.Errorf("embedding provider %q requires API key env %s", provider, envName)
 	}
 	return value, nil
 }
@@ -338,7 +333,7 @@ func trimInputs(inputs []string, maxChars int) []string {
 	return out
 }
 
-func inferDimensions(vectors [][]float32) (int, error) {
+func inferDimensions[T ~float32 | ~float64](vectors [][]T) (int, error) {
 	dimensions := 0
 	for _, vector := range vectors {
 		if len(vector) == 0 {
@@ -355,40 +350,12 @@ func inferDimensions(vectors [][]float32) (int, error) {
 	return dimensions, nil
 }
 
-func inferDimensions64(vectors [][]float64) (int, error) {
-	dimensions := 0
-	for _, vector := range vectors {
-		if len(vector) == 0 {
-			return 0, errors.New("embedding response contained an empty vector")
-		}
-		if dimensions == 0 {
-			dimensions = len(vector)
-			continue
-		}
-		if len(vector) != dimensions {
-			return 0, fmt.Errorf("embedding response dimensions mismatch: got %d want %d", len(vector), dimensions)
-		}
-	}
-	return dimensions, nil
-}
-
-func float32VectorsTo64(vectors [][]float32) [][]float64 {
-	out := make([][]float64, len(vectors))
+func convertVectors[To, From ~float32 | ~float64](vectors [][]From) [][]To {
+	out := make([][]To, len(vectors))
 	for i, vector := range vectors {
-		out[i] = make([]float64, len(vector))
+		out[i] = make([]To, len(vector))
 		for j, value := range vector {
-			out[i][j] = float64(value)
-		}
-	}
-	return out
-}
-
-func float64VectorsTo32(vectors [][]float64) [][]float32 {
-	out := make([][]float32, len(vectors))
-	for i, vector := range vectors {
-		out[i] = make([]float32, len(vector))
-		for j, value := range vector {
-			out[i][j] = float32(value)
+			out[i][j] = To(value)
 		}
 	}
 	return out

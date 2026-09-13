@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -43,8 +42,6 @@ type TokenDiagnostic struct {
 	Present bool   `json:"present"`
 	Source  string `json:"source,omitempty"`
 }
-
-var xdgMu sync.Mutex
 
 func (a App) Normalize() (App, error) {
 	a.Name = strings.TrimSpace(a.Name)
@@ -83,15 +80,7 @@ func (app App) defaultPaths() (Paths, error) {
 	if app.PlatformDirs && strings.TrimSpace(app.BaseDir) == "" {
 		return platformPaths(app.Name)
 	}
-	base := ExpandHome(app.BaseDir)
-	return Paths{
-		BaseDir:    base,
-		ConfigPath: filepath.Join(base, "config.toml"),
-		DBPath:     filepath.Join(base, app.Name+".db"),
-		CacheDir:   filepath.Join(base, "cache"),
-		LogDir:     filepath.Join(base, "logs"),
-		ShareDir:   filepath.Join(base, "share"),
-	}, nil
+	return pathsUnder(app.BaseDir, app.Name), nil
 }
 
 func (a App) LegacyPaths() (Paths, bool, error) {
@@ -102,15 +91,19 @@ func (a App) LegacyPaths() (Paths, bool, error) {
 	if strings.TrimSpace(app.LegacyBaseDir) == "" {
 		return Paths{}, false, nil
 	}
-	base := ExpandHome(app.LegacyBaseDir)
+	return pathsUnder(app.LegacyBaseDir, app.Name), true, nil
+}
+
+func pathsUnder(base, name string) Paths {
+	base = ExpandHome(base)
 	return Paths{
 		BaseDir:    base,
 		ConfigPath: filepath.Join(base, "config.toml"),
-		DBPath:     filepath.Join(base, app.Name+".db"),
+		DBPath:     filepath.Join(base, name+".db"),
 		CacheDir:   filepath.Join(base, "cache"),
 		LogDir:     filepath.Join(base, "logs"),
 		ShareDir:   filepath.Join(base, "share"),
-	}, true, nil
+	}
 }
 
 func (a App) ResolveConfigPath(flagPath string) (string, error) {
@@ -187,9 +180,6 @@ func EnsureRuntimeDirs(cfg RuntimeConfig) error {
 }
 
 func platformPaths(name string) (Paths, error) {
-	xdgMu.Lock()
-	defer xdgMu.Unlock()
-
 	configHome, dataHome, cacheHome, stateHome, err := platformHomes()
 	if err != nil {
 		return Paths{}, err

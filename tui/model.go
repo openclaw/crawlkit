@@ -108,7 +108,7 @@ func newModel(opts Options) model {
 		sourceKind:     normalizeSourceKind(opts.SourceKind),
 		sourceLocation: strings.TrimSpace(opts.SourceLocation),
 		layoutPreset:   layout,
-		sortMode:       initialGroupSortMode(layout),
+		sortMode:       sortNewest,
 		memberSortMode: initialMemberSortMode(layout),
 		compactDetail:  initialCompactDetail(layout),
 		detailView:     viewport.New(1, 1),
@@ -123,15 +123,6 @@ func newModel(opts Options) model {
 	m.applyInitialGroupMode()
 	m.selectGroup(0)
 	return m
-}
-
-func initialGroupSortMode(layout LayoutPreset) sortMode {
-	switch layout {
-	case LayoutChat, LayoutDocument:
-		return sortNewest
-	default:
-		return sortNewest
-	}
 }
 
 func initialCompactDetail(layout LayoutPreset) bool {
@@ -172,8 +163,8 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch typed := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = maxInt(typed.Width, 40)
-		m.height = maxInt(typed.Height, 1)
+		m.width = max(typed.Width, 40)
+		m.height = max(typed.Height, 1)
 		m.ensureVisible()
 	case wheelScrollMsg:
 		if typed.seq != m.wheelSeq {
