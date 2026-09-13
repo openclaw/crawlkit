@@ -3,7 +3,6 @@ package cache
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -74,15 +73,9 @@ func SnapshotFile(opts SnapshotOptions) (Snapshot, error) {
 		_ = tmp.Close()
 		return Snapshot{}, fmt.Errorf("chmod snapshot: %w", err)
 	}
-	var copied int64
-	if opts.MaxFileBytes > 0 {
-		limited := &io.LimitedReader{R: src, N: opts.MaxFileBytes + 1}
-		copied, err = io.Copy(tmp, limited)
-		if err == nil && copied > opts.MaxFileBytes {
-			err = fmt.Errorf("source file exceeds limit %d", opts.MaxFileBytes)
-		}
-	} else {
-		copied, err = io.Copy(tmp, src)
+	copied, exceeded, err := copyLimited(tmp, src, opts.MaxFileBytes)
+	if err == nil && exceeded {
+		err = fmt.Errorf("source file exceeds limit %d", opts.MaxFileBytes)
 	}
 	if err != nil {
 		_ = tmp.Close()

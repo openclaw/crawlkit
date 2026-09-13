@@ -9,6 +9,9 @@
 - `state` provides generic crawler cursors and freshness records, including mapped adapters for existing app table layouts.
 - `cache` provides read-only local cache files and staged SQLite database, WAL, and SHM captures. Callers must supply a quiescent source or an application-owned coherent snapshot; copying files from a live writer does not provide a transactional snapshot.
 
+A positive `MaxFileBytes` bounds each captured source file, including SQLite
+sidecars. Nonpositive limits leave file size unbounded.
+
 ## Portable archives
 
 - `snapshot` exports and imports manifest-based JSONL/Gzip table packs, fingerprints files, plans exact or monotonic incremental imports, and synchronizes managed sidecar trees.

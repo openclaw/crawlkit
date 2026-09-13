@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Preserve file and SQLite capture contents when `MaxFileBytes` is the maximum signed 64-bit value; keep overflow-free bounded reads for growing sources.
 - Run the same validation gates locally and in Linux CI, including formatting, and cancel superseded automatic CI runs.
 
 ## 0.16.2 - 2026-09-11
