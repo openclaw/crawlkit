@@ -95,6 +95,8 @@ type providerSettings struct {
 	HTTPClient    *http.Client
 }
 
+// WithHTTPClient preserves the client's transport, redirects and cookie jar.
+// Providers use their own client copy and retain any shorter client timeout.
 func WithHTTPClient(client *http.Client) Option {
 	return func(opts *providerOptions) {
 		opts.httpClient = client
@@ -224,9 +226,12 @@ func resolveProviderConfig(cfg Config, opts ...Option) (providerSettings, error)
 			return providerSettings{}, err
 		}
 	}
-	client := options.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: timeout}
+	client := &http.Client{Timeout: timeout}
+	if options.httpClient != nil {
+		*client = *options.httpClient
+		if client.Timeout <= 0 || timeout < client.Timeout {
+			client.Timeout = timeout
+		}
 	}
 	if _, err := url.ParseRequestURI(baseURL); err != nil {
 		return providerSettings{}, fmt.Errorf("invalid embeddings base_url %q: %w", baseURL, err)

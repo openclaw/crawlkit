@@ -408,15 +408,19 @@ func TestEmbeddingProvidersHandleEmptyInputsAndIndexErrors(t *testing.T) {
 func TestProviderOptionsAndProbeDecisions(t *testing.T) {
 	t.Parallel()
 
-	client := &http.Client{Timeout: time.Second}
+	client := &http.Client{Timeout: time.Second, Transport: &http.Transport{}}
 	settings, err := resolveProviderConfig(Config{
 		Provider:       ProviderOllama,
 		BaseURL:        "http://127.0.0.1:11434/",
 		RequestTimeout: "30s",
 	}, WithHTTPClient(client), WithRequestTimeout(50*time.Millisecond))
 	require.NoError(t, err)
-	require.Same(t, client, settings.HTTPClient)
-	require.Equal(t, time.Second, settings.HTTPClient.Timeout)
+	if client == settings.HTTPClient {
+		t.Fatal("provider must own its timeout configuration")
+	}
+	require.Same(t, client.Transport, settings.HTTPClient.Transport)
+	require.Equal(t, time.Second, client.Timeout)
+	require.Equal(t, 50*time.Millisecond, settings.HTTPClient.Timeout)
 	defaultClient, err := resolveProviderConfig(Config{Provider: ProviderOllama}, WithRequestTimeout(50*time.Millisecond))
 	require.NoError(t, err)
 	require.Equal(t, 50*time.Millisecond, defaultClient.HTTPClient.Timeout)
