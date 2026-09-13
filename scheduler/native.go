@@ -31,6 +31,10 @@ type InstallPlan struct {
 }
 
 func PlanInstall(opts InstallOptions) (InstallPlan, error) {
+	return planInstall(opts, false)
+}
+
+func planInstall(opts InstallOptions, installing bool) (InstallPlan, error) {
 	paths := opts.Paths
 	if strings.TrimSpace(opts.ConfigPath) != "" && strings.TrimSpace(paths.ConfigPath) != "" {
 		defaults, err := DefaultPaths(opts.ConfigPath)
@@ -77,6 +81,9 @@ func PlanInstall(opts InstallOptions) (InstallPlan, error) {
 		home, _ := os.UserHomeDir()
 		return InstallPlan{Backend: backend, Path: filepath.Join(home, "Library", "LaunchAgents", "org.openclaw.crawlctl.plist"), Content: content}, nil
 	case "systemd":
+		if installing && (strings.ContainsAny(exe, "\"'\\") || strings.IndexFunc(exe, func(r rune) bool { return r < ' ' || r == 0x7f }) >= 0) {
+			return InstallPlan{}, fmt.Errorf("systemd executable path contains unsupported characters: %q", exe)
+		}
 		service, timer, err := renderSystemd(args, duration)
 		if err != nil {
 			return InstallPlan{}, err
@@ -106,7 +113,7 @@ func PlanInstall(opts InstallOptions) (InstallPlan, error) {
 }
 
 func Install(opts InstallOptions) (InstallPlan, error) {
-	plan, err := PlanInstall(opts)
+	plan, err := planInstall(opts, !opts.DryRun)
 	if err != nil || opts.DryRun {
 		return plan, err
 	}
@@ -217,7 +224,7 @@ func renderLaunchd(args []string, paths Paths, every time.Duration) (string, err
 }
 
 func renderSystemd(args []string, every time.Duration) (string, string, error) {
-	service, err := executeTemplate(systemdServiceTemplate, map[string]any{"Command": shellQuoteArgs(args)})
+	service, err := executeTemplate(systemdServiceTemplate, map[string]any{"Command": systemdQuoteArgs(args)})
 	if err != nil {
 		return "", "", err
 	}
@@ -253,6 +260,17 @@ func shellQuoteArgs(args []string) string {
 	quoted := make([]string, len(args))
 	for i, arg := range args {
 		quoted[i] = shellQuote(arg)
+	}
+	return strings.Join(quoted, " ")
+}
+
+func systemdQuoteArgs(args []string) string {
+	escape := strings.NewReplacer("%", "%%", "$", "$$")
+	quoted := make([]string, len(args)+1)
+	// @ separates the executable path (no environment expansion) from argv[0].
+	quoted[0] = "@" + strconv.Quote(strings.ReplaceAll(args[0], "%", "%%"))
+	for i, arg := range args {
+		quoted[i+1] = strconv.Quote(escape.Replace(arg))
 	}
 	return strings.Join(quoted, " ")
 }

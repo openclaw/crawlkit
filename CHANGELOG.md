@@ -4,6 +4,7 @@
 
 - Honor configured embedding request timeouts with caller-supplied HTTP clients without mutating those clients; retain shorter client and context deadlines.
 - Preserve file and SQLite capture contents when `MaxFileBytes` is the maximum signed 64-bit value; keep overflow-free bounded reads for growing sources.
+- Preserve literal systemd command arguments and executable names; reject executable-path characters that systemd cannot load.
 - Publish changes to zero-row backup counter keys while reusing unchanged encrypted shards.
 - Apply private permissions before overwriting existing controller configurations.
 - Allow explicit controller configuration paths without a home directory while preserving default and tilde-path validation.
