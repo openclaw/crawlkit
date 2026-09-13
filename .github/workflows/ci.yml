@@ -15,30 +15,23 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
 jobs:
   test:
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - run: node --test .github/scripts/*.test.cjs
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-      - run: GOWORK=off go mod tidy
-      - run: git diff --exit-code -- go.mod go.sum
-      - run: GOWORK=off go vet ./...
-      - run: |
-          output_file=$(mktemp)
-          GOWORK=off go run golang.org/x/tools/cmd/deadcode@v0.50.0 -test ./... > "$output_file"
-          if [ -s "$output_file" ]; then
-            cat "$output_file"
-            exit 1
-          fi
-      - run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-      - run: GOWORK=off go test ./...
-      - run: GOWORK=off go test -race ./...
+      - name: Run local validation gates
+        run: make check
 
   downstream:
     if: github.event_name != 'workflow_dispatch'
@@ -123,6 +116,7 @@ jobs:
   windows-test:
     if: github.event_name != 'workflow_dispatch'
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

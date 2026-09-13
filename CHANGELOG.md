@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Run the same validation gates locally and in Linux CI, including formatting, and cancel superseded automatic CI runs.
+
 ## 0.16.2 - 2026-09-11
 
 **Highlights:** Updated runtime dependencies and refreshed analysis tooling.
