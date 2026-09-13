@@ -3,7 +3,6 @@ package cache
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -198,15 +197,9 @@ func copyOptionalFile(source, target string, maxBytes int64) (int64, bool, error
 		_ = tmp.Close()
 		return 0, false, err
 	}
-	var copied int64
-	if maxBytes > 0 {
-		limited := &io.LimitedReader{R: in, N: maxBytes + 1}
-		copied, err = io.Copy(tmp, limited)
-		if err == nil && copied > maxBytes {
-			err = fmt.Errorf("sqlite snapshot file %s exceeds limit %d", source, maxBytes)
-		}
-	} else {
-		copied, err = io.Copy(tmp, in)
+	copied, exceeded, err := copyLimited(tmp, in, maxBytes)
+	if err == nil && exceeded {
+		err = fmt.Errorf("sqlite snapshot file %s exceeds limit %d", source, maxBytes)
 	}
 	if err != nil {
 		_ = tmp.Close()
