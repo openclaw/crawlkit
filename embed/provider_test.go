@@ -225,7 +225,7 @@ func TestProviderFactoryDefaultsAndValidation(t *testing.T) {
 	openAI, err := resolveProviderConfig(Config{
 		Provider:       ProviderOpenAI,
 		RequestTimeout: "5s",
-	}, true)
+	})
 	require.NoError(t, err)
 	require.Equal(t, DefaultOpenAIBaseURL, openAI.BaseURL)
 	require.Equal(t, DefaultOpenAIModel, openAI.Model)
@@ -234,7 +234,7 @@ func TestProviderFactoryDefaultsAndValidation(t *testing.T) {
 	ollama, err := resolveProviderConfig(Config{
 		Provider:       ProviderOllama,
 		RequestTimeout: "5s",
-	}, true)
+	})
 	require.NoError(t, err)
 	require.Equal(t, DefaultOllamaBaseURL, ollama.BaseURL)
 	require.Equal(t, DefaultLocalEmbeddingModel, ollama.Model)
@@ -242,14 +242,14 @@ func TestProviderFactoryDefaultsAndValidation(t *testing.T) {
 	llamaCpp, err := resolveProviderConfig(Config{
 		Provider:       ProviderLlamaCpp,
 		RequestTimeout: "5s",
-	}, true)
+	})
 	require.NoError(t, err)
 	require.Equal(t, DefaultLlamaCppBaseURL, llamaCpp.BaseURL)
 
 	_, err = resolveProviderConfig(Config{
 		Provider:       ProviderOpenAICompatible,
 		RequestTimeout: "5s",
-	}, true)
+	})
 	require.ErrorContains(t, err, "requires base_url")
 }
 
@@ -413,10 +413,13 @@ func TestProviderOptionsAndProbeDecisions(t *testing.T) {
 		Provider:       ProviderOllama,
 		BaseURL:        "http://127.0.0.1:11434/",
 		RequestTimeout: "30s",
-	}, true, WithHTTPClient(client), WithRequestTimeout(50*time.Millisecond))
+	}, WithHTTPClient(client), WithRequestTimeout(50*time.Millisecond))
 	require.NoError(t, err)
 	require.Same(t, client, settings.HTTPClient)
-	require.Equal(t, 50*time.Millisecond, settings.Timeout)
+	require.Equal(t, time.Second, settings.HTTPClient.Timeout)
+	defaultClient, err := resolveProviderConfig(Config{Provider: ProviderOllama}, WithRequestTimeout(50*time.Millisecond))
+	require.NoError(t, err)
+	require.Equal(t, 50*time.Millisecond, defaultClient.HTTPClient.Timeout)
 	require.Equal(t, "http://127.0.0.1:11434", settings.BaseURL)
 	require.True(t, shouldProbe(settings))
 
@@ -435,24 +438,26 @@ func TestProviderValidationEdges(t *testing.T) {
 	_, err := resolveProviderConfig(Config{
 		Provider:       ProviderOllama,
 		RequestTimeout: "not-a-duration",
-	}, true)
+	})
 	require.ErrorContains(t, err, "parse embeddings request_timeout")
 
 	_, err = resolveProviderConfig(Config{
 		Provider:       ProviderOllama,
 		RequestTimeout: "0s",
-	}, true)
+	})
 	require.ErrorContains(t, err, "must be positive")
 
 	_, err = resolveProviderConfig(Config{
 		Provider: ProviderOllama,
 		BaseURL:  "://bad",
-	}, true)
+	})
 	require.ErrorContains(t, err, "invalid embeddings base_url")
 
-	key, err := resolveAPIKey(ProviderOpenAICompatible, "MISSING_EMBED_KEY", false)
+	key, err := resolveAPIKey(ProviderOpenAICompatible, "")
 	require.NoError(t, err)
 	require.Empty(t, key)
+	_, err = resolveAPIKey(ProviderOpenAICompatible, "MISSING_EMBED_KEY")
+	require.ErrorContains(t, err, "requires API key env MISSING_EMBED_KEY")
 
 	_, err = newProvider(providerSettings{Name: "bogus"})
 	require.ErrorContains(t, err, "unsupported embedding provider")

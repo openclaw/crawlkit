@@ -92,7 +92,6 @@ type providerSettings struct {
 	MaxInputChars int
 	Dimensions    int
 	UserAgent     string
-	Timeout       time.Duration
 	HTTPClient    *http.Client
 }
 
@@ -122,7 +121,7 @@ func WithUserAgent(userAgent string) Option {
 }
 
 func NewProvider(cfg Config, opts ...Option) (Provider, error) {
-	settings, err := resolveProviderConfig(cfg, true, opts...)
+	settings, err := resolveProviderConfig(cfg, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +129,7 @@ func NewProvider(cfg Config, opts ...Option) (Provider, error) {
 }
 
 func CheckProvider(ctx context.Context, cfg Config) CheckResult {
-	settings, err := resolveProviderConfig(cfg, true, WithRequestTimeout(DefaultProbeTimeout))
+	settings, err := resolveProviderConfig(cfg, WithRequestTimeout(DefaultProbeTimeout))
 	if err != nil {
 		return CheckResult{
 			Provider: normalizedProviderName(cfg.Provider),
@@ -166,7 +165,7 @@ func CheckProvider(ctx context.Context, cfg Config) CheckResult {
 	return result
 }
 
-func resolveProviderConfig(cfg Config, validateAPIKey bool, opts ...Option) (providerSettings, error) {
+func resolveProviderConfig(cfg Config, opts ...Option) (providerSettings, error) {
 	options := providerOptions{}
 	for _, opt := range opts {
 		opt(&options)
@@ -220,7 +219,7 @@ func resolveProviderConfig(cfg Config, validateAPIKey bool, opts ...Option) (pro
 		apiKey = *options.apiKeyOverride
 	} else {
 		var err error
-		apiKey, err = resolveAPIKey(name, cfg.APIKeyEnv, validateAPIKey)
+		apiKey, err = resolveAPIKey(name, cfg.APIKeyEnv)
 		if err != nil {
 			return providerSettings{}, err
 		}
@@ -240,7 +239,6 @@ func resolveProviderConfig(cfg Config, validateAPIKey bool, opts ...Option) (pro
 		MaxInputChars: maxInputChars,
 		Dimensions:    cfg.Dimensions,
 		UserAgent:     firstNonEmpty(options.userAgent, cfg.UserAgent),
-		Timeout:       timeout,
 		HTTPClient:    client,
 	}, nil
 }
@@ -256,7 +254,7 @@ func newProvider(settings providerSettings) (Provider, error) {
 	}
 }
 
-func resolveAPIKey(provider, apiKeyEnv string, validate bool) (string, error) {
+func resolveAPIKey(provider, apiKeyEnv string) (string, error) {
 	envName := strings.TrimSpace(apiKeyEnv)
 	required := provider == ProviderOpenAI
 	if envName == "" {
@@ -268,10 +266,7 @@ func resolveAPIKey(provider, apiKeyEnv string, validate bool) (string, error) {
 	}
 	value := strings.TrimSpace(os.Getenv(envName))
 	if value == "" {
-		if required || validate {
-			return "", fmt.Errorf("embedding provider %q requires API key env %s", provider, envName)
-		}
-		return "", nil
+		return "", fmt.Errorf("embedding provider %q requires API key env %s", provider, envName)
 	}
 	return value, nil
 }
