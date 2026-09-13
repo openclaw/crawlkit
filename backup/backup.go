@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -506,8 +507,10 @@ func (m Manifest) Entry(path string) (ShardEntry, bool) {
 	return ShardEntry{}, false
 }
 
+// EquivalentManifest compares contents and counter keys, ignoring export times
+// and encrypted object sizes.
 func EquivalentManifest(a, b Manifest) bool {
-	if a.Format != b.Format || a.Encrypted != b.Encrypted || !sameStrings(a.Recipients, b.Recipients) || !sameCounts(a.Counts, b.Counts) || len(a.Shards) != len(b.Shards) || len(a.Files) != len(b.Files) {
+	if a.Format != b.Format || a.Encrypted != b.Encrypted || !sameStrings(a.Recipients, b.Recipients) || !maps.Equal(a.Counts, b.Counts) || len(a.Shards) != len(b.Shards) || len(a.Files) != len(b.Files) {
 		return false
 	}
 	for i := range a.Shards {
@@ -670,18 +673,6 @@ func sameStrings(a, b []string) bool {
 	}
 	for i := range a {
 		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func sameCounts(a, b map[string]int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for key, left := range a {
-		if b[key] != left {
 			return false
 		}
 	}
