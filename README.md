@@ -124,6 +124,10 @@ If a write is interrupted, history reads ignore a truncated final JSON value and
 
 Scheduling uses launchd on macOS, systemd user units on Linux, Task Scheduler on Windows, and cron rendering as the portable fallback.
 
+Systemd plans preserve literal argument text, including quotes, percent signs,
+and dollar signs. Executable paths must follow systemd rules: quotes,
+backslashes, and control characters are rejected before installation.
+
 See [Background workers](docs/background-workers.md) for content-triggered processing alongside ingestion.
 
 ## Boundaries

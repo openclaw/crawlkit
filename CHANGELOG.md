@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Preserve file and SQLite capture contents when `MaxFileBytes` is the maximum signed 64-bit value; keep overflow-free bounded reads for growing sources.
+- Preserve literal systemd command arguments and executable names; reject executable-path characters that systemd cannot load.
 - Publish changes to zero-row backup counter keys while reusing unchanged encrypted shards.
 - Run the same validation gates locally and in Linux CI, including formatting, and cancel superseded automatic CI runs.
 

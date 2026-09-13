@@ -217,7 +217,10 @@ func renderLaunchd(args []string, paths Paths, every time.Duration) (string, err
 }
 
 func renderSystemd(args []string, every time.Duration) (string, string, error) {
-	service, err := executeTemplate(systemdServiceTemplate, map[string]any{"Command": shellQuoteArgs(args)})
+	if strings.ContainsAny(args[0], "\"'\\") || strings.IndexFunc(args[0], func(r rune) bool { return r < ' ' || r == 0x7f }) >= 0 {
+		return "", "", fmt.Errorf("systemd executable path contains unsupported characters: %q", args[0])
+	}
+	service, err := executeTemplate(systemdServiceTemplate, map[string]any{"Command": systemdQuoteArgs(args)})
 	if err != nil {
 		return "", "", err
 	}
@@ -253,6 +256,17 @@ func shellQuoteArgs(args []string) string {
 	quoted := make([]string, len(args))
 	for i, arg := range args {
 		quoted[i] = shellQuote(arg)
+	}
+	return strings.Join(quoted, " ")
+}
+
+func systemdQuoteArgs(args []string) string {
+	escape := strings.NewReplacer("%", "%%", "$", "$$")
+	quoted := make([]string, len(args)+1)
+	// @ separates the executable path (no environment expansion) from argv[0].
+	quoted[0] = "@" + strconv.Quote(strings.ReplaceAll(args[0], "%", "%%"))
+	for i, arg := range args {
+		quoted[i+1] = strconv.Quote(escape.Replace(arg))
 	}
 	return strings.Join(quoted, " ")
 }
