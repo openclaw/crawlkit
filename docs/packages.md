@@ -84,6 +84,10 @@ reader lease or a power-loss durability guarantee.
 - `embed` provides OpenAI-compatible, Ollama, and llama.cpp embedding clients plus probe diagnostics.
 - `vector` encodes float32 vectors, validates dimensions, runs exact cosine or optional turbovec-backed search, selects top-k results, and performs reciprocal-rank fusion.
 
+Embedding request timeouts also apply to custom HTTP clients. Providers copy
+the client settings while sharing its transport, redirects, and cookie jar;
+shorter client or context deadlines still take precedence.
+
 ## App contracts
 
 - `control` defines crawler metadata, command manifests, status payloads, contact exports, and database inventories for launchers and automation.

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Honor configured embedding request timeouts with caller-supplied HTTP clients without mutating those clients; retain shorter client and context deadlines.
 - Preserve file and SQLite capture contents when `MaxFileBytes` is the maximum signed 64-bit value; keep overflow-free bounded reads for growing sources.
 - Run the same validation gates locally and in Linux CI, including formatting, and cancel superseded automatic CI runs.
 
