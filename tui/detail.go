@@ -79,10 +79,6 @@ func (m model) chatDetailLines(item Item, width int) []string {
 	return lines
 }
 
-func documentDetailLines(item Item) []string {
-	return documentDetailLinesForWidth(item, 1000, false)
-}
-
 func documentDetailLinesForWidth(item Item, width int, compact bool) []string {
 	var lines []string
 	title := firstNonEmpty(item.Title, item.ID, "Untitled")

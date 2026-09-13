@@ -204,12 +204,13 @@ func TestMachineIDsStayOutOfPrimaryPaneLabels(t *testing.T) {
 }
 
 func TestRowsPaneUsesStableColumns(t *testing.T) {
-	line := rowListLine(Item{
+	_, line := renderedMemberTable(Item{
 		Title:    ":books: Can you *check* again? Hoping this update worked.",
 		Subtitle: "general  vincent  2026-05-02T12:00:00Z",
+		Author:   "vincent",
 		Tags:     []string{"message", "discord"},
 	}, 100)
-	for _, want := range []string{"message", "2026-05-02", "general", "Can you check"} {
+	for _, want := range []string{"msg", "2026-05-02", "vincent", "Can you check"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("row line missing %q: %q", want, line)
 		}
@@ -220,10 +221,14 @@ func TestRowsPaneUsesStableColumns(t *testing.T) {
 	if strings.Contains(line, "vincent  2026") {
 		t.Fatalf("row line should not dump raw subtitle: %q", line)
 	}
+	_, groupLine := renderedGroupTable(itemGroup{Kind: "channel", Title: "general", Count: 1}, 100)
+	if !strings.Contains(groupLine, "general") {
+		t.Fatalf("group pane should retain the channel: %q", groupLine)
+	}
 }
 
 func TestRowsPaneCompactsMultilineTitles(t *testing.T) {
-	line := rowListLine(Item{
+	_, line := renderedMemberTable(Item{
 		Kind:      "message",
 		Container: "general",
 		Author:    "alice",
@@ -233,7 +238,7 @@ func TestRowsPaneCompactsMultilineTitles(t *testing.T) {
 	if strings.Contains(line, "\n") {
 		t.Fatalf("row line should be single-line: %q", line)
 	}
-	for _, want := range []string{"message", "2026-05-02", "alice", "New Course Started Course"} {
+	for _, want := range []string{"msg", "2026-05-02", "alice", "New Course Started Course"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("row line missing %q: %q", want, line)
 		}
@@ -337,53 +342,49 @@ func TestViewRespectsShortTerminalHeight(t *testing.T) {
 
 func TestCompactWidthKeepsUsefulColumns(t *testing.T) {
 	group := itemGroup{Kind: "channel", Count: 18, Latest: "2026-05-02T12:00:00Z", Title: "github-secure-session-4"}
-	mediumGroupHeader := groupListHeader(46, sortDefault)
-	mediumGroupLine := groupListLine(group, 46)
-	groupModel := newModel(Options{Layout: LayoutChat, Items: []Item{
-		Row{Kind: "message", Container: "github-secure-session-4", Title: "message", CreatedAt: "2026-05-02T12:00:00Z"}.ItemForLayout(LayoutChat),
-	}})
-	mediumRows := groupModel.groupTableRows(groupModel.groupColumns(46))
-	for _, want := range []string{"N", "TIME", "AGE", "GROUP", "05-02", "github-secure"} {
-		if !strings.Contains(mediumGroupHeader+mediumGroupLine, want) {
-			t.Fatalf("medium compact group columns missing %q:\n%s\n%s", want, mediumGroupHeader, mediumGroupLine)
-		}
+	for _, width := range []int{38, 46, 56, 100} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			header, line := renderedGroupTable(group, width)
+			for _, want := range []string{"msg", "age", "channel", "18", "05-02", "github-secure"} {
+				if !strings.Contains(header+line, want) {
+					t.Fatalf("group table missing %q:\n%s\n%s", want, header, line)
+				}
+			}
+			timeLabel := "date"
+			if width >= 68 {
+				timeLabel = "latest"
+				if !strings.Contains(header, "kind") {
+					t.Fatalf("wide group header missing kind: %s", header)
+				}
+			}
+			if !strings.Contains(header, timeLabel) {
+				t.Fatalf("group header missing %q: %s", timeLabel, header)
+			}
+			if lipgloss.Width(header) != width || lipgloss.Width(line) != width {
+				t.Fatalf("table does not fit width %d: %q / %q", width, header, line)
+			}
+		})
 	}
-	if len(mediumRows) == 0 || !strings.Contains(strings.Join(mediumRows[0], " "), "05-02") {
-		t.Fatalf("medium group table row should use compact dates: %#v", mediumRows)
-	}
-
-	groupHeader := groupListHeader(56, sortDefault)
-	groupLine := groupListLine(group, 56)
-	for _, want := range []string{"TYPE", "N", "AGE", "GROUP", "18", "github-secure"} {
-		if !strings.Contains(groupHeader+groupLine, want) {
-			t.Fatalf("compact group columns missing %q:\n%s\n%s", want, groupHeader, groupLine)
-		}
-	}
-	for _, want := range []string{"TIME", "05-02"} {
-		if !strings.Contains(groupHeader+groupLine, want) {
-			t.Fatalf("compact group time column missing %q:\n%s\n%s", want, groupHeader, groupLine)
-		}
-	}
-
-	rowHeader := rowListHeader(42, sortDefault)
-	rowLine := rowListLine(Item{
-		Title:     "Im working on adding",
-		Author:    "Vincent Koc",
-		CreatedAt: "2026-05-02T12:00:00Z",
-	}, 42)
-	for _, want := range []string{"TIME", "AGE", "WHO", "TITLE", "05-02", "Vinc", "Im working"} {
+	rowHeader, rowLine := renderedMemberTable(Item{Title: "Im working on adding", Author: "Vincent Koc", CreatedAt: "2026-05-02T12:00:00Z"}, 42)
+	for _, want := range []string{"time", "age", "rel", "who", "title", "05-02", "Vin...", "Im working"} {
 		if !strings.Contains(rowHeader+rowLine, want) {
-			t.Fatalf("compact row columns missing %q:\n%s\n%s", want, rowHeader, rowLine)
+			t.Fatalf("compact member table missing %q:\n%s\n%s", want, rowHeader, rowLine)
 		}
 	}
+}
 
-	tmuxGroupHeader := groupListHeader(38, sortDefault)
-	tmuxGroupLine := groupListLine(group, 38)
-	for _, want := range []string{"N", "TIME", "AGE", "GROUP", "05-02", "github-secure"} {
-		if !strings.Contains(tmuxGroupHeader+tmuxGroupLine, want) {
-			t.Fatalf("tmux-width group columns missing %q:\n%s\n%s", want, tmuxGroupHeader, tmuxGroupLine)
-		}
-	}
+func renderedGroupTable(group itemGroup, width int) (string, string) {
+	m := model{layoutPreset: LayoutChat, groups: []itemGroup{group}}
+	columns := m.groupColumns(width)
+	rows := m.groupTableRows(columns)
+	return renderTableHeader(columns, width, rowsPaneAccent), renderTableRow(columns, rows[0], width, lipgloss.NewStyle())
+}
+
+func renderedMemberTable(item Item, width int) (string, string) {
+	m := model{layoutPreset: LayoutChat, items: []Item{item}}
+	columns := m.memberColumns(width)
+	rows := m.memberTableRows(columns, []contextRow{{ItemIndex: 0, Selectable: true}})
+	return renderTableHeader(columns, width, contextPaneAccent), renderTableRow(columns, rows[0], width, lipgloss.NewStyle())
 }
 
 func TestGroupColumnsOmitEmptyScope(t *testing.T) {
@@ -424,23 +425,21 @@ func TestChatGroupsDoNotMergeSameChannelAcrossScopes(t *testing.T) {
 
 func TestVeryNarrowPanesStillShowCompactColumns(t *testing.T) {
 	group := itemGroup{Kind: "channel", Count: 18, Latest: "2026-05-02T12:00:00Z", Title: "github-secure-session-4"}
-	groupHeader := groupListHeader(28, sortDefault)
-	groupLine := groupListLine(group, 28)
-	for _, want := range []string{"N", "AGE", "GROUP", "18", "github-secure"} {
+	groupHeader, groupLine := renderedGroupTable(group, 28)
+	for _, want := range []string{"msg", "age", "channel", "18", "github-secure"} {
 		if !strings.Contains(groupHeader+groupLine, want) {
 			t.Fatalf("narrow group columns missing %q:\n%s\n%s", want, groupHeader, groupLine)
 		}
 	}
-
-	rowHeader := rowListHeader(28, sortDefault)
-	rowLine := rowListLine(Item{
-		Title:     "Im working on adding",
-		Author:    "Vincent Koc",
-		CreatedAt: "2026-05-02T12:00:00Z",
-	}, 28)
-	for _, want := range []string{"TIME", "TITLE", "05-02", "Im working"} {
+	rowHeader, rowLine := renderedMemberTable(Item{Title: "Im working on adding", Author: "Vincent Koc", CreatedAt: "2026-05-02T12:00:00Z"}, 28)
+	for _, want := range []string{"time", "title", "05-02", "Im working"} {
 		if !strings.Contains(rowHeader+rowLine, want) {
-			t.Fatalf("narrow row columns missing %q:\n%s\n%s", want, rowHeader, rowLine)
+			t.Fatalf("narrow member columns missing %q:\n%s\n%s", want, rowHeader, rowLine)
+		}
+	}
+	for _, line := range []string{groupHeader, groupLine, rowHeader, rowLine} {
+		if lipgloss.Width(line) != 28 {
+			t.Fatalf("narrow table exceeds width: %q", line)
 		}
 	}
 }
@@ -2143,7 +2142,7 @@ func TestDocumentDetailUsesHeaderPreviewLocationProperties(t *testing.T) {
 		UpdatedAt: "2026-05-01T12:00:00Z",
 		Fields:    map[string]string{"space_id": "space1", "parent_table": "collection"},
 	}.ItemForLayout(LayoutDocument)
-	lines := documentDetailLines(item)
+	lines := documentDetailLinesForWidth(item, 1000, false)
 	joined := strings.Join(lines, "\n")
 	for _, want := range []string{"Launch plan", "Location", "Parent: Launch docs", "Database: Roadmap DB", "Preview", "Ship the terminal UI cleanup.", "Properties", "updated: 2026-05-01 12:00"} {
 		if !strings.Contains(joined, want) {
@@ -2206,7 +2205,7 @@ func TestDocumentDetailSeparatesProviderAndSource(t *testing.T) {
 		Title:  "Launch plan",
 		Fields: map[string]string{"source": "desktop", "zeta": "last", "alpha": "first"},
 	}.ItemForLayout(LayoutDocument)
-	joined := strings.Join(documentDetailLines(item), "\n")
+	joined := strings.Join(documentDetailLinesForWidth(item, 1000, false), "\n")
 	for _, want := range []string{"provider: notion", "source: desktop"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("document detail missing %q:\n%s", want, joined)
