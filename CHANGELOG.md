@@ -1,15 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.16.3 - 2026-09-13
 
-- Refresh indirect test and generator dependencies: pprof, x/exp, x/tools v0.50.0, and modernc/cc v4.29.7 while preserving SQLite's required libc version.
 - Honor configured embedding request timeouts with caller-supplied HTTP clients without mutating those clients; retain shorter client and context deadlines.
-- Preserve file and SQLite capture contents when `MaxFileBytes` is the maximum signed 64-bit value; keep overflow-free bounded reads for growing sources.
 - Preserve literal systemd command arguments and executable names; reject executable-path characters that systemd cannot load.
+- Preserve file and SQLite capture contents when `MaxFileBytes` is the maximum signed 64-bit value; keep overflow-free bounded reads for growing sources.
+- Read and repair long scheduler history records without blocking later runs or status checks.
 - Publish changes to zero-row backup counter keys while reusing unchanged encrypted shards.
 - Apply private permissions before overwriting existing controller configurations.
 - Allow explicit controller configuration paths without a home directory while preserving default and tilde-path validation.
-- Read and repair long scheduler history records without blocking later runs or status checks.
+- Refresh indirect test and generator dependencies: pprof, x/exp, x/tools v0.50.0, and modernc/cc v4.29.7 while preserving SQLite's required libc version.
 - Run the same validation gates locally and in Linux CI, including formatting, and cancel superseded automatic CI runs.
 
 ## 0.16.2 - 2026-09-11
