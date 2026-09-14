@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.16.3 - 2026-09-13
 
 - Honor configured embedding request timeouts with caller-supplied HTTP clients without mutating those clients; retain shorter client and context deadlines.
