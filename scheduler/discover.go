@@ -52,6 +52,7 @@ func discoverOne(ctx context.Context, binary string) App {
 	app.Found = true
 	app.Path = path
 	cmd := exec.CommandContext(ctx, path, "metadata", "--json")
+	cmd.WaitDelay = commandWaitDelay
 	data, err := cmd.Output()
 	if err == nil {
 		var manifest control.Manifest

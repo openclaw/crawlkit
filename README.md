@@ -95,6 +95,12 @@ See the [package guide](docs/packages.md) for the complete inventory and [Go pac
 
 `crawlctl` discovers installed crawl apps through their machine-readable metadata, runs configured refresh jobs under a held OS lock, and records JSONL run history.
 
+Discovery and refresh commands allow two seconds for inherited output pipes to
+close after the command exits or its context is canceled. A descendant that
+keeps a pipe open then produces an error instead of blocking the controller and
+its run lock indefinitely. This does not impose a runtime limit on active jobs
+or terminate descendant processes.
+
 The lock file is persistent: do not remove or replace it to unlock the runner.
 Closing the owning handle or exiting releases the lock. Keep its directory
 private; on Windows, file access follows the directory's ACLs. Unsupported OS

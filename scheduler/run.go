@@ -17,6 +17,9 @@ import (
 	"github.com/openclaw/crawlkit/internal/filelock"
 )
 
+// Descendants must not hold output pipes forever after a command exits or is canceled.
+const commandWaitDelay = 2 * time.Second
+
 type RunOptions struct {
 	Config Config
 	Paths  Paths
@@ -193,6 +196,7 @@ func runCommand(ctx context.Context, now func() time.Time, logDir, jobName, repo
 		logWriter = &limitedLogWriter{w: logFile, max: maxLogBytes}
 	}
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+	cmd.WaitDelay = commandWaitDelay
 	if strings.TrimSpace(workDir) != "" {
 		cmd.Dir = workDir
 	}
