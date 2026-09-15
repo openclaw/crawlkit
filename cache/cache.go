@@ -52,6 +52,9 @@ func SnapshotFile(opts SnapshotOptions) (Snapshot, error) {
 	if name == "" {
 		name = filepath.Base(opts.SourcePath)
 	}
+	if filepath.Base(name) != name || name == "." || name == ".." {
+		return Snapshot{}, fmt.Errorf("snapshot name must be a file name: %q", name)
+	}
 	target := filepath.Join(opts.CacheDir, createdAt.Format("20060102T150405Z")+"-"+name)
 	src, err := os.Open(opts.SourcePath)
 	if err != nil {

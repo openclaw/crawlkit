@@ -9,6 +9,11 @@
 - `state` provides generic crawler cursors and freshness records, including mapped adapters for existing app table layouts.
 - `cache` provides read-only local cache files and staged SQLite database, WAL, and SHM captures. Callers must supply a quiescent source or an application-owned coherent snapshot; copying files from a live writer does not provide a transactional snapshot.
 
+`cache.SnapshotFile` accepts a single filename in `Name`, preserving its literal
+text, including whitespace. An empty name uses the source basename. Paths and
+parent-directory components are rejected before copying so captures stay inside
+`CacheDir`.
+
 A positive `MaxFileBytes` bounds each captured source file, including SQLite
 sidecars. Nonpositive limits leave file size unbounded.
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject path-bearing cache snapshot names before publication while preserving literal valid filenames, preventing writes outside the cache directory. Thanks @SebTardif.
+
 ## 0.16.3 - 2026-09-13
 
 - Honor configured embedding request timeouts with caller-supplied HTTP clients without mutating those clients; retain shorter client and context deadlines.

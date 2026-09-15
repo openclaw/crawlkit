@@ -51,6 +51,26 @@ func TestSnapshotFileSizeGuard(t *testing.T) {
 	}
 }
 
+func TestSnapshotFileRejectsPathName(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.db")
+	if err := os.WriteFile(source, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cacheDir := filepath.Join(dir, "cache")
+	_, err := SnapshotFile(SnapshotOptions{
+		SourcePath: source,
+		CacheDir:   cacheDir,
+		Name:       filepath.Join("..", "..", "..", "escape.db"),
+	})
+	if err == nil {
+		t.Fatal("expected path name to be rejected")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "escape.db")); !os.IsNotExist(statErr) {
+		t.Fatalf("escaped cache dir: %v", statErr)
+	}
+}
+
 func TestSnapshotFileAllowsExactCopyLimit(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "source.db")
