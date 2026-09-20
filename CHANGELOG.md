@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject overlapping sidecar roots expressed with mixed relative and absolute paths, and reject nested destination directory symlinks before copying so managed files cannot be written outside the target or pruned through an alias.
+
 ## 0.16.4 - 2026-09-20
 
 - Accept reordered snapshot columns during incremental and merge planning when column names are identical and unique, preserving shard replacement and integrity checks.

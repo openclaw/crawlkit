@@ -2,11 +2,13 @@ package snapshot
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,7 +40,11 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 		return nil, err
 	}
 	targetRoot := filepath.Join(root, filepath.FromSlash(targetRel))
-	sourceRoot, err := filepath.EvalSymlinks(source)
+	sourceRoot, err := filepath.Abs(source)
+	if err != nil {
+		return nil, fmt.Errorf("resolve absolute sidecar source: %w", err)
+	}
+	sourceRoot, err = filepath.EvalSymlinks(sourceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("resolve sidecar source: %w", err)
 	}
@@ -52,6 +58,10 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 	if err := os.MkdirAll(targetRoot, 0o755); err != nil {
 		return nil, fmt.Errorf("create sidecar target: %w", err)
 	}
+	targetRoot, err = filepath.Abs(targetRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve absolute sidecar target: %w", err)
+	}
 	targetRoot, err = filepath.EvalSymlinks(targetRoot)
 	if err != nil {
 		return nil, fmt.Errorf("resolve sidecar target: %w", err)
@@ -59,6 +69,11 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 	if pathsOverlap(sourceRoot, targetRoot) {
 		return nil, fmt.Errorf("sidecar source and target trees overlap: %s and %s", sourceRoot, targetRoot)
 	}
+	target, err := os.OpenRoot(targetRoot)
+	if err != nil {
+		return nil, fmt.Errorf("open sidecar target: %w", err)
+	}
+	defer target.Close()
 	keep := map[string]struct{}{}
 	var sidecars []Sidecar
 	err = filepath.WalkDir(sourceRoot, func(sourcePath string, entry os.DirEntry, walkErr error) error {
@@ -89,20 +104,19 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 		if opts.Include != nil && !opts.Include(rel) {
 			return nil
 		}
-		destination := filepath.Join(targetRoot, filepath.FromSlash(rel))
-		size, hash, err := copyFingerprintFile(sourcePath, destination)
+		size, hash, err := copyFingerprintFile(sourcePath, target, filepath.FromSlash(rel))
 		if err != nil {
 			return err
 		}
 		manifestPath := filepath.ToSlash(filepath.Join(targetRel, rel))
-		keep[filepath.Clean(destination)] = struct{}{}
+		keep[rel] = struct{}{}
 		sidecars = append(sidecars, Sidecar{Name: rel, Path: manifestPath, Kind: opts.Kind, Size: size, SHA256: hash})
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	if err := pruneSidecarTree(ctx, targetRoot, keep, opts.Prune); err != nil {
+	if err := pruneSidecarTree(ctx, target, keep, opts.Prune); err != nil {
 		return nil, err
 	}
 	sort.Slice(sidecars, func(i, j int) bool { return sidecars[i].Path < sidecars[j].Path })
@@ -117,8 +131,23 @@ func cleanRelativeDir(value string) (string, error) {
 	return clean, nil
 }
 
-func copyFingerprintFile(source, target string) (int64, string, error) {
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+func copyFingerprintFile(source string, root *os.Root, target string) (int64, string, error) {
+	// Parent aliases disagree with the lexical paths retained during pruning.
+	parent := "."
+	for _, component := range strings.Split(filepath.Dir(target), string(filepath.Separator)) {
+		parent = filepath.Join(parent, component)
+		info, err := root.Lstat(parent)
+		if errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		if err != nil {
+			return 0, "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return 0, "", fmt.Errorf("sidecar target directory symlink is not allowed: %s", parent)
+		}
+	}
+	if err := root.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return 0, "", err
 	}
 	in, err := os.Open(source) // #nosec G304 -- source is selected by the caller and validated as a regular file.
@@ -126,21 +155,17 @@ func copyFingerprintFile(source, target string) (int64, string, error) {
 		return 0, "", err
 	}
 	defer in.Close()
-	tmp, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".tmp-")
+	tmpPath := filepath.Join(filepath.Dir(target), "."+filepath.Base(target)+".tmp-"+rand.Text())
+	tmp, err := root.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return 0, "", err
 	}
-	tmpPath := tmp.Name()
 	committed := false
 	defer func() {
 		if !committed {
-			_ = os.Remove(tmpPath)
+			_ = root.Remove(tmpPath)
 		}
 	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return 0, "", err
-	}
 	hash := sha256.New()
 	size, err := io.Copy(io.MultiWriter(tmp, hash), in)
 	if err != nil {
@@ -154,15 +179,15 @@ func copyFingerprintFile(source, target string) (int64, string, error) {
 	if err := tmp.Close(); err != nil {
 		return 0, "", err
 	}
-	if err := os.Rename(tmpPath, target); err != nil {
+	if err := root.Rename(tmpPath, target); err != nil {
 		return 0, "", err
 	}
 	committed = true
 	return size, hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func pruneSidecarTree(ctx context.Context, root string, keep map[string]struct{}, shouldPrune func(relativePath string) bool) error {
-	return filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+func pruneSidecarTree(ctx context.Context, root *os.Root, keep map[string]struct{}, shouldPrune func(relativePath string) bool) error {
+	return fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -172,19 +197,13 @@ func pruneSidecarTree(ctx context.Context, root string, keep map[string]struct{}
 		if entry.IsDir() {
 			return nil
 		}
-		if _, ok := keep[filepath.Clean(path)]; ok {
+		if _, ok := keep[path]; ok {
 			return nil
 		}
-		if shouldPrune != nil {
-			rel, err := filepath.Rel(root, path)
-			if err != nil {
-				return err
-			}
-			if !shouldPrune(filepath.ToSlash(rel)) {
-				return nil
-			}
+		if shouldPrune != nil && !shouldPrune(path) {
+			return nil
 		}
-		if err := os.Remove(path); err != nil {
+		if err := root.Remove(filepath.FromSlash(path)); err != nil {
 			return fmt.Errorf("remove stale sidecar %s: %w", path, err)
 		}
 		return nil
