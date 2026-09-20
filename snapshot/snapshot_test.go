@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -429,6 +430,70 @@ func TestPlanMergeImportStillRequiresReplacementForRemovedFiles(t *testing.T) {
 	}
 }
 
+func TestImportPlansCompareColumnNames(t *testing.T) {
+	columns := []string{"id", "body", "updated_at"}
+	reordered := []string{"id", "updated_at", "body"}
+	files := []FileManifest{{Path: "one", SHA256: "one"}, {Path: "two", SHA256: "two"}}
+	for _, tc := range []struct {
+		name            string
+		previousColumns []string
+		currentColumns  []string
+		previousFiles   []FileManifest
+		currentFiles    []FileManifest
+		mode            TableImportMode
+		reason          string
+	}{
+		{name: "reordered unchanged shards", previousColumns: columns, currentColumns: reordered, mode: TableImportSkip, reason: "unchanged"},
+		{name: "reordered changed shard", previousColumns: columns, currentColumns: reordered, currentFiles: []FileManifest{{Path: "one", SHA256: "edited"}, files[1]}, mode: TableImportFiles, reason: "merge changed files"},
+		{name: "added column", previousColumns: columns, currentColumns: append(slices.Clone(columns), "extra"), mode: TableImportReplace, reason: "columns changed"},
+		{name: "removed column", previousColumns: columns, currentColumns: []string{"id", "body"}, mode: TableImportReplace, reason: "columns changed"},
+		{name: "renamed column", previousColumns: columns, currentColumns: []string{"id", "body", "revision"}, mode: TableImportReplace, reason: "columns changed"},
+		{name: "duplicate previous column", previousColumns: []string{"id", "body", "body"}, currentColumns: columns, mode: TableImportReplace, reason: "columns changed"},
+		{name: "duplicate current column", previousColumns: columns, currentColumns: []string{"id", "body", "body"}, mode: TableImportReplace, reason: "columns changed"},
+		{name: "same duplicate columns", previousColumns: []string{"id", "body", "body"}, currentColumns: []string{"id", "body", "body"}, mode: TableImportReplace, reason: "columns changed"},
+		{name: "reordered removed shard", previousColumns: columns, currentColumns: reordered, currentFiles: files[:1], mode: TableImportReplace, reason: "files removed"},
+		{name: "reordered missing previous fingerprint", previousColumns: columns, currentColumns: reordered, previousFiles: []FileManifest{{Path: "one"}, files[1]}, mode: TableImportReplace, reason: "missing file fingerprints"},
+		{name: "reordered missing current fingerprint", previousColumns: columns, currentColumns: reordered, currentFiles: []FileManifest{{Path: "one"}, files[1]}, mode: TableImportReplace, reason: "missing file fingerprints"},
+	} {
+		for _, merge := range []bool{false, true} {
+			name := "incremental/"
+			if merge {
+				name = "merge/"
+			}
+			t.Run(name+tc.name, func(t *testing.T) {
+				previousFiles, currentFiles := tc.previousFiles, tc.currentFiles
+				if previousFiles == nil {
+					previousFiles = files
+				}
+				if currentFiles == nil {
+					currentFiles = files
+				}
+				previous := Manifest{Version: 1, Tables: []TableManifest{{Name: "things", Columns: slices.Clone(tc.previousColumns), FileManifests: previousFiles}}}
+				current := Manifest{Version: 1, Tables: []TableManifest{{Name: "things", Columns: slices.Clone(tc.currentColumns), FileManifests: currentFiles}}}
+				mode, reason := tc.mode, tc.reason
+				var plan ImportPlan
+				if merge {
+					plan = PlanMergeImport(previous, current)
+				} else {
+					plan = PlanIncrementalImport(previous, current)
+					if mode == TableImportFiles {
+						mode, reason = TableImportReplace, "non-tail file changed"
+					}
+				}
+				if plan.Full || len(plan.Tables) != 1 || plan.Tables[0].Mode != mode || plan.Tables[0].Reason != reason {
+					t.Fatalf("want %s (%s), got %+v", mode, reason, plan)
+				}
+				if mode == TableImportFiles && (len(plan.Tables[0].Files) != 1 || plan.Tables[0].Files[0].SHA256 != "edited") {
+					t.Fatalf("unchanged shard selected: %+v", plan.Tables[0].Files)
+				}
+				if !slices.Equal(previous.Tables[0].Columns, tc.previousColumns) || !slices.Equal(current.Tables[0].Columns, tc.currentColumns) || !slices.Equal(plan.Tables[0].Table.Columns, tc.currentColumns) {
+					t.Fatal("planner changed manifest column order")
+				}
+			})
+		}
+	}
+}
+
 func TestPlanMergeImportMergesNewTables(t *testing.T) {
 	current := Manifest{Version: 1, Tables: []TableManifest{{
 		Name: "things", Columns: []string{"id"}, Files: []string{"one"},
@@ -575,7 +640,7 @@ func TestImportIncrementalReplacesChangedTailShard(t *testing.T) {
 	}
 }
 
-func TestImportIncrementalMergePreservesDestinationOnlyRows(t *testing.T) {
+func TestImportIncrementalMergeMapsReorderedColumnsAndPreservesLocalRows(t *testing.T) {
 	ctx := context.Background()
 	src, err := store.Open(ctx, store.Options{
 		Path:   filepath.Join(t.TempDir(), "src.db"),
@@ -604,6 +669,10 @@ func TestImportIncrementalMergePreservesDestinationOnlyRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustExec(t, dst.DB(), `insert into things(id, body) values('local', 'keep')`)
+	mustExec(t, src.DB(), `alter table things rename to previous_things;
+create table things(body text not null, id text primary key);
+insert into things(id, body) select id, body from previous_things;
+drop table previous_things;`)
 	mustExec(t, src.DB(), `update things set body = 'new' where id = 'one'`)
 	mustExec(t, src.DB(), `insert into things(id, body) values('two', 'added')`)
 	current, err := Export(ctx, ExportOptions{DB: src.DB(), RootDir: root, Tables: []string{"things"}})

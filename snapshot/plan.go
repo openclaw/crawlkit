@@ -1,7 +1,5 @@
 package snapshot
 
-import ()
-
 type TableImportMode string
 
 const (
@@ -112,7 +110,7 @@ func (p ImportPlan) Impact() ImportImpact {
 }
 
 func planTableIncrement(previous, current TableManifest, merge bool) TableImportPlan {
-	if !sameStrings(previous.Columns, current.Columns) {
+	if !sameColumns(previous.Columns, current.Columns) {
 		return TableImportPlan{Table: current, Mode: TableImportReplace, Files: tableFileManifests(current), Reason: "columns changed"}
 	}
 	previousFiles := tableFileManifests(previous)
@@ -212,14 +210,23 @@ func fileManifestRows(files []FileManifest) int {
 	return rows
 }
 
-func sameStrings(a, b []string) bool {
+// Snapshot rows bind values by name, so physical column order is immaterial.
+func sameColumns(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := range a {
-		if a[i] != b[i] {
+	remaining := make(map[string]struct{}, len(a))
+	for _, column := range a {
+		if _, exists := remaining[column]; exists {
 			return false
 		}
+		remaining[column] = struct{}{}
+	}
+	for _, column := range b {
+		if _, exists := remaining[column]; !exists {
+			return false
+		}
+		delete(remaining, column)
 	}
 	return true
 }

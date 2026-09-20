@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.16.4 - 2026-09-20
 
+- Accept reordered snapshot columns during incremental and merge planning when column names are identical and unique, preserving shard replacement and integrity checks.
 - Bound scheduler output draining after command exit or cancellation so descendants cannot indefinitely block discovery or hold the refresh-run lock through inherited pipes.
 - Reject path-bearing cache snapshot names before publication while preserving literal valid filenames, preventing writes outside the cache directory. Thanks @SebTardif.
 

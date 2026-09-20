@@ -45,7 +45,13 @@ bindings. The driver's `ReadOnly` option is not an authorization boundary for
 trusted callbacks.
 
 Snapshot rows remain v1 JSON objects; no new wire format is enabled. Import
-callbacks still receive ordinary numbers as `float64`. Exact integral tokens
+planning compares unique column names independently of their order, so a
+snapshot from an equivalent schema does not require replacement just because
+its columns were created in a different order. Comparisons with added, removed,
+renamed, or duplicate columns still require replacement; shard and fingerprint
+checks are unchanged. Original manifest column order is preserved.
+
+Import callbacks still receive ordinary numbers as `float64`. Exact integral tokens
 outside +/- (2^53-1), including decimal/exponent spellings, become `int64` when
 they fit; no `json.Number` escapes to callers. Integers outside signed 64-bit
 range, oversized fractional magnitudes, overflow, nonzero underflow, numeric
