@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.16.4 - 2026-09-20
 
 - Accept reordered snapshot columns during incremental and merge planning when column names are identical and unique, preserving shard replacement and integrity checks.
