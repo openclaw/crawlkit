@@ -23,6 +23,12 @@ sidecars. Nonpositive limits leave file size unbounded.
 - `backup` writes age-encrypted JSONL/Gzip shards and manifests, manages recipients and identities, lists Git-backed history, and verifies historical restores.
 - `mirror` clones, initializes, pulls, commits, and pushes Git-backed archives. It also provides non-mutating fetches, immutable snapshot tags, Git-object reads, and history inspection.
 
+Managed sidecar trees reject overlapping source and destination roots, including
+mixed relative and absolute paths. Configured root symlinks remain supported;
+symlink directories inside a destination copy path are rejected so copying and
+pruning agree on the files retained. Destination writes and pruning stay rooted
+in the selected target directory.
+
 Snapshot exports use `tables/.generations/<32 lowercase hex>/<table>/<ordinal>.jsonl.gz`,
 where the ordinal has at least six digits. Manifest fields are unchanged;
 planners match these paths to legacy `tables/<table>/<ordinal>.jsonl.gz` IDs.
