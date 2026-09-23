@@ -5,9 +5,91 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestSyncSidecarTreePreservesLiteralDirectoryNames(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows normalizes trailing spaces in directory names")
+	}
+	for _, field := range []string{"source", "root", "target"} {
+		for _, name := range []string{" " + field + " ", " "} {
+			t.Run(field+"/"+name, func(t *testing.T) {
+				t.Chdir(t.TempDir())
+				opts := SidecarTreeOptions{SourceDir: "source", RootDir: "root", TargetDir: "target"}
+				switch field {
+				case "source":
+					opts.SourceDir = name
+				case "root":
+					opts.RootDir = name
+				case "target":
+					opts.TargetDir = name
+				}
+				for _, dir := range []string{opts.SourceDir, "source", "root/target"} {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for path, data := range map[string]string{
+					"source/wrong.txt":      "different source",
+					"root/target/stale.txt": "unrelated target",
+				} {
+					if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.WriteFile(filepath.Join(opts.SourceDir, "page.txt"), []byte("literal source"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				sidecars, err := SyncSidecarTree(context.Background(), opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantPath := filepath.Join(opts.TargetDir, "page.txt")
+				got, err := os.ReadFile(filepath.Join(opts.RootDir, wantPath))
+				if err != nil || string(got) != "literal source" {
+					t.Fatalf("literal target content = %q, error = %v", got, err)
+				}
+				if len(sidecars) == 0 || sidecars[0].Path != filepath.ToSlash(wantPath) {
+					t.Fatalf("sidecar paths = %+v, want %q", sidecars, wantPath)
+				}
+				if field != "source" {
+					got, err := os.ReadFile("root/target/stale.txt")
+					if err != nil || string(got) != "unrelated target" {
+						t.Fatalf("unrelated target was changed: %q, %v", got, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestSyncSidecarTreeRejectsWindowsDirectoryAliases(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Win32 path normalization")
+	}
+	for _, field := range []string{"source", "root", "target"} {
+		for _, path := range []string{"pages ", "pages.", "pages /nested", `pages.\nested`, ".. ", " "} {
+			t.Run(field+"/"+path, func(t *testing.T) {
+				opts := SidecarTreeOptions{SourceDir: t.TempDir(), RootDir: t.TempDir(), TargetDir: "pages"}
+				switch field {
+				case "source":
+					opts.SourceDir = path
+				case "root":
+					opts.RootDir = path
+				case "target":
+					opts.TargetDir = path
+				}
+				_, err := SyncSidecarTree(context.Background(), opts)
+				if err == nil || !strings.Contains(err.Error(), "ambiguous trailing spaces or dots on Windows") {
+					t.Fatalf("ambiguous %s path %q: %v", field, path, err)
+				}
+			})
+		}
+	}
+}
 
 func TestSyncSidecarTreeRootAliasesAndInvalidRoots(t *testing.T) {
 	source := t.TempDir()

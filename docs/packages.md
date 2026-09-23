@@ -27,7 +27,10 @@ Managed sidecar trees reject overlapping source and destination roots, including
 mixed relative and absolute paths. Configured root symlinks remain supported;
 symlink directories inside a destination copy path are rejected so copying and
 pruning agree on the files retained. Destination writes and pruning stay rooted
-in the selected target directory.
+in the selected target directory. Source, snapshot-root, and target directory
+names retain literal leading and trailing whitespace, just like shard paths.
+On Windows, directory components with trailing spaces or dots are rejected
+before copying or pruning because Win32 can alias them to other names.
 
 Snapshot exports use `tables/.generations/<32 lowercase hex>/<table>/<ordinal>.jsonl.gz`,
 where the ordinal has at least six digits. Manifest fields are unchanged;
