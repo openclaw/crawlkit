@@ -6,9 +6,10 @@ owns tag creation, Developer ID signing, notarization, independent artifact
 verification, and GitHub Release publication. Do not create release tags or
 handle signing credentials locally.
 
-[v0.16.3](https://github.com/openclaw/crawlkit/releases/tag/v0.16.3) is published
-with signed CLI assets and is available from the Go module proxy. Its release
-notes match the dated section in [CHANGELOG.md](../CHANGELOG.md).
+Published versions and signed CLI assets are listed on
+[GitHub Releases](https://github.com/openclaw/crawlkit/releases/latest) and the
+module is available from the Go proxy. Release notes match the corresponding
+dated section in [CHANGELOG.md](../CHANGELOG.md).
 
 A second dispatch for v0.14.7 rebuilt the payload and correctly
 failed its comparison with the existing public release; it left a separate
