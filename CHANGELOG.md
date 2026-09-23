@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.16.5 - 2026-09-22
 
 **Highlights:** Safer sidecar paths and a faster SQLite runtime.
