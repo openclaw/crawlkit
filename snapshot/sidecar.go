@@ -30,17 +30,25 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	source := strings.TrimSpace(opts.SourceDir)
-	root := strings.TrimSpace(opts.RootDir)
-	if source == "" || root == "" {
+	if opts.SourceDir == "" || opts.RootDir == "" {
 		return nil, errors.New("sidecar source and snapshot root are required")
+	}
+	if filepath.Separator == '\\' {
+		// Win32 can alias trailing spaces and dots to a different tree.
+		for _, path := range []string{opts.SourceDir, opts.RootDir, opts.TargetDir} {
+			for _, component := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+				if component != "." && component != ".." && strings.TrimRight(component, " .") != component {
+					return nil, fmt.Errorf("sidecar directory component has ambiguous trailing spaces or dots on Windows: %q", component)
+				}
+			}
+		}
 	}
 	targetRel, err := cleanRelativeDir(opts.TargetDir)
 	if err != nil {
 		return nil, err
 	}
-	targetRoot := filepath.Join(root, filepath.FromSlash(targetRel))
-	sourceRoot, err := filepath.Abs(source)
+	targetRoot := filepath.Join(opts.RootDir, filepath.FromSlash(targetRel))
+	sourceRoot, err := filepath.Abs(opts.SourceDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve absolute sidecar source: %w", err)
 	}
@@ -53,7 +61,7 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 		return nil, fmt.Errorf("stat sidecar source: %w", err)
 	}
 	if !sourceInfo.IsDir() {
-		return nil, fmt.Errorf("sidecar source is not a directory: %s", source)
+		return nil, fmt.Errorf("sidecar source is not a directory: %s", opts.SourceDir)
 	}
 	if err := os.MkdirAll(targetRoot, 0o755); err != nil {
 		return nil, fmt.Errorf("create sidecar target: %w", err)
@@ -124,7 +132,7 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 }
 
 func cleanRelativeDir(value string) (string, error) {
-	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(value)))
+	clean := filepath.ToSlash(filepath.Clean(value))
 	if clean == "." || clean == ".." || filepath.IsAbs(clean) || strings.HasPrefix(clean, "../") {
 		return "", fmt.Errorf("sidecar target must be a relative directory: %q", value)
 	}
