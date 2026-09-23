@@ -164,7 +164,7 @@ make check
 
 This runs module tidiness, formatting, vet, dead-code and vulnerability checks, unit tests, and race tests with `GOWORK=off`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the compatibility rules.
 
-Keep `modernc.org/libc` at the exact version required by the selected `modernc.org/sqlite` module. SQLite v1.58.0 requires libc v1.75.6; its runtime dependency must be updated together with SQLite, not independently.
+Keep `modernc.org/libc` at the exact version required by the selected `modernc.org/sqlite` module. SQLite v1.59.0 requires libc v1.75.7; its runtime dependency must be updated together with SQLite, not independently.
 
 ## License
 
