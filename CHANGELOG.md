@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Update the SQLite driver to v1.59.0 with its required libc v1.75.7 runtime for faster Linux memory operations and fewer callback allocations, retaining the Go 1.27.0 minimum.
 - Preserve literal whitespace in sidecar directory names and reject ambiguous Windows directory aliases so sync cannot overwrite or prune a different, trimmed destination.
 - Reject overlapping sidecar roots expressed with mixed relative and absolute paths, and reject nested destination directory symlinks before copying so managed files cannot be written outside the target or pruned through an alias.
 
