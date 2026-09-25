@@ -39,9 +39,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      CRAWLKIT_BASELINE_SHA: 26a574e53b485cd2191df603f02d17fab6d3c4af
+      CRAWLKIT_BASELINE_SHA: 493f7470c5e366b52b228e49ed08807f6c81dbf4
       CRAWLKIT_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      GITCRAWL_SHA: dab4d849f9562306da41267cda2b2fd6868a41a8
+      GITCRAWL_SHA: 0a4cefe1858b5a8b8c1138260252b09589c4294f
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

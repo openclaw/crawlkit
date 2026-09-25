@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Refresh automatic Gitcrawl compatibility qualification across 34 app commits, including fixture-only Git maintenance isolation, and advance its API baseline to published Crawlkit v0.16.5. Keep both complete CLI suites and the manual qualification pins unchanged.
+
 ## 0.16.5 - 2026-09-22
 
 **Highlights:** Safer sidecar paths and a faster SQLite runtime.
