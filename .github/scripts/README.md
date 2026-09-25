@@ -4,6 +4,26 @@
 pinned Crawlkit baseline and the candidate checkout. The source pins live in
 `ci.yml`. Update pins deliberately, with exact-head review.
 
+The automatic job deliberately advances its Crawlkit API baseline from
+`26a574e53b485cd2191df603f02d17fab6d3c4af` to published v0.16.5,
+`493f7470c5e366b52b228e49ed08807f6c81dbf4`. Current Gitcrawl requires
+`IngestManifest.Warnings` and `ArchiveSnapshot.Warnings`, which the older baseline
+does not provide. The job uses the published source directly, without API shims.
+
+Its Gitcrawl pin advances from `dab4d849f9562306da41267cda2b2fd6868a41a8` to
+`0a4cefe1858b5a8b8c1138260252b09589c4294f`. This is a
+[34-commit refresh](https://github.com/openclaw/gitcrawl/compare/dab4d849f9562306da41267cda2b2fd6868a41a8...0a4cefe1858b5a8b8c1138260252b09589c4294f),
+including CLI and storage refactors, archive admission, export and sync fixes,
+GraphQL history, and dependency and release updates. It also includes the
+fixture-only Git maintenance isolation in
+[Gitcrawl PR215](https://github.com/openclaw/gitcrawl/pull/215).
+This qualifies current downstream compatibility; it does not establish the
+cause or repair of the historical Git 2.55 cleanup failure.
+
+Both complete CLI suites remain required, against the published baseline and
+the exact candidate head. Selected-app manual qualification retains baseline
+`26a574e53b485cd2191df603f02d17fab6d3c4af` and its existing app pins.
+
 The Linux job has a 20-minute ceiling. It prepares dependencies with Go 1.27.1
 and the public Go proxy, then runs baseline and candidate serially with
 `GOPROXY=off`. Each uses native `lsof`, private HOME/XDG/temp directories, a
