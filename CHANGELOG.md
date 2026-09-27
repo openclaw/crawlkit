@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Speed up 1,536-dimensional vector decode-and-score scans by 5.9× on Apple Silicon, with opt-in `GOEXPERIMENT=simd` kernels adding 1.7× and retaining the scalar fallback.
 - Refresh automatic Gitcrawl compatibility qualification across 34 app commits, including fixture-only Git maintenance isolation, and advance its API baseline to published Crawlkit v0.16.5. Keep both complete CLI suites and the manual qualification pins unchanged.
 
 ## 0.16.5 - 2026-09-22

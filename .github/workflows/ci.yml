@@ -32,6 +32,10 @@ jobs:
           cache: true
       - name: Run local validation gates
         run: make check
+      - name: Test experimental vector SIMD and scalar fallback
+        run: |
+          GOWORK=off GOEXPERIMENT=simd go test ./vector
+          GOWORK=off GOEXPERIMENT=simd GODEBUG=simd=0 go test ./vector
 
   downstream:
     if: github.event_name != 'workflow_dispatch'

@@ -78,7 +78,8 @@ func exactSearch[T any](ctx context.Context, query []float32, candidates []Searc
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := validateSearchVector(candidate.Vector, len(query), "candidate", true); err != nil {
+		// CosineSimilarity checks for zero norm while computing the score below.
+		if err := validateSearchVector(candidate.Vector, len(query), "candidate", false); err != nil {
 			if opts.InvalidVector == InvalidVectorSkip {
 				continue
 			}
@@ -120,14 +121,12 @@ func validateSearchVector(values []float32, dimensions int, name string, require
 	if err := ValidateDimensions(values, dimensions); err != nil {
 		return err
 	}
-	var sum float64
 	for i, value := range values {
 		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
 			return fmt.Errorf("%s vector contains non-finite value at index %d", name, i)
 		}
-		sum += float64(value) * float64(value)
 	}
-	if requireNonZero && sum == 0 {
+	if requireNonZero && normSquared(values) == 0 {
 		return fmt.Errorf("%s vector is zero", name)
 	}
 	return nil

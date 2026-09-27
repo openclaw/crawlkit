@@ -1,7 +1,6 @@
 package vector
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -29,13 +28,11 @@ type RRFEntry[T any] struct {
 }
 
 func EncodeFloat32(values []float32) ([]byte, error) {
-	buf := bytes.NewBuffer(make([]byte, 0, len(values)*4))
-	for _, value := range values {
-		if err := binary.Write(buf, binary.LittleEndian, value); err != nil {
-			return nil, fmt.Errorf("encode float32 vector: %w", err)
-		}
+	blob := make([]byte, len(values)*4)
+	for i, value := range values {
+		binary.LittleEndian.PutUint32(blob[i*4:], math.Float32bits(value))
 	}
-	return buf.Bytes(), nil
+	return blob, nil
 }
 
 func DecodeFloat32(blob []byte) ([]float32, error) {
@@ -43,11 +40,8 @@ func DecodeFloat32(blob []byte) ([]float32, error) {
 		return nil, fmt.Errorf("float32 vector blob length %d is not a multiple of 4", len(blob))
 	}
 	out := make([]float32, len(blob)/4)
-	reader := bytes.NewReader(blob)
 	for i := range out {
-		if err := binary.Read(reader, binary.LittleEndian, &out[i]); err != nil {
-			return nil, fmt.Errorf("decode float32 vector: %w", err)
-		}
+		out[i] = math.Float32frombits(binary.LittleEndian.Uint32(blob[i*4:]))
 	}
 	return out, nil
 }
@@ -63,11 +57,7 @@ func ValidateDimensions(values []float32, dimensions int) error {
 }
 
 func Norm(values []float32) float64 {
-	var sum float64
-	for _, value := range values {
-		sum += float64(value) * float64(value)
-	}
-	return math.Sqrt(sum)
+	return math.Sqrt(normSquared(values))
 }
 
 func CosineSimilarity(query []float32, queryNorm float64, candidate []float32) (float64, error) {
@@ -77,13 +67,10 @@ func CosineSimilarity(query []float32, queryNorm float64, candidate []float32) (
 	if queryNorm == 0 {
 		return 0, errors.New("query vector is zero")
 	}
-	candidateNorm := Norm(candidate)
+	dot, sum := dotNorm(query, queryNorm, candidate)
+	candidateNorm := math.Sqrt(sum)
 	if candidateNorm == 0 {
 		return 0, errors.New("candidate vector is zero")
-	}
-	var dot float64
-	for i := range query {
-		dot += float64(query[i]) * float64(candidate[i])
 	}
 	return dot / (queryNorm * candidateNorm), nil
 }
