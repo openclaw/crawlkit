@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.16.6 - 2026-09-27
 
 **Highlights:** Much faster embedding decoding and exact vector scoring, with opt-in portable SIMD kernels.
