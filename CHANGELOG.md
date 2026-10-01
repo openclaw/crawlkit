@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.16.7 - 2026-10-01
+
+- Preserve newly copied sidecar files after case-only directory renames on case-folding filesystems while pruning stale siblings; keep source spelling in manifests. Thanks @SebTardif.
 
 ## 0.16.6 - 2026-09-27
 
