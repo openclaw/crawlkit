@@ -116,8 +116,12 @@ func SyncSidecarTree(ctx context.Context, opts SidecarTreeOptions) ([]Sidecar, e
 		if err != nil {
 			return err
 		}
+		keepRel, err := sidecarOnDiskRel(target.FS(), rel)
+		if err != nil {
+			return err
+		}
 		manifestPath := filepath.ToSlash(filepath.Join(targetRel, rel))
-		keep[rel] = struct{}{}
+		keep[keepRel] = struct{}{}
 		sidecars = append(sidecars, Sidecar{Name: rel, Path: manifestPath, Kind: opts.Kind, Size: size, SHA256: hash})
 		return nil
 	})
@@ -192,6 +196,58 @@ func copyFingerprintFile(source string, root *os.Root, target string) (int64, st
 	}
 	committed = true
 	return size, hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func sidecarOnDiskRel(fsys fs.FS, rel string) (string, error) {
+	rel = filepath.ToSlash(rel)
+	if rel == "" || rel == "." {
+		return rel, nil
+	}
+	parent := "."
+	parts := strings.Split(rel, "/")
+	resolved := make([]string, 0, len(parts))
+	for _, component := range parts {
+		if component == "" || component == "." {
+			continue
+		}
+		chosen, err := sidecarListedComponent(fsys, parent, component)
+		if err != nil {
+			return "", err
+		}
+		resolved = append(resolved, chosen)
+		if parent == "." {
+			parent = chosen
+		} else {
+			parent += "/" + chosen
+		}
+	}
+	return strings.Join(resolved, "/"), nil
+}
+
+func sidecarListedComponent(fsys fs.FS, parent, requested string) (string, error) {
+	entries, err := fs.ReadDir(fsys, parent)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return requested, nil
+		}
+		return "", err
+	}
+	fold := ""
+	folds := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == requested {
+			return name, nil
+		}
+		if strings.EqualFold(name, requested) {
+			folds++
+			fold = name
+		}
+	}
+	if folds == 1 {
+		return fold, nil
+	}
+	return requested, nil
 }
 
 func pruneSidecarTree(ctx context.Context, root *os.Root, keep map[string]struct{}, shouldPrune func(relativePath string) bool) error {
