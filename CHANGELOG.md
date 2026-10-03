@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
+
 ## 0.16.7 - 2026-10-01
 
 - Preserve newly copied sidecar files after case-only directory renames on case-folding filesystems while pruning stale siblings; keep source spelling in manifests. Thanks @SebTardif.
