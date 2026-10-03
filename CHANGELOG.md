@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.8 - 2026-10-03
+
+**Highlights:** More resilient SQLite WAL handling and faster large statement binding.
+
+- Update the SQLite driver to v1.60.1 with its required libc v1.77.1 runtime. WAL shared-memory read faults now return an I/O error instead of crashing the process, and binding statements with many parameters no longer scales quadratically. Retain SQLite 3.53.4 and the Go 1.27.0 minimum.
+- Refresh the pinned CodeQL action to v4.38.2 and TruffleHog action to v3.97.9.
+
 ## 0.16.7 - 2026-10-01
 
 - Preserve newly copied sidecar files after case-only directory renames on case-folding filesystems while pruning stale siblings; keep source spelling in manifests. Thanks @SebTardif.
