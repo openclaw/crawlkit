@@ -85,3 +85,9 @@ PyPI, or Homebrew publish step for `crawlkit`.
 Use patch tags for narrow fixes and minor tags for broader shared crawler or TUI
 infrastructure. After tagging, prime/verify the Go proxy and then update
 downstream apps to the published tag.
+
+## Autoreview priority
+
+Use `--max-priority P3` with the shared autoreview helper to preserve this
+repository's existing P0–P3 review gate. Follow the
+[shared skill setup](.agents/skills/autoreview/SKILL.md) before running it.
