@@ -245,7 +245,11 @@ func TestRunBatchesAndGitcrawlHashRevision(t *testing.T) {
 		defer peak.Add(-1)
 		return upper(ctx, j)
 	}, fastOpts())
-	eventually(t, func() bool { return q.count("done") == 20 })
+	// SQLite can publish the final row before Complete returns. Wait for the
+	// runner's acknowledgement before cancellation can interrupt that call.
+	eventually(t, func() bool {
+		return q.count("done") == 20 && r.Status().Completed == 20
+	})
 	cancel()
 	eventually(t, func() bool { return r.Status().State == "stopped" })
 	if r.Status().Completed != 20 || r.Status().LastSuccessAt.IsZero() {
