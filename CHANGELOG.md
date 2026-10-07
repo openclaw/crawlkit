@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Refresh indirect go-strftime and pprof dependencies while retaining the Go 1.27.0 minimum and the matching SQLite/libc runtime versions.
 - Add `cache.CopyStable` and `cache.CopyStableFiles` with bounded retries, source identity checks, size and space limits, and caller-owned validation for live file copies; protect Windows copies with a private ACL and allow cleanup retries after blocked deletion. Thanks @arimendelow.
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
