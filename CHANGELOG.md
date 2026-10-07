@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `cache.CopyStable` and `cache.CopyStableFiles` with bounded retries, source identity checks, size and space limits, and caller-owned validation for live file copies; protect Windows copies with a private ACL and allow cleanup retries after blocked deletion. Thanks @arimendelow.
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
 ## 0.16.8 - 2026-10-03
