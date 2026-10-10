@@ -15,7 +15,7 @@ Provider APIs, authentication, schemas, privacy filters, and user-facing command
 
 `crawlkit` requires Go 1.27.0 or newer.
 
-Development builds prefer Go 1.27.1 through the `toolchain` directive in `go.mod`.
+Development builds prefer Go 1.27.2 through the `toolchain` directive in `go.mod`.
 
 Add the package you need to a Go module. For the quick start below:
 

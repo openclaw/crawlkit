@@ -24,7 +24,7 @@ Both complete CLI suites remain required, against the published baseline and
 the exact candidate head. Selected-app manual qualification retains baseline
 `26a574e53b485cd2191df603f02d17fab6d3c4af` and its existing app pins.
 
-The Linux job has a 20-minute ceiling. It prepares dependencies with Go 1.27.1
+The Linux job has a 20-minute ceiling. It prepares dependencies with Go 1.27.2
 and the public Go proxy, then runs baseline and candidate serially with
 `GOPROXY=off`. Each uses native `lsof`, private HOME/XDG/temp directories, a
 private test modfile, and a network/PID namespace with loopback only. The

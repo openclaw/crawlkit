@@ -83,7 +83,7 @@ fi
 for tool in go git lsof tar sha256sum sudo unshare ip setpriv timeout python3; do
   command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 2; }
 done
-[[ $(go env GOVERSION) == go1.27.1 ]] || { echo "Go 1.27.1 is required" >&2; exit 2; }
+[[ $(go env GOVERSION) == go1.27.2 ]] || { echo "Go 1.27.2 is required" >&2; exit 2; }
 sudo -n true
 [[ $(setpriv --help) == *"--pdeathsig"* ]] ||
   { echo "setpriv --pdeathsig keep is required for descendant cleanup" >&2; exit 2; }
