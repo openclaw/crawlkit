@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   preflight:
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     permissions:
       contents: read
     steps:
@@ -32,6 +32,39 @@ jobs:
           script: |
             const preflight = require('./.github/scripts/release-preflight.cjs');
             await preflight({ github, context, version: process.env.RELEASE_VERSION });
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify macOS deployment targets
+        env:
+          CGO_ENABLED: '0'
+          GOWORK: 'off'
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            binary="$RUNNER_TEMP/crawlctl-$arch"
+            GOOS=darwin GOARCH="$arch" go build -trimpath -o "$binary" ./cmd/crawlctl
+            build_version=$(otool -l "$binary" | grep -A3 LC_BUILD_VERSION)
+            printf '%s\n' "$build_version"
+            minos=$(awk '/minos/ { print $2 }' <<<"$build_version")
+            [[ "$minos" == 13.0 ]] || { echo "unexpected macOS minimum: $minos" >&2; exit 1; }
+          done
+      - name: Preflight notarization access
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          p8="$RUNNER_TEMP/notary-preflight.p8"
+          trap 'rm -f "$p8"' EXIT
+          umask 077
+          printf '%s' "$ASC_PRIVATE_KEY_P8" >"$p8"
+          xcrun notarytool history --key "$p8" --key-id "$ASC_KEY_ID" \
+            --issuer "$ASC_ISSUER_ID" --output-format json >"$RUNNER_TEMP/notary-history.json"
+          jq -e '.history | type == "array"' "$RUNNER_TEMP/notary-history.json"
 
   release:
     needs: preflight

@@ -2,11 +2,14 @@
 
 ## Unreleased
 
-- Refresh ANSI rendering, terminal widths, OS support, cryptography, Unicode, pprof, and dead-code analysis dependencies.
-- Build and validate with Go 1.27.2 to pick up standard-library security fixes, retain the Go 1.27.0 module minimum, and update the pinned TruffleHog action to v3.99.0. Thanks @dependabot.
+## 0.17.0 - 2026-10-11
 
-- Refresh indirect go-strftime and pprof dependencies while retaining the Go 1.27.0 minimum and the matching SQLite/libc runtime versions.
+**Highlights:** Stable private copies of live files, plus Go 1.27.2 standard-library security fixes.
+
 - Add `cache.CopyStable` and `cache.CopyStableFiles` with bounded retries, source identity checks, size and space limits, and caller-owned validation for live file copies; protect Windows copies with a private ACL and allow cleanup retries after blocked deletion. Thanks @arimendelow.
+- Build and validate with Go 1.27.2 to pick up standard-library security fixes, retain the Go 1.27.0 module minimum, and update the pinned TruffleHog action to v3.99.0. Thanks @dependabot.
+- Refresh ANSI rendering, terminal widths, OS support, cryptography, Unicode, pprof, and dead-code analysis dependencies.
+- Refresh indirect go-strftime and pprof dependencies while retaining the Go 1.27.0 minimum and the matching SQLite/libc runtime versions.
 - Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
 ## 0.16.8 - 2026-10-03
