@@ -33,7 +33,11 @@ The fixed macOS code identifier is `org.openclaw.crawlctl`, and the required
 signing identity is `Developer ID Application: OpenClaw Foundation
 (FWJYW4S8P8)`. The workflow signs each native Mach-O with the hardened runtime,
 submits it for notarization, and independently verifies both architectures
-before publication. crawlkit has no universal macOS archive, nFPM package, or
+before publication. Both native macOS binaries require macOS 13.0 or later,
+matching the Go 1.27 deployment target. Before the shared workflow creates a tag,
+the caller builds both architectures with CGO disabled, checks each
+`LC_BUILD_VERSION` using `otool -l`, and confirms notarization access with a
+read-only `xcrun notarytool history`. crawlkit has no universal macOS archive, nFPM package, or
 Homebrew handoff.
 
 ## Release checklist
