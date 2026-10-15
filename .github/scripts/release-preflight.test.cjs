@@ -72,10 +72,41 @@ for (const version of ['', 'latest', 'v1.2', ' v0.14.7', 'v0.14.7\n', 'v0.14.7/o
   });
 }
 
+test('dry runs accept an existing version without querying or modifying it', async () => {
+  const { github, calls } = fixture({
+    tag: () => ({ data: { object: { type: 'tag' } } }),
+    release: () => ({ data: { id: 123, draft: false } }),
+  });
+  await preflight({ github, context, version: 'v0.17.0', dryRun: true });
+  assert.deepEqual(calls, []);
+});
+
+test('dry runs still reject invalid versions', async () => {
+  const { github, calls } = fixture();
+  await assert.rejects(preflight({ github, context, version: 'latest', dryRun: true }), /version must be SemVer/);
+  assert.deepEqual(calls, []);
+});
+
+test('an explicit publication still rejects an existing version', async () => {
+  const { github } = fixture({ tag: () => ({ data: { object: { type: 'tag' } } }) });
+  await assert.rejects(preflight({ github, context, version: 'v0.17.0', dryRun: false }), /already has a Git tag/);
+});
+
+for (const dryRun of ['true', 'false', 1, null]) {
+  test(`non-boolean dryRun ${JSON.stringify(dryRun)} fails closed`, async () => {
+    const { github, calls } = fixture();
+    await assert.rejects(preflight({ github, context, version: 'v0.17.0', dryRun }), /dryRun must be a boolean/);
+    assert.deepEqual(calls, []);
+  });
+}
+
 test('workflow gates the reusable job and serializes preflight through publication', () => {
   const workflow = readFileSync(`${__dirname}/../workflows/release-unified.yml`, 'utf8');
   assert.match(workflow, /^concurrency:\n  group: crawlkit-release-\$\{\{ github.repository \}\}\n  cancel-in-progress: false$/m);
   assert.match(workflow, /^  release:\n    needs: preflight\n/m);
   assert.match(workflow, /contents: read/);
-  assert.match(workflow, /await preflight\(\{ github, context, version: process.env.RELEASE_VERSION \}\)/);
+  assert.match(workflow, /dry_run:\n\s+description:.*\n\s+type: boolean\n\s+default: false/);
+  assert.match(workflow, /DRY_RUN: \$\{\{ inputs.dry_run \}\}/);
+  assert.match(workflow, /await preflight\(\{ github, context, version: process.env.RELEASE_VERSION, dryRun: process.env.DRY_RUN === 'true' \}\)/);
+  assert.match(workflow, /dry-run: \$\{\{ inputs.dry_run \}\}/);
 });

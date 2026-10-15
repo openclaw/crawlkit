@@ -1,8 +1,11 @@
-module.exports = async function preflight({ github, context, version }) {
+module.exports = async function preflight({ github, context, version, dryRun = false }) {
   // Match the reusable workflow's version canonicalization before any lookup.
   if (typeof version !== 'string' || version !== version.trim() || !/^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/.test(version)) {
     throw new Error('version must be SemVer, with optional leading v');
   }
+  if (typeof dryRun !== 'boolean') throw new Error('dryRun must be a boolean');
+  // Dry runs build the current protected head without touching the version tag.
+  if (dryRun) return;
   const tag = `v${version.replace(/^v/, '')}`;
   const requireAbsent = async (lookup, kind) => {
     try {

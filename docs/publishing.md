@@ -42,6 +42,17 @@ Homebrew handoff.
 
 ## Release checklist
 
+For release-build validation without publication, dispatch a dry run on the
+current green `main` head using the current version:
+
+```bash
+gh workflow run release-unified.yml --repo openclaw/crawlkit --ref main -f version=0.17.0 -f dry_run=true
+```
+
+Dry runs build, sign, notarize, and independently verify the current protected
+head. They allow an existing version but create no Git tag or GitHub release.
+The default remains a real release, which requires an unused version.
+
 1. Confirm the repository can access all five required Actions secrets:
    `MACOS_SIGNING_P12`, `MACOS_SIGNING_P12_PASSWORD`, `ASC_KEY_ID`,
    `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_P8`. The shared workflow validates

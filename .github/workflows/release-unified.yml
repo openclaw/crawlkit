@@ -7,6 +7,10 @@ on:
         description: SemVer to release
         required: true
         type: string
+      dry_run:
+        description: Build and verify without creating a tag or release
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -24,14 +28,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Require an unused release version
+      - name: Validate the release version
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           RELEASE_VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
         with:
           script: |
             const preflight = require('./.github/scripts/release-preflight.cjs');
-            await preflight({ github, context, version: process.env.RELEASE_VERSION });
+            await preflight({ github, context, version: process.env.RELEASE_VERSION, dryRun: process.env.DRY_RUN === 'true' });
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -77,6 +82,7 @@ jobs:
     uses: openclaw/release-workflows/.github/workflows/release-go-cli.yml@v1
     with:
       version: ${{ inputs.version }}
+      dry-run: ${{ inputs.dry_run }}
       repository-type: openclaw
       checksum-filename: checksums.txt
       nfpm: auto
