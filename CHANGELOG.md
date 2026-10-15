@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Refresh pprof, Go analysis tooling, and the pinned TruffleHog action while retaining the Go 1.27.0 minimum and SQLite's required libc version.
+- Add an explicit release-workflow dry run to validate signed builds without creating a tag or publishing a release; preserve the existing-version guard for real releases.
+
 ## 0.17.0 - 2026-10-11
 
 **Highlights:** Stable private copies of live files, plus Go 1.27.2 standard-library security fixes.
