@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix Crabbox hydration readiness and shutdown with lease-scoped state files, and allow automatic local hydration by omitting an unsupported explicit cache option.
+- Update SQLite's indirect pprof test dependency to the October 16 revision while preserving the required SQLite/libc version pair and Go 1.27.0 minimum.
 - Refresh pprof, Go analysis tooling, and the pinned TruffleHog action while retaining the Go 1.27.0 minimum and SQLite's required libc version.
 - Add an explicit release-workflow dry run to validate signed builds without creating a tag or publishing a release; preserve the existing-version guard for real releases.
 
