@@ -1,5 +1,13 @@
 # CI Helpers
 
+## Crabbox hydration
+
+The hydration workflow writes lease-scoped `<id>.env` and `<id>.env.sh` files
+under `~/.crabbox/actions` and watches `<id>.stop`, matching the Crabbox CLI.
+The job name is metadata inside the readiness marker, not part of these paths.
+`crabbox-hydrate.test.cjs` executes the workflow's shell steps with a temporary
+home to verify readiness discovery and immediate shutdown on the stop signal.
+
 `downstream-compat.sh` compares the complete Gitcrawl CLI test suite against a
 pinned Crawlkit baseline and the candidate checkout. The source pins live in
 `ci.yml`. Update pins deliberately, with exact-head review.

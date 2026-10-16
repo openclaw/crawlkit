@@ -74,7 +74,7 @@ jobs:
               ;;
           esac
           mkdir -p "$HOME/.crabbox/actions"
-          key="${CRABBOX_ID}.${job}"
+          key="${CRABBOX_ID}"
           state="$HOME/.crabbox/actions/${key}.env"
           env_file="$HOME/.crabbox/actions/${key}.env.sh"
           {
@@ -122,7 +122,7 @@ jobs:
           case "$minutes" in
             ''|*[!0-9]*) minutes=90 ;;
           esac
-          stop="$HOME/.crabbox/actions/${CRABBOX_ID}.${job}.stop"
+          stop="$HOME/.crabbox/actions/${CRABBOX_ID}.stop"
           deadline=$(( $(date +%s) + minutes * 60 ))
           while [ "$(date +%s)" -lt "$deadline" ]; do
             if [ -f "$stop" ]; then
