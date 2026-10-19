@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   preflight:
-    runs-on: macos-14
+    runs-on: xcode-27
     permissions:
       contents: read
     steps:
@@ -42,10 +42,15 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Verify Rosetta
+        run: |
+          arch -x86_64 /usr/bin/true || sudo softwareupdate --install-rosetta --agree-to-license
+          arch -x86_64 /usr/bin/true
       - name: Verify macOS deployment targets
         env:
           CGO_ENABLED: '0'
           GOWORK: 'off'
+          MACOSX_DEPLOYMENT_TARGET: '13.0'
         run: |
           set -euo pipefail
           for arch in amd64 arm64; do
@@ -55,6 +60,11 @@ jobs:
             printf '%s\n' "$build_version"
             minos=$(awk '/minos/ { print $2 }' <<<"$build_version")
             [[ "$minos" == 13.0 ]] || { echo "unexpected macOS minimum: $minos" >&2; exit 1; }
+            if [ "$arch" = amd64 ]; then
+              arch -x86_64 "$binary" --help
+            else
+              arch -arm64 "$binary" --help
+            fi
           done
       - name: Preflight notarization access
         env:

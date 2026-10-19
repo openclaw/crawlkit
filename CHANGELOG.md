@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Move macOS release preflight to Xcode 27, retaining macOS 13 deployment checks and verifying Intel execution through Rosetta.
+
 - Fix Crabbox hydration readiness and shutdown with lease-scoped state files, and allow automatic local hydration by omitting an unsupported explicit cache option.
 - Update SQLite's indirect pprof test dependency to the October 16 revision while preserving the required SQLite/libc version pair and Go 1.27.0 minimum.
 - Refresh pprof, Go analysis tooling, and the pinned TruffleHog action while retaining the Go 1.27.0 minimum and SQLite's required libc version.
