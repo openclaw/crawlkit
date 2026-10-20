@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Update govulncheck to v1.9.0, CodeQL to v4.39.0, and TruffleHog to v3.99.3 for current security analysis tooling while retaining the Go 1.27.0 minimum.
 - Move macOS release preflight to Xcode 27, retaining macOS 13 deployment checks and verifying Intel execution through Rosetta.
 
 - Fix Crabbox hydration readiness and shutdown with lease-scoped state files, and allow automatic local hydration by omitting an unsupported explicit cache option.
