@@ -46,7 +46,7 @@ For release-build validation without publication, dispatch a dry run on the
 current green `main` head using the current version:
 
 ```bash
-gh workflow run release-unified.yml --repo openclaw/crawlkit --ref main -f version=0.17.0 -f dry_run=true
+gh workflow run release-unified.yml --repo openclaw/crawlkit --ref main -f version=0.17.1 -f dry_run=true
 ```
 
 Dry runs build, sign, notarize, and independently verify the current protected
