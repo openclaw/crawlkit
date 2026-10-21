@@ -94,6 +94,7 @@ jobs:
       version: ${{ inputs.version }}
       dry-run: ${{ inputs.dry_run }}
       repository-type: openclaw
+      require-signed-tag: true
       checksum-filename: checksums.txt
       nfpm: auto
       stable-identifier: org.openclaw.crawlctl

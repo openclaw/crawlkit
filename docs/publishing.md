@@ -2,9 +2,10 @@
 
 `crawlkit` is a Go library with the optional `crawlctl` CLI. Releases use the
 fleet `release-go-cli` workflow from `openclaw/release-workflows`. The workflow
-owns tag creation, Developer ID signing, notarization, independent artifact
-verification, and GitHub Release publication. Do not create release tags or
-handle signing credentials locally.
+verifies fleet-signed tags and owns Developer ID signing, notarization, independent
+artifact verification, and GitHub Release publication. Create and verify the
+annotated tag with the fleet release key only after a successful dry run. Binary
+signing credentials remain in the workflow.
 
 Published versions and signed CLI assets are listed on
 [GitHub Releases](https://github.com/openclaw/crawlkit/releases/latest) and the
@@ -34,7 +35,7 @@ signing identity is `Developer ID Application: OpenClaw Foundation
 (FWJYW4S8P8)`. The workflow signs each native Mach-O with the hardened runtime,
 submits it for notarization, and independently verifies both architectures
 before publication. Both native macOS binaries require macOS 13.0 or later,
-matching the Go 1.27 deployment target. Before the shared workflow creates a tag,
+matching the Go 1.27 deployment target. Before the shared workflow builds artifacts,
 the caller builds both architectures with CGO disabled, checks each
 `LC_BUILD_VERSION` using `otool -l`, and confirms notarization access with a
 read-only `xcrun notarytool history`. crawlkit has no universal macOS archive, nFPM package, or
@@ -67,17 +68,22 @@ The default remains a real release, which requires an unused version.
    ```
 
 3. Merge the release-preparation PR and confirm its exact merge commit is green.
-4. Dispatch the unified workflow from the current protected `main` head:
+   Run the dry run above with the new version, then create the annotated version
+   tag on that commit with the fleet release key. Verify it with
+   `git -c gpg.ssh.allowedSignersFile=.github/release-allowed-signers verify-tag vX.Y.Z`
+   before pushing it.
+4. Dispatch the unified workflow from the same protected `main` head:
 
    ```bash
    gh workflow run release-unified.yml --repo openclaw/crawlkit -f version=X.Y.Z
    ```
 
 5. Watch the exact workflow run through publication. A read-only preflight
-   rejects existing tags and releases before the shared workflow runs. A
+   requires an annotated tag pointing directly to the workflow commit and rejects
+   existing releases before the shared workflow verifies the tag signature. A
    repository-wide workflow lock spans preflight through publication, so queued
    dispatches (including `X.Y.Z` and `vX.Y.Z`) recheck state after the previous
-   run finishes. The shared workflow creates an annotated version tag, builds all four native archives, signs and
+   run finishes. The shared workflow freezes the verified tag, builds all four native archives, signs and
    notarizes the two macOS binaries, verifies the immutable draft independently
    on Apple Silicon and Intel, and publishes only the verified bytes.
 6. Confirm the GitHub Release notes match the dated changelog section. Download

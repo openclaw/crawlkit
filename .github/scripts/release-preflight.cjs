@@ -17,12 +17,19 @@ module.exports = async function preflight({ github, context, version, dryRun = f
     throw new Error(`${tag} already has a ${kind}; refusing to rebuild an existing release version. Use a new patch version, or reconcile the original run without rebuilding its verified payload.`);
   };
 
-  // Tags are public Go module versions even without a published GitHub release.
-  // The shared workflow creates the tag before creating any draft or assets.
-  await requireAbsent(() => github.rest.git.getRef({
+  // The shared workflow verifies the fleet signature before building or publishing.
+  const ref = await github.rest.git.getRef({
     ...context.repo,
     ref: `tags/${tag}`,
-  }), 'Git tag');
+  });
+  if (ref.data.object.type !== 'tag') throw new Error(`${tag} must be an annotated fleet-signed tag`);
+  const annotated = await github.rest.git.getTag({
+    ...context.repo,
+    tag_sha: ref.data.object.sha,
+  });
+  if (annotated.data.object.type !== 'commit' || annotated.data.object.sha !== context.sha) {
+    throw new Error(`${tag} must point directly to the release workflow commit`);
+  }
   await requireAbsent(() => github.rest.repos.getReleaseByTag({
     ...context.repo,
     tag,

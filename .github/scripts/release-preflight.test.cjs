@@ -3,43 +3,47 @@ const { readFileSync } = require('node:fs');
 const { test } = require('node:test');
 const preflight = require('./release-preflight.cjs');
 
-const context = { repo: { owner: 'openclaw', repo: 'crawlkit' } };
+const context = { repo: { owner: 'openclaw', repo: 'crawlkit' }, sha: 'a'.repeat(40) };
 const missing = () => { throw Object.assign(new Error('Not Found'), { status: 404 }); };
 
-function fixture({ tag = missing, release = missing } = {}) {
+function fixture({ tag = () => ({ data: { object: { type: 'tag', sha: 'b'.repeat(40) } } }), annotated = () => ({ data: { object: { type: 'commit', sha: context.sha } } }), release = missing } = {}) {
   const calls = [];
   return {
     calls,
     // Only read endpoints exist: mutations are never part of preflight.
     github: { rest: {
-      git: { getRef: async (args) => { calls.push(['tag', args]); return tag(); } },
+      git: {
+        getRef: async (args) => { calls.push(['tag', args]); return tag(); },
+        getTag: async (args) => { calls.push(['annotated', args]); return annotated(); },
+      },
       repos: { getReleaseByTag: async (args) => { calls.push(['release', args]); return release(); } },
     } },
   };
 }
 
 for (const version of ['0.14.8', 'v0.14.8', '0.14.8-rc.1', 'v0.14.8+build.1']) {
-  test(`unused ${version} reaches the shared release workflow`, async () => {
+  test(`annotated ${version} at the workflow commit reaches signature verification`, async () => {
     const { github, calls } = fixture();
     await preflight({ github, context, version });
     const tag = `v${version.replace(/^v/, '')}`;
     assert.deepEqual(calls, [
       ['tag', { ...context.repo, ref: `tags/${tag}` }],
+      ['annotated', { ...context.repo, tag_sha: 'b'.repeat(40) }],
       ['release', { ...context.repo, tag }],
     ]);
   });
 }
 
-for (const kind of ['tag', 'commit']) {
-  test(`existing ${kind} stops before rebuilding, even without a GitHub release`, async () => {
+for (const kind of ['commit', 'tree', 'blob']) {
+  test(`non-annotated ${kind} stops before building`, async () => {
     const { github, calls } = fixture({ tag: () => ({ data: { object: { type: kind } } }) });
-    await assert.rejects(preflight({ github, context, version: 'v0.14.7' }), /v0\.14\.7 already has a Git tag/);
+    await assert.rejects(preflight({ github, context, version: 'v0.14.7' }), /must be an annotated fleet-signed tag/);
     assert.equal(calls.length, 1);
   });
 }
 
 for (const draft of [false, true]) {
-  test(`existing ${draft ? 'draft' : 'public release'} blocks even if its tag is missing`, async () => {
+  test(`existing ${draft ? 'draft' : 'public release'} blocks publication`, async () => {
     const { github } = fixture({ release: () => ({ data: { id: 123, draft } }) });
     await assert.rejects(preflight({ github, context, version: '0.14.7' }), /already has a GitHub release/);
   });
@@ -51,10 +55,10 @@ test('the halted v0.14.7 state cannot reach build or draft creation', async () =
     release: () => ({ data: { id: 370802867, draft: false } }),
   });
   await assert.rejects(preflight({ github, context, version: '0.14.7' }), /refusing to rebuild/);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 3);
 });
 
-for (const endpoint of ['tag', 'release']) {
+for (const endpoint of ['tag', 'annotated', 'release']) {
   for (const status of [401, 403, 429, 500]) {
     test(`${endpoint} HTTP ${status} fails closed`, async () => {
       const error = Object.assign(new Error('API unavailable'), { status });
@@ -87,10 +91,17 @@ test('dry runs still reject invalid versions', async () => {
   assert.deepEqual(calls, []);
 });
 
-test('an explicit publication still rejects an existing version', async () => {
-  const { github } = fixture({ tag: () => ({ data: { object: { type: 'tag' } } }) });
-  await assert.rejects(preflight({ github, context, version: 'v0.17.0', dryRun: false }), /already has a Git tag/);
+test('publication requires a pre-created tag', async () => {
+  const { github } = fixture({ tag: missing });
+  await assert.rejects(preflight({ github, context, version: 'v0.17.0', dryRun: false }), /Not Found/);
 });
+
+for (const object of [{ type: 'commit', sha: 'c'.repeat(40) }, { type: 'tag', sha: context.sha }]) {
+  test(`rejects a tag that does not directly freeze the workflow commit (${object.type})`, async () => {
+    const { github } = fixture({ annotated: () => ({ data: { object } }) });
+    await assert.rejects(preflight({ github, context, version: '0.17.2' }), /must point directly to the release workflow commit/);
+  });
+}
 
 for (const dryRun of ['true', 'false', 1, null]) {
   test(`non-boolean dryRun ${JSON.stringify(dryRun)} fails closed`, async () => {
@@ -109,4 +120,5 @@ test('workflow gates the reusable job and serializes preflight through publicati
   assert.match(workflow, /DRY_RUN: \$\{\{ inputs.dry_run \}\}/);
   assert.match(workflow, /await preflight\(\{ github, context, version: process.env.RELEASE_VERSION, dryRun: process.env.DRY_RUN === 'true' \}\)/);
   assert.match(workflow, /dry-run: \$\{\{ inputs.dry_run \}\}/);
+  assert.match(workflow, /require-signed-tag: true/);
 });

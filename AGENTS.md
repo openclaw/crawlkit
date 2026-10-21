@@ -76,10 +76,11 @@ then consume it from the app.
 ## Release Model
 
 Release only through `.github/workflows/release-unified.yml`. The shared
-`openclaw/release-workflows` pipeline owns tag creation, Developer ID signing,
+`openclaw/release-workflows` pipeline verifies fleet-signed tags and owns Developer ID signing,
 notarization, independent artifact verification, and GitHub Release
-publication. Never create or sign release tags locally, publish locally built
-artifacts, or handle release credentials outside the workflow. There is no npm,
+publication. After a successful dry run, create and verify an annotated release
+tag with the fleet signing key before dispatching publication. Never publish locally built
+artifacts or handle binary-signing credentials outside the workflow. There is no npm,
 PyPI, or Homebrew publish step for `crawlkit`.
 
 Use patch tags for narrow fixes and minor tags for broader shared crawler or TUI
