@@ -106,10 +106,10 @@ The default remains a real release, which requires an unused version.
 
 Never delete or force-update a release tag or replace published assets. A Git
 tag is already a public Go module version, even when GitHub publication fails.
-Fresh dispatches require a new version once a tag exists; this also blocks
-leftover drafts because the shared pipeline freezes the tag before drafting.
-The release lookup additionally rejects a visible release whose tag is missing.
-API failures other than an explicit 404 stop preflight.
+Publication requires a fleet-signed tag on the exact workflow commit and no
+existing draft or public release. The shared pipeline freezes that tag before
+drafting. Tag lookup failures stop preflight; only an explicit 404 for the
+release lookup is treated as an unused release version.
 
 After a failure, inspect the exact run, tag, release IDs, and retained artifacts
 before taking action. Do not rerun all jobs or redispatch a published version:
