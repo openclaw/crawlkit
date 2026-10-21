@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.17.2 - 2026-10-20
+
+**Highlights:** Rebuild with Go 1.27.3 to fix the reachable crypto/x509 certificate-validation vulnerability.
+
+### Security
+
+- Build with Go 1.27.3 to fix the reachable crypto/x509 certificate-validation vulnerability GO-2026-6809 while retaining the Go 1.27.0 minimum; require fleet-signed release tags.
+
 ## 0.17.1 - 2026-10-20
 
 **Highlights:** Refreshed security analysis and dependency checks, with more reliable Crabbox validation and macOS release preflight.
