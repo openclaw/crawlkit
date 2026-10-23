@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.17.3 - 2026-10-23
+
+**Highlights:** Database writes waiting for SQLite locks now honor context cancellation and deadlines.
+
 - Update SQLite to v1.61.0 and its required libc v1.79.0 runtime so writes waiting for database locks honor context cancellation and deadlines; retain the Go 1.27.0 minimum.
 
 ## 0.17.2 - 2026-10-20
