@@ -20,15 +20,15 @@ The automatic job deliberately advances its Crawlkit API baseline from
 `IngestManifest.Warnings` and `ArchiveSnapshot.Warnings`, which the older baseline
 does not provide. The job uses the published source directly, without API shims.
 
-Its Gitcrawl pin advances from `dab4d849f9562306da41267cda2b2fd6868a41a8` to
-`0a4cefe1858b5a8b8c1138260252b09589c4294f`. This is a
-[34-commit refresh](https://github.com/openclaw/gitcrawl/compare/dab4d849f9562306da41267cda2b2fd6868a41a8...0a4cefe1858b5a8b8c1138260252b09589c4294f),
-including CLI and storage refactors, archive admission, export and sync fixes,
-GraphQL history, and dependency and release updates. It also includes the
-fixture-only Git maintenance isolation in
-[Gitcrawl PR215](https://github.com/openclaw/gitcrawl/pull/215).
-This qualifies current downstream compatibility; it does not establish the
-cause or repair of the historical Git 2.55 cleanup failure.
+Its Gitcrawl pin advances from `0a4cefe1858b5a8b8c1138260252b09589c4294f` to
+`440c46c04877b4d85a21061e123c7798957d8380`, including the explicit JSON-subquery
+conversion in [Gitcrawl PR271](https://github.com/openclaw/gitcrawl/pull/271).
+SQLite 3.54 no longer preserves the JSON subtype through a scalar subquery;
+the snapshot privacy assertion now uses `json(...)` to keep the same nested
+array on both SQLite 3.53 and 3.54. Production sanitization and the expected
+privacy result are unchanged. The pin also includes the intervening Gitcrawl
+CLI, storage, dependency, and release updates, retaining its fixture-only Git
+maintenance isolation.
 
 Both complete CLI suites remain required, against the published baseline and
 the exact candidate head. Selected-app manual qualification retains baseline

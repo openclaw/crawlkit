@@ -168,6 +168,12 @@ Keep `modernc.org/libc` at the exact version required by the selected `modernc.o
 
 SQLite operations waiting for a write lock honor their context cancellation or deadline, including during the default five-second busy timeout.
 
+When nesting JSON produced by a scalar subquery inside another JSON constructor,
+mark the subquery result explicitly with `json(...)`, for example
+`json_array(json((select json_group_array(value) from items)))`. SQLite 3.54
+does not preserve the JSON subtype through that subquery boundary. Explicit
+conversion also works on SQLite 3.53 and keeps arrays from becoming quoted strings.
+
 ## License
 
 [MIT](LICENSE)
