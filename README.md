@@ -164,7 +164,15 @@ make check
 
 This runs module tidiness, formatting, vet, dead-code and vulnerability checks, unit tests, and race tests with `GOWORK=off`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the compatibility rules.
 
-Keep `modernc.org/libc` at the exact version required by the selected `modernc.org/sqlite` module. SQLite v1.60.1 requires libc v1.77.1; its runtime dependency must be updated together with SQLite, not independently.
+Keep `modernc.org/libc` at the exact version required by the selected `modernc.org/sqlite` module. SQLite v1.61.0 requires libc v1.79.0; its runtime dependency must be updated together with SQLite, not independently.
+
+SQLite operations waiting for a write lock honor their context cancellation or deadline, including during the default five-second busy timeout.
+
+When nesting JSON produced by a scalar subquery inside another JSON constructor,
+mark the subquery result explicitly with `json(...)`, for example
+`json_array(json((select json_group_array(value) from items)))`. SQLite 3.54
+does not preserve the JSON subtype through that subquery boundary. Explicit
+conversion also works on SQLite 3.53 and keeps arrays from becoming quoted strings.
 
 ## License
 
