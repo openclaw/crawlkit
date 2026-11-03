@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep weekly main CodeQL scans instead of repeating analysis on every main push, retain every pull-request scan, and add independently scheduled manual full scans.
+
 ## 0.17.3 - 2026-10-23
 
 **Highlights:** Database writes waiting for SQLite locks now honor context cancellation and deadlines.
