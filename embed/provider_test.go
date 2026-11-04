@@ -171,7 +171,9 @@ func TestOpenAICompatibleProviderSupportsDimensionsAndRawAPIKey(t *testing.T) {
 		gotUserAgent = r.Header.Get("User-Agent")
 		var req openAIEmbeddingRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		gotDimensions = req.Dimensions
 		_ = json.NewEncoder(w).Encode(openAIEmbeddingResponse{
