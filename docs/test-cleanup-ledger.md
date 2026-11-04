@@ -22,6 +22,22 @@ when their callers verify behavior. Unit tests are not end-to-end proof.
   and uncached full Go suite; structured autoreview before landing. PR CI runs
   Linux and Windows suites plus the pinned downstream gitcrawl comparison.
 
+## crawlkit: vector assertions
+
+- Removed `TestFloat32EncodingRoundTrip`: `TestFloat32EncodingMatchesBinary`
+  already verifies encoded bytes and decoded float bits, including arbitrary
+  finite/non-finite bit patterns, nil/empty vectors, and invalid byte lengths.
+- Removed the single-use `InDelta`, `Greater`, and reflection-based `Nil`
+  assertion helpers and their private nil detector. The first two silently
+  accepted NaN because both `NaN > delta` and `NaN <= other` are false.
+- Reused the existing finite-aware kernel number checker for cosine results;
+  check rank ordering and the nil TopK result directly. Kept both rank-fusion
+  cases: accumulated rankings and tied scores are distinct contracts.
+
+Validation: full local gates, focused vector race tests, synthetic NaN failure
+probes, and PR CI (including SIMD/scalar variants and pinned downstream CLI
+comparison). No production APIs or behavior changed.
+
 ## Remaining audit
 
 - crawlkit: review remaining packages, fixture consumers, duplicated coverage,
