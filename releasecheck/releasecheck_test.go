@@ -234,11 +234,13 @@ func TestNotifySuppressesReleaseCheckErrors(t *testing.T) {
 	}
 }
 
-func TestShouldNotifySkipsScriptedOutput(t *testing.T) {
+func TestShouldNotify(t *testing.T) {
 	tests := []struct {
 		name string
 		opts NotifyOptions
+		want bool
 	}{
+		{name: "interactive", opts: NotifyOptions{IsTerminal: true}, want: true},
 		{name: "json", opts: NotifyOptions{JSONOutput: true, IsTerminal: true}},
 		{name: "not terminal", opts: NotifyOptions{IsTerminal: false}},
 		{name: "ci", opts: NotifyOptions{IsTerminal: true, Getenv: func(key string) string {
@@ -260,19 +262,20 @@ func TestShouldNotifySkipsScriptedOutput(t *testing.T) {
 			return ""
 		}}},
 		{name: "metadata", opts: NotifyOptions{IsTerminal: true, Args: []string{"metadata"}}},
+		{name: "check-update", opts: NotifyOptions{IsTerminal: true, Args: []string{"check-update"}}},
+		{name: "json flag", opts: NotifyOptions{IsTerminal: true, Args: []string{"status", "--json"}}},
 		{name: "json flag value", opts: NotifyOptions{IsTerminal: true, Args: []string{"status", "--json=true"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if ok, _ := ShouldNotify(tt.opts); ok {
-				t.Fatal("ShouldNotify = true")
+			if tt.opts.Getenv == nil {
+				tt.opts.Getenv = func(string) string { return "" }
+			}
+			if ok, _ := ShouldNotify(tt.opts); ok != tt.want {
+				t.Fatalf("ShouldNotify = %v, want %v", ok, tt.want)
 			}
 		})
 	}
-}
-
-func TestStderrIsTerminalReturnsBool(t *testing.T) {
-	_ = StderrIsTerminal()
 }
 
 func TestVersionLess(t *testing.T) {
