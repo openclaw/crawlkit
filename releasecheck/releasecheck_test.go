@@ -278,6 +278,21 @@ func TestShouldNotify(t *testing.T) {
 	}
 }
 
+func TestStderrIsTerminalRejectsPipe(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	previous := os.Stderr
+	os.Stderr = writer
+	defer func() { os.Stderr = previous }()
+	if StderrIsTerminal() {
+		t.Fatal("stderr pipe reported as a terminal")
+	}
+}
+
 func TestVersionLess(t *testing.T) {
 	tests := []struct {
 		current string

@@ -9,8 +9,10 @@ when their callers verify behavior. Unit tests are not end-to-end proof.
 
 ## crawlkit: release notification decisions
 
-- Removed `TestStderrIsTerminalReturnsBool`: discarded the result of a thin
-  dependency wrapper and could not detect an incorrect boolean result.
+- Replaced `TestStderrIsTerminalReturnsBool`: it discarded the result of a thin
+  dependency wrapper. Its replacement redirects stderr to a pipe and asserts
+  non-terminal detection. Removing the only local caller exposed the exported
+  helper to CI dead-code detection; keep a meaningful test of its contract.
 - Extended the existing `ShouldNotify` decision table with interactive success,
   explicit `check-update` suppression, and bare `--json` suppression. The
   positive case detects an implementation that simply always returns false.
