@@ -146,13 +146,7 @@ func (s *ScopedStore) IsStale(ctx context.Context, scope string, maxAge time.Dur
 	if err != nil {
 		return false, err
 	}
-	if !ok {
-		return true, nil
-	}
-	if maxAge <= 0 {
-		return false, nil
-	}
-	return s.now().UTC().Sub(rec.UpdatedAt) > maxAge, nil
+	return recordIsStale(ok, rec.UpdatedAt, maxAge, s.now), nil
 }
 
 func NewCursor(db execQuerier) *CursorStore {
@@ -216,13 +210,7 @@ func (s *CursorStore) IsStale(ctx context.Context, source, entityType, entityID 
 	if err != nil {
 		return false, err
 	}
-	if !ok {
-		return true, nil
-	}
-	if maxAge <= 0 {
-		return false, nil
-	}
-	return s.now().UTC().Sub(rec.SyncedAt) > maxAge, nil
+	return recordIsStale(ok, rec.SyncedAt, maxAge, s.now), nil
 }
 
 func defaultScopedMapping() ScopedMapping {
