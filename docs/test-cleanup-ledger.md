@@ -45,3 +45,13 @@ comparison). No production APIs or behavior changed.
 - photoscrawl, imsgcrawl, crawl-remote, graincrawl, notcrawl, discrawl, gitcrawl:
   full test and fixture audit pending; validate each change against its actual
   app behavior using isolated archives and platform-appropriate execution.
+
+## crawlkit: HTTP fixture assertion failures
+
+- Replaced fatal assertions in remote HTTP handlers with non-fatal test errors,
+  an HTTP error response, and a normal handler return. `FailNow` belongs to the
+  test goroutine; in these callbacks it aborted the connection and exposed an
+  unrelated EOF to the client.
+- Keep every request assertion and expected response. Root-test fatal assertions
+  remain intact, and failed handlers stop before sending the success response.
+- All fixtures stay local and synthetic; no production transport or API changes.

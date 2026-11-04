@@ -111,11 +111,15 @@ func TestClientQuerySendsBearerAndEscapedArchive(t *testing.T) {
 		sawPath = r.URL.EscapedPath()
 		var req QueryRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		if req.App != "gitcrawl" || req.Archive != "gitcrawl/openclaw__openclaw" ||
 			req.Name != "gitcrawl.threads.search" || req.SnapshotID != strings.Repeat("a", 64) {
-			t.Fatalf("request = %#v", req)
+			t.Errorf("request = %#v", req)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		_ = json.NewEncoder(w).Encode(QueryResult{
 			Columns: []string{"number", "title"},
@@ -175,13 +179,19 @@ func TestClientPublishStatusForSnapshotUsesEncodedQuery(t *testing.T) {
 	const snapshotID = "immutable id/+?&"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got, want := r.URL.EscapedPath(), "/v1/apps/gitcrawl/archives/gitcrawl%2Fopenclaw/publish-status"; got != want {
-			t.Fatalf("path = %q, want %q", got, want)
+			t.Errorf("path = %q, want %q", got, want)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		if got, want := r.URL.RawQuery, "snapshot_id=immutable+id%2F%2B%3F%26"; got != want {
-			t.Fatalf("query = %q, want %q", got, want)
+			t.Errorf("query = %q, want %q", got, want)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		if got := r.URL.Query().Get("snapshot_id"); got != snapshotID {
-			t.Fatalf("snapshot id = %q, want %q", got, snapshotID)
+			t.Errorf("snapshot id = %q, want %q", got, snapshotID)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		_ = json.NewEncoder(w).Encode(PublisherStatus{
 			App:      "gitcrawl",
@@ -232,7 +242,9 @@ func TestClientPublishStatusForSnapshotReturnsRemoteError(t *testing.T) {
 	const snapshotID = "missing/snapshot"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("snapshot_id"); got != snapshotID {
-			t.Fatalf("snapshot id = %q, want %q", got, snapshotID)
+			t.Errorf("snapshot id = %q, want %q", got, snapshotID)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		w.WriteHeader(http.StatusConflict)
 		_ = json.NewEncoder(w).Encode(map[string]string{
@@ -261,7 +273,9 @@ func TestClientPublishStatusForSnapshotRejectsIgnoredScope(t *testing.T) {
 	requestedSnapshotID := strings.Repeat("a", 64)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("snapshot_id"); got != requestedSnapshotID {
-			t.Fatalf("snapshot id = %q, want %q", got, requestedSnapshotID)
+			t.Errorf("snapshot id = %q, want %q", got, requestedSnapshotID)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		_ = json.NewEncoder(w).Encode(PublisherStatus{
 			App:      "gitcrawl",
@@ -304,7 +318,9 @@ func TestClientPublishStatusForSnapshotRejectsWrongRoute(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if got := r.URL.Query().Get("snapshot_id"); got != snapshotID {
-					t.Fatalf("snapshot id = %q, want %q", got, snapshotID)
+					t.Errorf("snapshot id = %q, want %q", got, snapshotID)
+					http.Error(w, "invalid test request", http.StatusBadRequest)
+					return
 				}
 				_ = json.NewEncoder(w).Encode(PublisherStatus{
 					App:      tc.app,
@@ -335,7 +351,9 @@ func TestClientPublishStatusForSnapshotRejectsMissingSnapshot(t *testing.T) {
 	requestedSnapshotID := strings.Repeat("a", 64)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("snapshot_id"); got != requestedSnapshotID {
-			t.Fatalf("snapshot id = %q, want %q", got, requestedSnapshotID)
+			t.Errorf("snapshot id = %q, want %q", got, requestedSnapshotID)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		_ = json.NewEncoder(w).Encode(PublisherStatus{
 			App:     "gitcrawl",
@@ -361,7 +379,9 @@ func TestClientArchiveOperations(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r.Method+" "+r.URL.EscapedPath())
 		if r.URL.Path != "/v1/auth/github/start" && r.URL.Path != "/v1/auth/github/poll" && r.Header.Get("authorization") != "Bearer secret" {
-			t.Fatalf("auth = %q", r.Header.Get("authorization"))
+			t.Errorf("auth = %q", r.Header.Get("authorization"))
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/archives":
@@ -412,25 +432,37 @@ func TestClientArchiveOperations(t *testing.T) {
 				Requests []QueryRequest `json:"requests"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("decode batch-read: %v", err)
+				t.Errorf("decode batch-read: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if len(body.Requests) != 1 || body.Requests[0].App != "gitcrawl" || body.Requests[0].Archive != "gitcrawl/openclaw" {
-				t.Fatalf("batch request = %#v", body.Requests)
+				t.Errorf("batch request = %#v", body.Requests)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"results": []QueryResult{{Columns: []string{"id"}, Rows: [][]any{{"1"}}}}})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/ingest"):
 			var req IngestRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode ingest: %v", err)
+				t.Errorf("decode ingest: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if req.Manifest.App != "gitcrawl" || req.Manifest.Archive != "gitcrawl/openclaw" {
-				t.Fatalf("ingest manifest = %#v", req.Manifest)
+				t.Errorf("ingest manifest = %#v", req.Manifest)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if req.Manifest.SnapshotID != strings.Repeat("b", 64) || req.Manifest.SourceSHA256 != strings.Repeat("b", 64) {
-				t.Fatalf("ingest snapshot manifest = %#v", req.Manifest)
+				t.Errorf("ingest snapshot manifest = %#v", req.Manifest)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if req.MutationToken != "generation-1" {
-				t.Fatalf("mutation token = %q", req.MutationToken)
+				t.Errorf("mutation token = %q", req.MutationToken)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if len(req.Rows) == 0 {
 				_ = json.NewEncoder(w).Encode(IngestResult{RunID: "run-1", Table: req.Table, ResetIncomplete: true, ResetDeleted: 10000})
@@ -449,7 +481,9 @@ func TestClientArchiveOperations(t *testing.T) {
 				SnapshotID string `json:"snapshot_id"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("decode cutover: %v", err)
+				t.Errorf("decode cutover: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(CutoverResult{
 				Archive:      "gitcrawl/openclaw",
@@ -460,23 +494,33 @@ func TestClientArchiveOperations(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/github/start":
 			var req LoginStartRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode login start: %v", err)
+				t.Errorf("decode login start: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if req.PollSecretHash != "hash" {
-				t.Fatalf("poll secret hash = %q", req.PollSecretHash)
+				t.Errorf("poll secret hash = %q", req.PollSecretHash)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(LoginStartResult{LoginID: "login-1", URL: "https://login.example"})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/github/poll":
 			var req LoginPollRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode login poll: %v", err)
+				t.Errorf("decode login poll: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if req.LoginID != "login-1" || req.PollSecret != "secret" {
-				t.Fatalf("login poll request = %#v", req)
+				t.Errorf("login poll request = %#v", req)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(LoginPollResult{Status: "complete", Token: "session-token"})
 		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -597,7 +641,9 @@ func TestClientUploadSQLiteSendsRawBodyAndMetadata(t *testing.T) {
 		sawSchema = r.Header.Get("x-crawl-schema-name")
 		bytes, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("read body: %v", err)
+			t.Errorf("read body: %v", err)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		body = string(bytes)
 		_ = json.NewEncoder(w).Encode(SQLiteUploadResult{
@@ -1700,7 +1746,7 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 						r.Header.Get("x-crawl-content-sha256") != expectedPartSHA ||
 						r.Header.Get("x-crawl-compression") != SQLiteGzipCompression ||
 						r.Header.Get("x-crawl-snapshot-id") != snapshotID {
-						t.Fatalf(
+						t.Errorf(
 							"part headers index=%q content-type=%q length=%d sha=%q compression=%q snapshot=%q",
 							r.Header.Get("x-crawl-bundle-part-index"),
 							r.Header.Get("content-type"),
@@ -1709,22 +1755,32 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 							r.Header.Get("x-crawl-compression"),
 							r.Header.Get("x-crawl-snapshot-id"),
 						)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
 					}
 					body, err := io.ReadAll(r.Body)
 					if err != nil {
-						t.Fatalf("read part body: %v", err)
+						t.Errorf("read part body: %v", err)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
 					}
 					if !bytes.Equal(body, partContent) {
-						t.Fatalf("part body differs")
+						t.Errorf("part body differs")
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
 					}
 					_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 				case "bundle-manifest":
 					if got := r.Header.Get("x-crawl-snapshot-id"); got != snapshotID {
-						t.Fatalf("manifest snapshot header = %q, want %q", got, snapshotID)
+						t.Errorf("manifest snapshot header = %q, want %q", got, snapshotID)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
 					}
 					body, err := io.ReadAll(r.Body)
 					if err != nil {
-						t.Fatalf("read manifest: %v", err)
+						t.Errorf("read manifest: %v", err)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
 					}
 					wireManifest := decodeStrictSQLiteBundleManifest(t, bytes.NewReader(body))
 					if wireManifest.Format != SQLiteGzipChunkedBundleFormat ||
@@ -1733,11 +1789,15 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 						wireManifest.Reconstruct == "" ||
 						wireManifest.Privacy["policy"] != "public-only" ||
 						wireManifest.Counts["rows"] != 1 {
-						t.Fatalf("wire manifest = %#v", wireManifest)
+						t.Errorf("wire manifest = %#v", wireManifest)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
 					}
 					var manifest SQLiteBundleManifest
 					if err := json.Unmarshal(body, &manifest); err != nil {
-						t.Fatalf("decode response manifest: %v", err)
+						t.Errorf("decode response manifest: %v", err)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
 					}
 					_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{
 						App:      "gitcrawl",
@@ -1749,7 +1809,9 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 						},
 					})
 				default:
-					t.Fatalf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+					t.Errorf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+					http.Error(w, "invalid test request", http.StatusBadRequest)
+					return
 				}
 			}))
 			defer server.Close()
@@ -1796,26 +1858,36 @@ func TestClientPreservesMinimalMutableBundleManifestCompatibility(t *testing.T) 
 		switch r.Header.Get("x-crawl-sqlite-upload") {
 		case "bundle-part":
 			if got := r.Header.Get("x-crawl-bundle-part-index"); got != "3" {
-				t.Fatalf("part index = %q", got)
+				t.Errorf("part index = %q", got)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if _, err := io.Copy(io.Discard, r.Body); err != nil {
-				t.Fatalf("read part: %v", err)
+				t.Errorf("read part: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 		case "bundle-manifest":
 			var manifest SQLiteBundleManifest
 			if err := json.NewDecoder(r.Body).Decode(&manifest); err != nil {
-				t.Fatalf("decode manifest: %v", err)
+				t.Errorf("decode manifest: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if manifest.App != "gitcrawl" ||
 				manifest.Archive != "gitcrawl/openclaw__openclaw" ||
 				manifest.Format != "" ||
 				len(manifest.Parts) != 0 {
-				t.Fatalf("minimal mutable manifest = %#v", manifest)
+				t.Errorf("minimal mutable manifest = %#v", manifest)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{Complete: true})
 		default:
-			t.Fatalf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+			t.Errorf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -1860,26 +1932,38 @@ func TestClientPreservesUnknownLengthMutableBundleFileTransport(t *testing.T) {
 		switch r.Header.Get("x-crawl-sqlite-upload") {
 		case "bundle-part":
 			if r.ContentLength != -1 {
-				t.Fatalf("content length = %d, want unknown", r.ContentLength)
+				t.Errorf("content length = %d, want unknown", r.ContentLength)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if got := r.Header.Get("x-crawl-content-sha256"); got != fmt.Sprintf("%x", digest) {
-				t.Fatalf("sha256 header = %q", got)
+				t.Errorf("sha256 header = %q", got)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if !slices.Contains(r.TransferEncoding, "chunked") {
-				t.Fatalf("transfer encoding = %#v", r.TransferEncoding)
+				t.Errorf("transfer encoding = %#v", r.TransferEncoding)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				t.Fatalf("read part: %v", err)
+				t.Errorf("read part: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if !bytes.Equal(body, content) {
-				t.Fatalf("part body = %q", body)
+				t.Errorf("part body = %q", body)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 		case "bundle-manifest":
 			_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{Complete: true})
 		default:
-			t.Fatalf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+			t.Errorf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -1922,23 +2006,33 @@ func TestClientAllowsMutableBundleFileWithoutSHA256(t *testing.T) {
 		switch r.Header.Get("x-crawl-sqlite-upload") {
 		case "bundle-part":
 			if r.ContentLength != int64(len(content)) {
-				t.Fatalf("content length = %d, want %d", r.ContentLength, len(content))
+				t.Errorf("content length = %d, want %d", r.ContentLength, len(content))
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if got := r.Header.Get("x-crawl-content-sha256"); got != "" {
-				t.Fatalf("sha256 header = %q", got)
+				t.Errorf("sha256 header = %q", got)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				t.Fatalf("read part: %v", err)
+				t.Errorf("read part: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if !bytes.Equal(body, content) {
-				t.Fatalf("part body = %q", body)
+				t.Errorf("part body = %q", body)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 		case "bundle-manifest":
 			_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{Complete: true})
 		default:
-			t.Fatalf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+			t.Errorf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -2127,10 +2221,14 @@ func TestClientUploadsImmutablePartSnapshotAfterSameInodeMutation(t *testing.T) 
 		if r.Header.Get("x-crawl-sqlite-upload") == "bundle-part" {
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				t.Fatalf("read part: %v", err)
+				t.Errorf("read part: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if !bytes.Equal(body, original) {
-				t.Fatalf("uploaded part = %q, want immutable %q", body, original)
+				t.Errorf("uploaded part = %q, want immutable %q", body, original)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 			return
@@ -2204,10 +2302,14 @@ func TestClientUploadsMutableBundleWithoutTemporaryStaging(t *testing.T) {
 		if r.Header.Get("x-crawl-sqlite-upload") == "bundle-part" {
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				t.Fatalf("read part: %v", err)
+				t.Errorf("read part: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if !bytes.Equal(body, content) {
-				t.Fatalf("part body = %q", body)
+				t.Errorf("part body = %q", body)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 			return
@@ -2271,21 +2373,29 @@ func TestClientMatchesMutablePartFilesByDeclaredIndex(t *testing.T) {
 		case "bundle-part":
 			index, err := strconv.Atoi(r.Header.Get("x-crawl-bundle-part-index"))
 			if err != nil {
-				t.Fatalf("parse part index: %v", err)
+				t.Errorf("parse part index: %v", err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				t.Fatalf("read part %d: %v", index, err)
+				t.Errorf("read part %d: %v", index, err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			if !bytes.Equal(body, contents[index]) {
-				t.Fatalf("part %d body = %q", index, body)
+				t.Errorf("part %d body = %q", index, body)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			uploaded = append(uploaded, index)
 			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 		case "bundle-manifest":
 			_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{Complete: true})
 		default:
-			t.Fatalf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+			t.Errorf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -2413,10 +2523,14 @@ func TestClientRejectsMutablePartChangedDuringUploadBeforeManifest(t *testing.T)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		if got := r.Header.Get("x-crawl-sqlite-upload"); got != "bundle-part" {
-			t.Fatalf("unexpected upload kind %q", got)
+			t.Errorf("unexpected upload kind %q", got)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		if _, err := io.Copy(io.Discard, r.Body); err != nil {
-			t.Fatalf("read part: %v", err)
+			t.Errorf("read part: %v", err)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 	}))
@@ -2555,18 +2669,26 @@ func TestClientKeepsUnknownLengthGrowthProbeOutOfMutableBundleUpload(t *testing.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		if got := r.Header.Get("x-crawl-sqlite-upload"); got != "bundle-part" {
-			t.Fatalf("unexpected upload kind %q", got)
+			t.Errorf("unexpected upload kind %q", got)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		if r.ContentLength != -1 {
-			t.Fatalf("content length = %d, want unknown", r.ContentLength)
+			t.Errorf("content length = %d, want unknown", r.ContentLength)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		if !slices.Contains(r.TransferEncoding, "chunked") {
-			t.Fatalf("transfer encoding = %#v", r.TransferEncoding)
+			t.Errorf("transfer encoding = %#v", r.TransferEncoding)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		var err error
 		uploaded, err = io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("read part: %v", err)
+			t.Errorf("read part: %v", err)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 	}))
@@ -3120,7 +3242,9 @@ func TestClientAllowsLegacyMutablePartIndexesBeyondSnapshotLimit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		if got := r.Header.Get("x-crawl-bundle-part-index"); got != "8" {
-			t.Fatalf("part index = %q", got)
+			t.Errorf("part index = %q", got)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 	}))
@@ -3153,17 +3277,25 @@ func TestClientPreservesUnknownLengthMutablePartTransport(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		if r.ContentLength != -1 {
-			t.Fatalf("content length = %d, want unknown", r.ContentLength)
+			t.Errorf("content length = %d, want unknown", r.ContentLength)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		if !slices.Contains(r.TransferEncoding, "chunked") {
-			t.Fatalf("transfer encoding = %#v", r.TransferEncoding)
+			t.Errorf("transfer encoding = %#v", r.TransferEncoding)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("read body: %v", err)
+			t.Errorf("read body: %v", err)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		if string(body) != "compressed" {
-			t.Fatalf("body = %q", body)
+			t.Errorf("body = %q", body)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 	}))
@@ -3204,7 +3336,9 @@ func TestClientPreflightsCompleteSQLiteBundleManifestBeforePartUploads(t *testin
 	var requests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		t.Fatalf("unexpected request")
+		t.Errorf("unexpected request")
+		http.Error(w, "invalid test request", http.StatusBadRequest)
+		return
 	}))
 	defer server.Close()
 	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
@@ -3375,7 +3509,9 @@ func TestClientRejectsInvalidSQLiteBundleSnapshotIDs(t *testing.T) {
 	var requests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		t.Fatalf("unexpected request")
+		t.Errorf("unexpected request")
+		http.Error(w, "invalid test request", http.StatusBadRequest)
+		return
 	}))
 	defer server.Close()
 	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
@@ -3460,7 +3596,9 @@ func TestClientContractIsPublic(t *testing.T) {
 	var sawAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != ContractPath {
-			t.Fatalf("path = %q", r.URL.Path)
+			t.Errorf("path = %q", r.URL.Path)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		sawAuth = r.Header.Get("authorization")
 		_ = json.NewEncoder(w).Encode(testServiceContract())
@@ -3512,11 +3650,15 @@ func TestLoginWithGitHubToken(t *testing.T) {
 	var sawToken string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/auth/github/token" {
-			t.Fatalf("path = %q", r.URL.Path)
+			t.Errorf("path = %q", r.URL.Path)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		var req GitHubTokenLoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		sawToken = req.Token
 		_ = json.NewEncoder(w).Encode(LoginPollResult{
