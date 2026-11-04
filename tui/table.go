@@ -129,22 +129,7 @@ func (m model) groupColumns(width int) []tableColumn {
 	active := m.sortMode
 	countLabel := activeLabel(m.groupCountLabel(width), active == sortCount)
 	titleLabel := m.groupTitleLabel()
-	if width < 44 {
-		if width >= 36 {
-			countW := 3
-			if active == sortCount {
-				countW = 4
-			}
-			timeW := 5
-			ageW := 4
-			titleW := max(1, width-countW-timeW-ageW-3)
-			return []tableColumn{
-				{Key: "count", Title: countLabel, Width: countW},
-				{Key: "time", Title: activeTimeLabel("date", active), Width: timeW},
-				{Key: "age", Title: activeTimeLabel("age", active), Width: ageW},
-				{Key: "title", Title: activeLabel(titleLabel, active == sortTitle || active == sortContainer || active == sortAuthor), Width: titleW},
-			}
-		}
+	if width < 36 {
 		countW := 3
 		if active == sortCount {
 			countW = 4
