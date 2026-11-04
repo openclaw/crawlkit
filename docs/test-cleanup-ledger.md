@@ -65,3 +65,16 @@ comparison). No production APIs or behavior changed.
 - Forced decoder/path failures reproduce EOF before the fix and fail with the
   original diagnostic plus HTTP 400 afterward. Full local gates, independent
   review, and PR CI validate synthetic fixtures; no live APIs or releases.
+
+## crawlkit: strict manifest fixture decoder errors
+
+- Make the strict SQLite bundle fixture decoder return an error. The root test
+  still fails fast; the HTTP callback reports the error, sends HTTP 400, and
+  returns normally. Keep unknown-field and trailing-JSON rejection unchanged.
+- Preserve success payloads, addressing-mode checks, manifest fields, upload
+  counts, and the file-handle closure check for both legacy and snapshot modes.
+- Forced unknown fields and trailing JSON reproduce connection EOF before the
+  change. Afterward, root failures retain their diagnostics and uploads report
+  typed HTTP 400 errors without EOF. Validate with race-enabled probes, full
+  local gates, independent review, and PR CI; no production/API changes, live
+  archives, credentials, or releases.
