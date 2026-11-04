@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -667,16 +668,7 @@ func normalizedStrings(values []string) []string {
 }
 
 func sameStrings(a, b []string) bool {
-	a, b = normalizedStrings(a), normalizedStrings(b)
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(normalizedStrings(a), normalizedStrings(b))
 }
 
 func expandHome(p string) string {
