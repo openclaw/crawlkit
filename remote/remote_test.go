@@ -1591,19 +1591,18 @@ type sqliteBundleWireManifest struct {
 	Parts            []sqliteBundleWirePart      `json:"parts"`
 }
 
-func decodeStrictSQLiteBundleManifest(t *testing.T, body io.Reader) sqliteBundleWireManifest {
-	t.Helper()
+func decodeStrictSQLiteBundleManifest(body io.Reader) (sqliteBundleWireManifest, error) {
 	decoder := json.NewDecoder(body)
 	decoder.DisallowUnknownFields()
 	var manifest sqliteBundleWireManifest
 	if err := decoder.Decode(&manifest); err != nil {
-		t.Fatalf("decode strict sqlite bundle manifest: %v", err)
+		return sqliteBundleWireManifest{}, fmt.Errorf("decode strict sqlite bundle manifest: %v", err)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		t.Fatalf("sqlite bundle manifest has trailing JSON: %v", err)
+		return sqliteBundleWireManifest{}, fmt.Errorf("sqlite bundle manifest has trailing JSON: %v", err)
 	}
-	return manifest
+	return manifest, nil
 }
 
 func testSQLiteBundleManifest(app, archive, snapshotID string, sizes ...int64) SQLiteBundleManifest {
@@ -1676,7 +1675,10 @@ func TestSQLiteBundleManifestMatchesNegotiatedWireSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare manifest: %v", err)
 	}
-	wireManifest := decodeStrictSQLiteBundleManifest(t, bytes.NewReader(body))
+	wireManifest, err := decodeStrictSQLiteBundleManifest(bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if wireManifest.SnapshotID != snapshotID ||
 		wireManifest.ContentType != "application/vnd.sqlite3" ||
 		wireManifest.Reconstruct == "" ||
@@ -1782,7 +1784,12 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 						http.Error(w, "invalid test request", http.StatusBadRequest)
 						return
 					}
-					wireManifest := decodeStrictSQLiteBundleManifest(t, bytes.NewReader(body))
+					wireManifest, err := decodeStrictSQLiteBundleManifest(bytes.NewReader(body))
+					if err != nil {
+						t.Error(err)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
+					}
 					if wireManifest.Format != SQLiteGzipChunkedBundleFormat ||
 						wireManifest.SnapshotID != snapshotID ||
 						wireManifest.ContentType != "application/vnd.sqlite3" ||
