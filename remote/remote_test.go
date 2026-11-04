@@ -136,10 +136,7 @@ func TestClientQuerySendsBearerAndEscapedArchive(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret"), UserAgent: "test-agent"})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
+	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret"), UserAgent: "test-agent"})
 	result, err := client.Query(context.Background(), "gitcrawl", "gitcrawl/openclaw__openclaw", QueryRequest{
 		Name:       "gitcrawl.threads.search",
 		SnapshotID: strings.Repeat("a", 64),
@@ -194,10 +191,7 @@ func TestClientPublishStatusForSnapshotUsesEncodedQuery(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
+	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
 	status, err := client.PublishStatusForSnapshot(
 		context.Background(),
 		" gitcrawl ",
@@ -219,11 +213,8 @@ func TestClientPublishStatusForSnapshotRejectsBlankIDBeforeRequest(t *testing.T)
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
-	_, err = client.PublishStatusForSnapshot(
+	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
+	_, err := client.PublishStatusForSnapshot(
 		context.Background(),
 		"gitcrawl",
 		"gitcrawl/openclaw",
@@ -251,11 +242,8 @@ func TestClientPublishStatusForSnapshotReturnsRemoteError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
-	_, err = client.PublishStatusForSnapshot(
+	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
+	_, err := client.PublishStatusForSnapshot(
 		context.Background(),
 		"gitcrawl",
 		"gitcrawl/openclaw",
@@ -283,11 +271,8 @@ func TestClientPublishStatusForSnapshotRejectsIgnoredScope(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
-	_, err = client.PublishStatusForSnapshot(
+	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
+	_, err := client.PublishStatusForSnapshot(
 		context.Background(),
 		"gitcrawl",
 		"gitcrawl/openclaw",
@@ -329,14 +314,11 @@ func TestClientPublishStatusForSnapshotRejectsWrongRoute(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client, err := NewClient(Options{
+			client := newTestClient(t, Options{
 				Endpoint:      server.URL,
 				TokenProvider: StaticToken("secret"),
 			})
-			if err != nil {
-				t.Fatalf("client: %v", err)
-			}
-			_, err = client.PublishStatusForSnapshot(
+			_, err := client.PublishStatusForSnapshot(
 				context.Background(),
 				" gitcrawl ",
 				" gitcrawl/openclaw ",
@@ -362,11 +344,8 @@ func TestClientPublishStatusForSnapshotRejectsMissingSnapshot(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
-	_, err = client.PublishStatusForSnapshot(
+	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
+	_, err := client.PublishStatusForSnapshot(
 		context.Background(),
 		"gitcrawl",
 		"gitcrawl/openclaw",
@@ -502,10 +481,7 @@ func TestClientArchiveOperations(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret"), UserAgent: "test-agent"})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
+	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret"), UserAgent: "test-agent"})
 	archives, err := client.Archives(context.Background())
 	if err != nil {
 		t.Fatalf("archives: %v", err)
@@ -633,10 +609,7 @@ func TestClientUploadSQLiteSendsRawBodyAndMetadata(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret"), UserAgent: "test-agent"})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
+	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret"), UserAgent: "test-agent"})
 	result, err := client.UploadSQLite(context.Background(), "gitcrawl", "gitcrawl/openclaw__openclaw", SQLiteUploadRequest{
 		Body:          strings.NewReader("SQLite bytes"),
 		Size:          int64(len("SQLite bytes")),
@@ -1780,10 +1753,7 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret"), UserAgent: "test-agent"})
-			if err != nil {
-				t.Fatalf("client: %v", err)
-			}
+			client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret"), UserAgent: "test-agent"})
 			result, err := client.UploadSQLiteBundleFiles(context.Background(), app, archive, manifest, []SQLiteBundlePartFile{{
 				SQLiteBundlePart: part,
 				Path:             partPath,
@@ -1850,13 +1820,10 @@ func TestClientPreservesMinimalMutableBundleManifestCompatibility(t *testing.T) 
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{
+	client := newTestClient(t, Options{
 		Endpoint:      server.URL,
 		TokenProvider: StaticToken("secret"),
 	})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
 	if _, err := client.UploadSQLiteBundleFiles(
 		context.Background(),
 		"gitcrawl",
@@ -1917,13 +1884,10 @@ func TestClientPreservesUnknownLengthMutableBundleFileTransport(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{
+	client := newTestClient(t, Options{
 		Endpoint:      server.URL,
 		TokenProvider: StaticToken("secret"),
 	})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
 	if _, err := client.UploadSQLiteBundleFiles(
 		context.Background(),
 		"gitcrawl",
@@ -1979,13 +1943,10 @@ func TestClientAllowsMutableBundleFileWithoutSHA256(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{
+	client := newTestClient(t, Options{
 		Endpoint:      server.URL,
 		TokenProvider: StaticToken("secret"),
 	})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
 	if _, err := client.UploadSQLiteBundleFiles(
 		context.Background(),
 		"gitcrawl",
@@ -2122,14 +2083,11 @@ func TestClientRejectsInvalidSnapshotBundleAggregatesBeforeRequest(t *testing.T)
 				requests++
 			}))
 			defer server.Close()
-			client, err := NewClient(Options{
+			client := newTestClient(t, Options{
 				Endpoint:      server.URL,
 				TokenProvider: StaticToken("secret"),
 			})
-			if err != nil {
-				t.Fatalf("client: %v", err)
-			}
-			_, err = client.UploadSQLiteBundleFiles(
+			_, err := client.UploadSQLiteBundleFiles(
 				context.Background(),
 				manifest.App,
 				manifest.Archive,
@@ -2197,13 +2155,10 @@ func TestClientUploadsImmutablePartSnapshotAfterSameInodeMutation(t *testing.T) 
 		}
 		return "secret", nil
 	})
-	client, err := NewClient(Options{
+	client := newTestClient(t, Options{
 		Endpoint:      server.URL,
 		TokenProvider: provider,
 	})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
 	if _, err := client.UploadSQLiteBundleFiles(
 		context.Background(),
 		manifest.App,
@@ -2269,13 +2224,10 @@ func TestClientUploadsMutableBundleWithoutTemporaryStaging(t *testing.T) {
 	t.Setenv("TMP", tempBlocker)
 	t.Setenv("TEMP", tempBlocker)
 
-	client, err := NewClient(Options{
+	client := newTestClient(t, Options{
 		Endpoint:      server.URL,
 		TokenProvider: StaticToken("secret"),
 	})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
 	if _, err := client.UploadSQLiteBundleFiles(
 		context.Background(),
 		manifest.App,
@@ -2337,13 +2289,10 @@ func TestClientMatchesMutablePartFilesByDeclaredIndex(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	client, err := NewClient(Options{
+	client := newTestClient(t, Options{
 		Endpoint:      server.URL,
 		TokenProvider: StaticToken("secret"),
 	})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
 	if _, err := client.UploadSQLiteBundleFiles(
 		context.Background(),
 		manifest.App,
@@ -2416,14 +2365,11 @@ func TestClientRejectsDuplicateMutablePartIndexesBeforeRequest(t *testing.T) {
 				requests++
 			}))
 			defer server.Close()
-			client, err := NewClient(Options{
+			client := newTestClient(t, Options{
 				Endpoint:      server.URL,
 				TokenProvider: StaticToken("secret"),
 			})
-			if err != nil {
-				t.Fatalf("client: %v", err)
-			}
-			_, err = client.UploadSQLiteBundleFiles(
+			_, err := client.UploadSQLiteBundleFiles(
 				context.Background(),
 				manifest.App,
 				manifest.Archive,
@@ -2492,13 +2438,10 @@ func TestClientRejectsMutablePartChangedDuringUploadBeforeManifest(t *testing.T)
 		}
 		return "secret", nil
 	})
-	client, err := NewClient(Options{
+	client := newTestClient(t, Options{
 		Endpoint:      server.URL,
 		TokenProvider: provider,
 	})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
 	_, err = client.UploadSQLiteBundleFiles(
 		context.Background(),
 		manifest.App,
@@ -2752,14 +2695,11 @@ func TestClientRejectsChangedSQLiteBundlePartContentBeforeRequest(t *testing.T) 
 				requests++
 			}))
 			defer server.Close()
-			client, err := NewClient(Options{
+			client := newTestClient(t, Options{
 				Endpoint:      server.URL,
 				TokenProvider: StaticToken("secret"),
 			})
-			if err != nil {
-				t.Fatalf("client: %v", err)
-			}
-			_, err = client.UploadSQLiteBundleFiles(
+			_, err := client.UploadSQLiteBundleFiles(
 				context.Background(),
 				manifest.App,
 				manifest.Archive,
@@ -3185,13 +3125,10 @@ func TestClientAllowsLegacyMutablePartIndexesBeyondSnapshotLimit(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 	}))
 	defer server.Close()
-	client, err := NewClient(Options{
+	client := newTestClient(t, Options{
 		Endpoint:      server.URL,
 		TokenProvider: StaticToken("secret"),
 	})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
 	if _, err := client.UploadSQLiteBundlePart(
 		context.Background(),
 		"gitcrawl",
@@ -3231,13 +3168,10 @@ func TestClientPreservesUnknownLengthMutablePartTransport(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
 	}))
 	defer server.Close()
-	client, err := NewClient(Options{
+	client := newTestClient(t, Options{
 		Endpoint:      server.URL,
 		TokenProvider: StaticToken("secret"),
 	})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
 	if _, err := client.UploadSQLiteBundlePart(
 		context.Background(),
 		"gitcrawl",
@@ -3273,10 +3207,7 @@ func TestClientPreflightsCompleteSQLiteBundleManifestBeforePartUploads(t *testin
 		t.Fatalf("unexpected request")
 	}))
 	defer server.Close()
-	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
+	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
 	partPath := filepath.Join(t.TempDir(), "part")
 	if err := os.WriteFile(partPath, []byte("compressed"), 0o600); err != nil {
 		t.Fatalf("write part: %v", err)
@@ -3410,14 +3341,11 @@ func TestClientScopesSQLiteBundlePartLimitToSnapshots(t *testing.T) {
 			Request:    r,
 		}, nil
 	})}
-	client, err := NewClient(Options{
+	client := newTestClient(t, Options{
 		Endpoint:      "https://remote.test",
 		HTTPClient:    httpClient,
 		TokenProvider: StaticToken("secret"),
 	})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
 	if _, err := client.UploadSQLiteBundlePart(context.Background(), "gitcrawl", "archive", SQLiteBundlePartUpload{
 		Body: strings.NewReader("x"),
 		Size: DefaultSQLiteBundleChunkSize + 1,
@@ -3450,10 +3378,7 @@ func TestClientRejectsInvalidSQLiteBundleSnapshotIDs(t *testing.T) {
 		t.Fatalf("unexpected request")
 	}))
 	defer server.Close()
-	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
+	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
 	invalid := strings.Repeat("g", 64)
 	if _, err := client.UploadSQLiteBundlePart(context.Background(), "gitcrawl", "archive", SQLiteBundlePartUpload{
 		Body:       strings.NewReader("compressed"),
@@ -3479,11 +3404,8 @@ func TestClientErrorDecoding(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
-	_, err = client.Whoami(context.Background())
+	client := newTestClient(t, Options{Endpoint: server.URL, TokenProvider: StaticToken("secret")})
+	_, err := client.Whoami(context.Background())
 	var remoteErr *Error
 	if !errors.As(err, &remoteErr) {
 		t.Fatalf("err = %T %v", err, err)
@@ -3545,10 +3467,7 @@ func TestClientContractIsPublic(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{Endpoint: server.URL})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
+	client := newTestClient(t, Options{Endpoint: server.URL})
 	contract, err := client.Contract(context.Background())
 	if err != nil {
 		t.Fatalf("contract: %v", err)
@@ -3609,10 +3528,7 @@ func TestLoginWithGitHubToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Options{Endpoint: server.URL})
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
+	client := newTestClient(t, Options{Endpoint: server.URL})
 	result, err := client.LoginWithGitHubToken(context.Background(), " github-token ")
 	if err != nil {
 		t.Fatalf("login: %v", err)
@@ -3658,4 +3574,13 @@ func testServiceContract() Contract {
 
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
+}
+
+func newTestClient(t *testing.T, opts Options) *Client {
+	t.Helper()
+	client, err := NewClient(opts)
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	return client
 }
