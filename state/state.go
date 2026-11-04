@@ -97,15 +97,19 @@ func (s *Store) IsStale(ctx context.Context, sourceName, entityType, entityID st
 	if err != nil {
 		return false, err
 	}
-	if !ok {
-		return true, nil
-	}
-	if maxAge <= 0 {
-		return false, nil
-	}
-	return s.now().UTC().Sub(rec.UpdatedAt) > maxAge, nil
+	return recordIsStale(ok, rec.UpdatedAt, maxAge, s.now), nil
 }
 
 func ManifestKey(sourceName string) (string, string, string) {
 	return sourceName, "manifest", "generated_at"
+}
+
+func recordIsStale(found bool, updatedAt time.Time, maxAge time.Duration, now func() time.Time) bool {
+	if !found {
+		return true
+	}
+	if maxAge <= 0 {
+		return false
+	}
+	return now().UTC().Sub(updatedAt) > maxAge
 }
