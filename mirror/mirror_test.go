@@ -557,77 +557,88 @@ func TestSyncForWriteRetargetsTagsBeforeConflictedStashRestore(t *testing.T) {
 }
 
 func TestPushSnapshotRebasesAndRetargetsTag(t *testing.T) {
-	ctx := context.Background()
-	dir := t.TempDir()
-	remote := filepath.Join(dir, "remote.git")
-	seed := filepath.Join(dir, "seed")
-	publisher := filepath.Join(dir, "publisher")
-	peer := filepath.Join(dir, "peer")
-	if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
-		t.Fatal(err)
-	}
-	seedOpts := Options{RepoPath: seed, Remote: remote, Branch: "main"}
-	if err := EnsureRemote(ctx, seedOpts); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("seed\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, seedOpts, "seed"); err != nil || !committed {
-		t.Fatalf("seed commit = %v, %v", committed, err)
-	}
-	if err := Push(ctx, seedOpts); err != nil {
-		t.Fatal(err)
-	}
-	for _, clone := range []string{publisher, peer} {
-		if err := run(ctx, "", "git", "clone", "--branch", "main", remote, clone); err != nil {
-			t.Fatal(err)
-		}
-	}
-	publisherOpts := Options{RepoPath: publisher, Branch: "main"}
-	if err := os.WriteFile(filepath.Join(publisher, "manifest.json"), []byte("publisher\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, publisherOpts, "publisher snapshot"); err != nil || !committed {
-		t.Fatalf("publisher commit = %v, %v", committed, err)
-	}
-	if tag, err := CreateImmutableTag(ctx, publisherOpts, "snapshot/race"); err != nil || tag != "snapshot/race" {
-		t.Fatalf("publisher tag = %q, %v", tag, err)
-	}
-	peerOpts := Options{RepoPath: peer, Branch: "main"}
-	if err := os.WriteFile(filepath.Join(peer, "peer.txt"), []byte("peer\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, peerOpts, "peer update"); err != nil || !committed {
-		t.Fatalf("peer commit = %v, %v", committed, err)
-	}
-	if err := Push(ctx, peerOpts); err != nil {
-		t.Fatal(err)
-	}
-	if err := PushSnapshot(ctx, publisherOpts, "snapshot/race"); err != nil {
-		t.Fatal(err)
-	}
-	head, err := ResolveCommit(ctx, publisherOpts, "HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tagged, err := ResolveCommit(ctx, publisherOpts, "snapshot/race")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tagged != head {
-		t.Fatalf("snapshot tag = %s, want rebased HEAD %s", tagged, head)
-	}
-	remoteHead, err := ResolveCommit(ctx, Options{RepoPath: remote}, "refs/heads/main")
-	if err != nil {
-		t.Fatal(err)
-	}
-	remoteTag, err := ResolveCommit(ctx, Options{RepoPath: remote}, "refs/tags/snapshot/race")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if remoteHead != head || remoteTag != head {
-		t.Fatalf("remote branch/tag = %s/%s, want %s", remoteHead, remoteTag, head)
+	for _, tc := range []struct {
+		name string
+		push func(context.Context, Options, string) error
+	}{
+		{"configured branch", PushSnapshot},
+		{"current branch", PushCurrentSnapshot},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			dir := t.TempDir()
+			remote := filepath.Join(dir, "remote.git")
+			seed := filepath.Join(dir, "seed")
+			publisher := filepath.Join(dir, "publisher")
+			peer := filepath.Join(dir, "peer")
+			if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+				t.Fatal(err)
+			}
+			seedOpts := Options{RepoPath: seed, Remote: remote, Branch: "main"}
+			if err := EnsureRemote(ctx, seedOpts); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("seed\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if committed, err := Commit(ctx, seedOpts, "seed"); err != nil || !committed {
+				t.Fatalf("seed commit = %v, %v", committed, err)
+			}
+			if err := Push(ctx, seedOpts); err != nil {
+				t.Fatal(err)
+			}
+			for _, clone := range []string{publisher, peer} {
+				if err := run(ctx, "", "git", "clone", "--branch", "main", remote, clone); err != nil {
+					t.Fatal(err)
+				}
+			}
+			publisherOpts := Options{RepoPath: publisher, Branch: "main"}
+			if err := os.WriteFile(filepath.Join(publisher, "manifest.json"), []byte("publisher\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if committed, err := Commit(ctx, publisherOpts, "publisher snapshot"); err != nil || !committed {
+				t.Fatalf("publisher commit = %v, %v", committed, err)
+			}
+			if tag, err := CreateImmutableTag(ctx, publisherOpts, "snapshot/race"); err != nil || tag != "snapshot/race" {
+				t.Fatalf("publisher tag = %q, %v", tag, err)
+			}
+			peerOpts := Options{RepoPath: peer, Branch: "main"}
+			if err := os.WriteFile(filepath.Join(peer, "peer.txt"), []byte("peer\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if committed, err := Commit(ctx, peerOpts, "peer update"); err != nil || !committed {
+				t.Fatalf("peer commit = %v, %v", committed, err)
+			}
+			if err := Push(ctx, peerOpts); err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.push(ctx, publisherOpts, "snapshot/race"); err != nil {
+				t.Fatal(err)
+			}
+			head, err := ResolveCommit(ctx, publisherOpts, "HEAD")
+			if err != nil {
+				t.Fatal(err)
+			}
+			tagged, err := ResolveCommit(ctx, publisherOpts, "snapshot/race")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tagged != head {
+				t.Fatalf("snapshot tag = %s, want rebased HEAD %s", tagged, head)
+			}
+			remoteHead, err := ResolveCommit(ctx, Options{RepoPath: remote}, "refs/heads/main")
+			if err != nil {
+				t.Fatal(err)
+			}
+			remoteTag, err := ResolveCommit(ctx, Options{RepoPath: remote}, "refs/tags/snapshot/race")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if remoteHead != head || remoteTag != head {
+				t.Fatalf("remote branch/tag = %s/%s, want %s", remoteHead, remoteTag, head)
+			}
+
+		})
 	}
 }
 
