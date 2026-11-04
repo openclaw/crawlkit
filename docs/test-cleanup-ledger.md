@@ -55,3 +55,13 @@ comparison). No production APIs or behavior changed.
 - Keep every request assertion and expected response. Root-test fatal assertions
   remain intact, and failed handlers stop before sending the success response.
 - All fixtures stay local and synthetic; no production transport or API changes.
+
+## crawlkit: remaining provider and update-check handler failures
+
+- Replaced the two remaining direct fatal assertions in embedding-provider and
+  release-check HTTP callbacks with nonfatal errors, HTTP 400, and return.
+- Preserve request conditions, successful embedding and cached-update responses,
+  vector/auth/dimension assertions, cache counts, and root-test fatal assertions.
+- Forced decoder/path failures reproduce EOF before the fix and fail with the
+  original diagnostic plus HTTP 400 afterward. Full local gates, independent
+  review, and PR CI validate synthetic fixtures; no live APIs or releases.
