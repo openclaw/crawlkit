@@ -169,15 +169,9 @@ func TestImportRejectsUnsafeFilePath(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			dst, err := store.Open(ctx, store.Options{
-				Path:   filepath.Join(t.TempDir(), "dst.db"),
-				Schema: `create table things(id text primary key, body text not null);`,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
+			dst := openThingsStore(t, ctx, "dst.db")
 			defer dst.Close()
-			_, err = Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root})
+			_, err := Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root})
 			if err == nil || !strings.Contains(err.Error(), "not under the snapshot root") {
 				t.Fatalf("expected confined import path error, got %v", err)
 			}
@@ -215,13 +209,7 @@ func TestImportIncrementalRejectsUnsafeFilePath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dst, err := store.Open(ctx, store.Options{
-		Path:   filepath.Join(t.TempDir(), "dst.db"),
-		Schema: `create table things(id text primary key, body text not null);`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	dst := openThingsStore(t, ctx, "dst.db")
 	defer dst.Close()
 	if _, _, err := ImportIncremental(ctx, IncrementalImportOptions{
 		DB:       dst.DB(),
@@ -520,13 +508,7 @@ func TestImportPlanImpact(t *testing.T) {
 
 func TestImportIncrementalImportsOnlyPlannedFiles(t *testing.T) {
 	ctx := context.Background()
-	src, err := store.Open(ctx, store.Options{
-		Path:   filepath.Join(t.TempDir(), "src.db"),
-		Schema: `create table things(id text primary key, body text not null);`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	src := openThingsStore(t, ctx, "src.db")
 	defer src.Close()
 	mustExec(t, src.DB(), `insert into things(id, body) values('one', 'same')`)
 	root := t.TempDir()
@@ -540,13 +522,7 @@ func TestImportIncrementalImportsOnlyPlannedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dst, err := store.Open(ctx, store.Options{
-		Path:   filepath.Join(t.TempDir(), "dst.db"),
-		Schema: `create table things(id text primary key, body text not null);`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	dst := openThingsStore(t, ctx, "dst.db")
 	defer dst.Close()
 	if _, err := Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root}); err != nil {
 		t.Fatal(err)
@@ -586,13 +562,7 @@ func TestImportIncrementalImportsOnlyPlannedFiles(t *testing.T) {
 
 func TestImportIncrementalReplacesChangedTailShard(t *testing.T) {
 	ctx := context.Background()
-	src, err := store.Open(ctx, store.Options{
-		Path:   filepath.Join(t.TempDir(), "src.db"),
-		Schema: `create table things(id text primary key, body text not null);`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	src := openThingsStore(t, ctx, "src.db")
 	defer src.Close()
 	mustExec(t, src.DB(), `insert into things(id, body) values('one', 'same')`)
 	mustExec(t, src.DB(), `insert into things(id, body) values('two', 'old')`)
@@ -602,13 +572,7 @@ func TestImportIncrementalReplacesChangedTailShard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dst, err := store.Open(ctx, store.Options{
-		Path:   filepath.Join(t.TempDir(), "dst.db"),
-		Schema: `create table things(id text primary key, body text not null);`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	dst := openThingsStore(t, ctx, "dst.db")
 	defer dst.Close()
 	if _, err := Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root}); err != nil {
 		t.Fatal(err)
@@ -642,13 +606,7 @@ func TestImportIncrementalReplacesChangedTailShard(t *testing.T) {
 
 func TestImportIncrementalMergeMapsReorderedColumnsAndPreservesLocalRows(t *testing.T) {
 	ctx := context.Background()
-	src, err := store.Open(ctx, store.Options{
-		Path:   filepath.Join(t.TempDir(), "src.db"),
-		Schema: `create table things(id text primary key, body text not null);`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	src := openThingsStore(t, ctx, "src.db")
 	defer src.Close()
 	mustExec(t, src.DB(), `insert into things(id, body) values('one', 'old')`)
 	root := t.TempDir()
@@ -657,13 +615,7 @@ func TestImportIncrementalMergeMapsReorderedColumnsAndPreservesLocalRows(t *test
 		t.Fatal(err)
 	}
 
-	dst, err := store.Open(ctx, store.Options{
-		Path:   filepath.Join(t.TempDir(), "dst.db"),
-		Schema: `create table things(id text primary key, body text not null);`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	dst := openThingsStore(t, ctx, "dst.db")
 	defer dst.Close()
 	if _, err := Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root}); err != nil {
 		t.Fatal(err)
@@ -750,13 +702,7 @@ func TestImportHooks(t *testing.T) {
 
 func TestImportReportsTableAndFileProgress(t *testing.T) {
 	ctx := context.Background()
-	src, err := store.Open(ctx, store.Options{
-		Path:   filepath.Join(t.TempDir(), "src.db"),
-		Schema: `create table things(id text primary key, body text not null);`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	src := openThingsStore(t, ctx, "src.db")
 	defer src.Close()
 	mustExec(t, src.DB(), `insert into things(id, body) values('one', 'keep')`)
 	mustExec(t, src.DB(), `insert into things(id, body) values('two', 'skip')`)
@@ -765,13 +711,7 @@ func TestImportReportsTableAndFileProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dst, err := store.Open(ctx, store.Options{
-		Path:   filepath.Join(t.TempDir(), "dst.db"),
-		Schema: `create table things(id text primary key, body text not null);`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	dst := openThingsStore(t, ctx, "dst.db")
 	defer dst.Close()
 	var progress []ImportProgress
 	if _, err := Import(ctx, ImportOptions{
@@ -814,13 +754,7 @@ func TestImportLegacySingularFileManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dst, err := store.Open(ctx, store.Options{
-		Path:   filepath.Join(t.TempDir(), "dst.db"),
-		Schema: `create table things(id text primary key, body text not null);`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	dst := openThingsStore(t, ctx, "dst.db")
 	defer dst.Close()
 	mustExec(t, dst.DB(), `insert into things(id, body) values('old', 'before')`)
 	if _, err := Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root}); err != nil {
@@ -890,6 +824,18 @@ func containsImportPhase(progress []ImportProgress, phase string) bool {
 		}
 	}
 	return false
+}
+
+func openThingsStore(t *testing.T, ctx context.Context, name string) *store.Store {
+	t.Helper()
+	db, err := store.Open(ctx, store.Options{
+		Path:   filepath.Join(t.TempDir(), name),
+		Schema: `create table things(id text primary key, body text not null);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db
 }
 
 func mustExec(t *testing.T, db *sql.DB, query string) {
