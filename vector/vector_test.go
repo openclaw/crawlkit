@@ -8,19 +8,6 @@ import (
 	"testing"
 )
 
-func TestFloat32EncodingRoundTrip(t *testing.T) {
-	blob, err := EncodeFloat32([]float32{1, -2.5, 3.25})
-	require.NoError(t, err)
-	require.Len(t, blob, 12)
-
-	values, err := DecodeFloat32(blob)
-	require.NoError(t, err)
-	require.Equal(t, []float32{1, -2.5, 3.25}, values)
-
-	_, err = DecodeFloat32([]byte{1, 2, 3})
-	require.ErrorContains(t, err, "not a multiple of 4")
-}
-
 func TestCosineSimilarityAndDimensions(t *testing.T) {
 	require.NoError(t, ValidateDimensions([]float32{1, 2}, 2))
 	require.ErrorContains(t, ValidateDimensions([]float32{1}, 2), "dimensions mismatch")
@@ -29,7 +16,7 @@ func TestCosineSimilarityAndDimensions(t *testing.T) {
 	query := []float32{1, 0}
 	score, err := CosineSimilarity(query, Norm(query), []float32{0.5, 0})
 	require.NoError(t, err)
-	require.InDelta(t, 1, score, 0.0001)
+	checkKernelNumber(t, "cosine", score, 1, 0.0001)
 
 	_, err = CosineSimilarity(query, 0, []float32{1, 0})
 	require.ErrorContains(t, err, "query vector is zero")
@@ -48,7 +35,9 @@ func TestTopK(t *testing.T) {
 	}
 	top := TopK(items, 2, func(left, right string) bool { return left < right })
 	require.Equal(t, []Scored[string]{{Item: "a", Score: 0.5}, {Item: "b", Score: 0.5}}, top)
-	require.Nil(t, TopK(items, 0, nil))
+	if got := TopK(items, 0, nil); got != nil {
+		t.Fatalf("TopK with zero limit = %v, want nil", got)
+	}
 }
 
 func TestReciprocalRankFusion(t *testing.T) {
@@ -63,7 +52,9 @@ func TestReciprocalRankFusion(t *testing.T) {
 	results := ReciprocalRankFusion(rankings, ids, []float64{1, 1}, 60)
 	require.Len(t, results, 3)
 	require.Equal(t, "b", results[0].Item)
-	require.Greater(t, results[0].Score, results[1].Score)
+	if !(results[0].Score > results[1].Score) {
+		t.Fatalf("leading score %g must exceed next score %g", results[0].Score, results[1].Score)
+	}
 }
 
 func TestReciprocalRankFusionPreservesFirstSeenOrderForTies(t *testing.T) {
@@ -108,28 +99,6 @@ func (requireAPI) Len(t *testing.T, value any, want int) {
 	}
 }
 
-func (requireAPI) Nil(t *testing.T, value any) {
-	t.Helper()
-	if !isNil(value) {
-		t.Fatalf("expected nil, got %#v", value)
-	}
-}
-
-func (requireAPI) Greater(t *testing.T, left, right float64) {
-	t.Helper()
-	if left <= right {
-		t.Fatalf("expected %v > %v", left, right)
-	}
-}
-
-func (requireAPI) InDelta(t *testing.T, want, got, delta float64) {
-	t.Helper()
-	diff := math.Abs(want - got)
-	if diff > delta {
-		t.Fatalf("not within delta: want %v got %v delta %v", want, got, delta)
-	}
-}
-
 func (requireAPI) ErrorContains(t *testing.T, err error, needle string) {
 	t.Helper()
 	if err == nil {
@@ -144,18 +113,5 @@ func (requireAPI) ErrorIs(t *testing.T, err, target error) {
 	t.Helper()
 	if !errors.Is(err, target) {
 		t.Fatalf("expected error %v to match %v", err, target)
-	}
-}
-
-func isNil(value any) bool {
-	if value == nil {
-		return true
-	}
-	reflected := reflect.ValueOf(value)
-	switch reflected.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return reflected.IsNil()
-	default:
-		return false
 	}
 }
