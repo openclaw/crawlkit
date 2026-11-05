@@ -178,3 +178,18 @@ comparison). No production APIs or behavior changed.
   PR CI and supported downstream compatibility checks. No live archives, provider
   calls or releases. The separate store path-normalization boundary remains a
   follow-up.
+
+## crawlkit: SQLite stores preserve literal paths
+
+- Preserve literal filesystem paths in both writable and read-only store opens.
+  The original tests missed reading a neighboring database and applying schema
+  writes to that neighbor when a requested filename ends in whitespace.
+- Real temporary SQLite fixtures distinguish requested and neighboring rows.
+  Plain-path cases fail before the fix; equivalent escaped URI cases pass.
+  Require the selected row, retained path and unchanged neighboring contents.
+  Native Windows cases reject ambiguous trailing spaces and dots before access
+  and require unchanged canonical database bytes.
+- Retain existing caller URI-parameter and named/anonymous memory-store tests;
+  these are distinct contracts, not duplicates of filesystem path handling.
+  Validate full local gates, independent P0–P3 review and exact-commit CI with
+  supported downstream app compatibility. No live archives or releases.

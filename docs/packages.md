@@ -9,6 +9,11 @@
 - `state` provides generic crawler cursors and freshness records, including mapped adapters for existing app table layouts.
 - `cache` provides read-only local cache files and staged SQLite database, WAL, and SHM captures. `SnapshotFile` and the SQLite capture need a quiescent source or an application-owned coherent snapshot; copying files from a live writer does not provide a transactional snapshot. For a file or small file set that a live desktop app rewrites in place, `cache.CopyStable` and `cache.CopyStableFiles` take a private copy and accept it only when each source's size, modification time, and file identity are unchanged across the copy, retrying and then returning `*cache.SourceBusyError`.
 
+`store.Open` and `store.OpenReadOnly` preserve literal filesystem paths,
+including whitespace. On Windows, plain filesystem path components ending in
+spaces or dots are rejected before access. Explicit `file:` SQLite URIs retain
+their caller-provided parameters; `:memory:` keeps its existing behavior.
+
 `cache.SnapshotFile` accepts a single filename in `Name`, preserving its literal
 text, including whitespace. An empty name uses the source basename. Paths and
 parent-directory components are rejected before copying so captures stay inside
