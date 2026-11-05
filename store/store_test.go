@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -447,5 +448,109 @@ func TestFTS5Helpers(t *testing.T) {
 	}
 	if err := OptimizeFTS5(ctx, st.DB(), `bad"table`); err == nil {
 		t.Fatal("unsafe FTS table should fail")
+	}
+}
+
+func TestStorePreservesLiteralDatabasePaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Win32 aliases trailing spaces; covered by the rejection test")
+	}
+	for _, method := range []string{"write", "readonly"} {
+		for _, form := range []string{"path", "uri"} {
+			t.Run(method+"/"+form, func(t *testing.T) {
+				ctx := context.Background()
+				root := t.TempDir()
+				literal := filepath.Join(root, "archive.db ")
+				neighbor := filepath.Join(root, "archive.db")
+				for path, value := range map[string]string{literal: "literal", neighbor: "neighbor"} {
+					uri := (&url.URL{Scheme: "file", Path: path}).String()
+					db, err := sql.Open("sqlite", uri)
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, writeErr := db.ExecContext(ctx, `create table items(value text); insert into items values(?);`, value)
+					closeErr := db.Close()
+					if writeErr != nil || closeErr != nil {
+						t.Fatalf("fixture: write=%v close=%v", writeErr, closeErr)
+					}
+				}
+				path := literal
+				if form == "uri" {
+					path = (&url.URL{Scheme: "file", Path: literal}).String()
+				}
+				var st *Store
+				var err error
+				want := "literal"
+				if method == "readonly" {
+					st, err = OpenReadOnly(ctx, path)
+				} else {
+					want = "updated"
+					st, err = Open(ctx, Options{Path: path, Schema: `update items set value='updated'`})
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer st.Close()
+				if st.Path() != path {
+					t.Errorf("Path = %q, want %q", st.Path(), path)
+				}
+				var value string
+				if err := st.DB().QueryRowContext(ctx, `select value from items`).Scan(&value); err != nil || value != want {
+					t.Errorf("selected value = %q, %v; want %q", value, err, want)
+				}
+				if err := st.Close(); err != nil {
+					t.Fatal(err)
+				}
+				uri := (&url.URL{Scheme: "file", Path: neighbor, RawQuery: "mode=ro"}).String()
+				db, err := sql.Open("sqlite", uri)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer db.Close()
+				if err := db.QueryRowContext(ctx, `select value from items`).Scan(&value); err != nil || value != "neighbor" {
+					t.Errorf("neighbor value = %q, %v; want neighbor", value, err)
+				}
+			})
+		}
+	}
+}
+
+func TestStoreRejectsAmbiguousWindowsFilesystemPaths(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Win32 path aliases")
+	}
+	for _, method := range []string{"write", "readonly"} {
+		for _, suffix := range []string{" ", "."} {
+			t.Run(method+"/"+suffix, func(t *testing.T) {
+				ctx := context.Background()
+				path := filepath.Join(t.TempDir(), "archive.db")
+				fixture, err := Open(ctx, Options{Path: path, Schema: `create table items(value text); insert into items values('retained');`})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := fixture.Close(); err != nil {
+					t.Fatal(err)
+				}
+				before, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var st *Store
+				if method == "readonly" {
+					st, err = OpenReadOnly(ctx, path+suffix)
+				} else {
+					st, err = Open(ctx, Options{Path: path + suffix, Schema: `update items set value='changed'`})
+				}
+				if st != nil {
+					st.Close()
+				}
+				if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+					t.Errorf("expected ambiguous-path rejection, got %v", err)
+				}
+				if after, err := os.ReadFile(path); err != nil || string(after) != string(before) {
+					t.Errorf("neighbor changed: bytes=%d read error=%v", len(after), err)
+				}
+			})
+		}
 	}
 }

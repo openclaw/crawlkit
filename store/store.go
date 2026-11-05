@@ -36,10 +36,13 @@ type QueryResult struct {
 	Values  []map[string]any `json:"values,omitempty"`
 }
 
+// Open accepts literal filesystem paths, :memory:, or explicit SQLite URIs.
+// On Windows, plain filesystem paths with trailing spaces or dots in a
+// component are rejected before access because Win32 can alias neighboring files.
 func Open(ctx context.Context, opts Options) (*Store, error) {
-	path := strings.TrimSpace(opts.Path)
-	if path == "" {
-		return nil, errors.New("sqlite path is required")
+	path := opts.Path
+	if err := validatePath(path); err != nil {
+		return nil, err
 	}
 	if err := ensureDBFile(path); err != nil {
 		return nil, err
@@ -84,10 +87,10 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	return store, nil
 }
 
+// OpenReadOnly accepts the same path forms as Open and opens read-only.
 func OpenReadOnly(ctx context.Context, path string) (*Store, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return nil, errors.New("sqlite path is required")
+	if err := validatePath(path); err != nil {
+		return nil, err
 	}
 	if path != ":memory:" && !strings.HasPrefix(path, "file:") {
 		if _, err := os.Stat(path); err != nil {
@@ -224,6 +227,20 @@ func QuoteIdent(name string) string {
 		panic(fmt.Sprintf("unsafe sqlite identifier: %q", name))
 	}
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+func validatePath(path string) error {
+	if path == "" {
+		return errors.New("sqlite path is required")
+	}
+	if runtime.GOOS == "windows" && path != ":memory:" && !strings.HasPrefix(path, "file:") {
+		for _, component := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+			if component != "." && component != ".." && strings.TrimRight(component, " .") != component {
+				return fmt.Errorf("sqlite path has ambiguous trailing spaces or dots on Windows: %q", component)
+			}
+		}
+	}
+	return nil
 }
 
 func writeDSN(path string) string {
