@@ -125,3 +125,14 @@ comparison). No production APIs or behavior changed.
   line passes before the fix and fails afterward. Excess lines fail both
   versions. Validate healthy rendering with the race detector, the full local
   gate, independent review and PR CI. No live archives or releases.
+
+## crawlkit: cancellation claim read errors
+
+- Require a successful token read before accepting cancellation claim release.
+  A failed read must not leave an empty token that falsely passes the assertion;
+  the pending-job count alone does not prove the claim token was cleared.
+- Preserve the real runner, cancellation, duplicate-run guard, pending count,
+  temporary SQLite queue and timing. Disposable Go overlays compare healthy
+  runs, broken reads, retained claims and both faults together before and after.
+- Validate with the race detector, full local gates, independent review and PR
+  CI. No production APIs, live archives, provider calls or releases change.

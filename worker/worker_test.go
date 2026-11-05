@@ -348,7 +348,9 @@ func TestHandlerCancellationReleasesClaim(t *testing.T) {
 	cancel()
 	eventually(t, func() bool { return r.Status().State == "stopped" })
 	var token string
-	_ = q.db.QueryRow(`select token from tasks where key='a'`).Scan(&token)
+	if e := q.db.QueryRow(`select token from tasks where key='a'`).Scan(&token); e != nil {
+		t.Fatal(e)
+	}
 	if token != "" || q.count("pending") != 1 {
 		t.Fatal("claim not released")
 	}
