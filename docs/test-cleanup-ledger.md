@@ -193,3 +193,22 @@ comparison). No production APIs or behavior changed.
   these are distinct contracts, not duplicates of filesystem path handling.
   Validate full local gates, independent P0–P3 review and exact-commit CI with
   supported downstream app compatibility. No live archives or releases.
+
+## crawlkit: SQLite freshness checks use the requested bundle
+
+- Preserve the literal database path when checking freshness. Trimming selected
+  neighboring main/WAL/SHM files, causing both missed and spurious refreshes.
+  Reuse the snapshot Windows component check; ambiguous paths return false.
+- Replace unrelated freshness assertions embedded in snapshot copying and
+  validation tests with dedicated fixed-timestamp cases: older, equal and newer
+  main/WAL/SHM files, empty/missing paths and zero cutoff. No sleeps or live
+  archives. Preserve all snapshot-specific assertions and fixtures.
+- Distinct neighboring timestamps prove literal-path selection in both
+  directions for all three files. Native Windows cases reject both filename
+  and parent-directory aliases while retaining a fresh canonical-path control.
+- Healthy race-enabled suites pass; trimming, ignored sidecars, inclusive cutoff
+  and always-fresh-for-valid-input faults all falsely pass the original suite and
+  fail the dedicated cases. One stale-bundle row replaces identical older-file
+  fixtures; equality and newer-file rows remain distinct for main/WAL/SHM.
+- Validate full local gates, independent P0–P3 review, exact-commit CI and
+  supported downstream app compatibility. No releases.

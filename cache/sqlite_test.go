@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openclaw/crawlkit/store"
 )
@@ -263,5 +264,115 @@ func TestSnapshotSQLiteRejectsAmbiguousWindowsPaths(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSQLiteModifiedAfter(t *testing.T) {
+	cutoff := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, suffix string
+		delta        time.Duration
+		want         bool
+	}{
+		{"all_older", "", -time.Hour, false},
+		{"main_equal", "", 0, false},
+		{"main_newer", "", time.Hour, true},
+		{"wal_equal", "-wal", 0, false},
+		{"wal_newer", "-wal", time.Hour, true},
+		{"shm_equal", "-shm", 0, false},
+		{"shm_newer", "-shm", time.Hour, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "archive.db")
+			for _, part := range []string{"", "-wal", "-shm"} {
+				if err := os.WriteFile(path+part, []byte("fixture"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				modified := cutoff.Add(-time.Hour)
+				if part == tc.suffix {
+					modified = cutoff.Add(tc.delta)
+				}
+				if err := os.Chtimes(path+part, modified, modified); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := SQLiteModifiedAfter(path, cutoff); got != tc.want {
+				t.Fatalf("modified after cutoff = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	t.Run("invalid", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "archive.db")
+		if err := os.WriteFile(path, []byte("fixture"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			path   string
+			cutoff time.Time
+		}{{"", cutoff}, {path, time.Time{}}, {path + ".missing", cutoff}} {
+			if SQLiteModifiedAfter(tc.path, tc.cutoff) {
+				t.Errorf("invalid modification check returned true: path=%q cutoff=%v", tc.path, tc.cutoff)
+			}
+		}
+	})
+}
+
+func TestSQLiteModifiedAfterPreservesLiteralPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Win32 aliases trailing spaces; covered by the rejection test")
+	}
+	cutoff := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	for name, suffix := range map[string]string{"main": "", "wal": "-wal", "shm": "-shm"} {
+		for _, tc := range []struct {
+			name string
+			want bool
+		}{{"literal_newer", true}, {"neighbor_newer", false}} {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				neighbor := filepath.Join(t.TempDir(), "archive.db")
+				literal := neighbor + " "
+				for _, path := range []string{literal, neighbor} {
+					if err := os.WriteFile(path+suffix, []byte("fixture"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+					modified := cutoff.Add(-time.Hour)
+					if (path == literal) == tc.want {
+						modified = cutoff.Add(time.Hour)
+					}
+					if err := os.Chtimes(path+suffix, modified, modified); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if got := SQLiteModifiedAfter(literal, cutoff); got != tc.want {
+					t.Fatalf("literal bundle modified after cutoff = %v, want %v", got, tc.want)
+				}
+			})
+		}
+	}
+}
+
+func TestSQLiteModifiedAfterRejectsWindowsAliases(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Win32 path aliases")
+	}
+	root := t.TempDir()
+	path := filepath.Join(root, "folder", "archive.db")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cutoff := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	modified := cutoff.Add(time.Hour)
+	if err := os.Chtimes(path, modified, modified); err != nil {
+		t.Fatal(err)
+	}
+	if !SQLiteModifiedAfter(path, cutoff) {
+		t.Fatal("canonical database should be newer than cutoff")
+	}
+	for _, alias := range []string{path + " ", path + ".", filepath.Join(root, "folder ", "archive.db"), filepath.Join(root, "folder.", "archive.db")} {
+		if SQLiteModifiedAfter(alias, cutoff) {
+			t.Errorf("ambiguous path selected the canonical database: %q", alias)
+		}
 	}
 }

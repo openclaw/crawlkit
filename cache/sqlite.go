@@ -38,13 +38,9 @@ func SnapshotSQLite(opts SQLiteSnapshotOptions) (SQLiteSnapshot, error) {
 	if destination == "" {
 		return SQLiteSnapshot{}, errors.New("sqlite destination dir is required")
 	}
-	if filepath.Separator == '\\' {
-		for _, path := range []string{source, destination} {
-			for _, component := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
-				if component != "." && component != ".." && strings.TrimRight(component, " .") != component {
-					return SQLiteSnapshot{}, fmt.Errorf("sqlite snapshot path has ambiguous trailing spaces or dots on Windows: %q", component)
-				}
-			}
+	for _, path := range []string{source, destination} {
+		if err := validateSQLitePath(path); err != nil {
+			return SQLiteSnapshot{}, err
 		}
 	}
 	info, err := os.Stat(source)
@@ -161,9 +157,11 @@ func publishSQLiteBundle(staged, previous, target string, copied map[string]bool
 	return false, nil
 }
 
+// SQLiteModifiedAfter reports whether path or either WAL/SHM sidecar is strictly
+// newer than cutoff. It preserves literal paths and returns false for empty paths,
+// zero cutoffs, or ambiguous trailing spaces or dots in Windows path components.
 func SQLiteModifiedAfter(path string, cutoff time.Time) bool {
-	path = strings.TrimSpace(path)
-	if path == "" || cutoff.IsZero() {
+	if path == "" || cutoff.IsZero() || validateSQLitePath(path) != nil {
 		return false
 	}
 	for _, suffix := range []string{"", "-wal", "-shm"} {
@@ -172,6 +170,17 @@ func SQLiteModifiedAfter(path string, cutoff time.Time) bool {
 		}
 	}
 	return false
+}
+
+func validateSQLitePath(path string) error {
+	if filepath.Separator == '\\' {
+		for _, component := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+			if component != "." && component != ".." && strings.TrimRight(component, " .") != component {
+				return fmt.Errorf("sqlite snapshot path has ambiguous trailing spaces or dots on Windows: %q", component)
+			}
+		}
+	}
+	return nil
 }
 
 func copyOptionalFile(source, target string, maxBytes int64) (int64, bool, error) {

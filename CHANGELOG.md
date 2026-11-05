@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve literal paths in SQLite freshness checks to prevent missed or spurious refreshes caused by neighboring files; reject ambiguous Windows paths.
+
 - Preserve literal filesystem paths when opening SQLite stores so trailing whitespace cannot select or modify a neighboring archive; reject ambiguous trailing spaces and dots in plain Windows filesystem paths.
 
 - Preserve literal source and destination paths in SQLite cache snapshots so trailing spaces cannot select or overwrite a neighboring archive; reject ambiguous trailing spaces and dots in Windows path components.
