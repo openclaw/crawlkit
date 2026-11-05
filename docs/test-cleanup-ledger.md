@@ -206,8 +206,9 @@ comparison). No production APIs or behavior changed.
 - Distinct neighboring timestamps prove literal-path selection in both
   directions for all three files. Native Windows cases reject both filename
   and parent-directory aliases while retaining a fresh canonical-path control.
-- Ten race-enabled original/dedicated outcomes: healthy suites pass; trimming,
-  ignored sidecars, inclusive cutoff and always-fresh-for-valid-input faults all
-  falsely pass the original suite and fail the dedicated cases.
+- Healthy race-enabled suites pass; trimming, ignored sidecars, inclusive cutoff
+  and always-fresh-for-valid-input faults all falsely pass the original suite and
+  fail the dedicated cases. One stale-bundle row replaces identical older-file
+  fixtures; equality and newer-file rows remain distinct for main/WAL/SHM.
 - Validate full local gates, independent P0–P3 review, exact-commit CI and
   supported downstream app compatibility. No releases.

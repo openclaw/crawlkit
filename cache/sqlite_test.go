@@ -269,31 +269,37 @@ func TestSnapshotSQLiteRejectsAmbiguousWindowsPaths(t *testing.T) {
 
 func TestSQLiteModifiedAfter(t *testing.T) {
 	cutoff := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	for name, suffix := range map[string]string{"main": "", "wal": "-wal", "shm": "-shm"} {
-		for _, tc := range []struct {
-			name  string
-			delta time.Duration
-			want  bool
-		}{{"older", -time.Hour, false}, {"equal", 0, false}, {"newer", time.Hour, true}} {
-			t.Run(name+"/"+tc.name, func(t *testing.T) {
-				path := filepath.Join(t.TempDir(), "archive.db")
-				for _, part := range []string{"", "-wal", "-shm"} {
-					if err := os.WriteFile(path+part, []byte("fixture"), 0o600); err != nil {
-						t.Fatal(err)
-					}
-					modified := cutoff.Add(-time.Hour)
-					if part == suffix {
-						modified = cutoff.Add(tc.delta)
-					}
-					if err := os.Chtimes(path+part, modified, modified); err != nil {
-						t.Fatal(err)
-					}
+	for _, tc := range []struct {
+		name, suffix string
+		delta        time.Duration
+		want         bool
+	}{
+		{"all_older", "", -time.Hour, false},
+		{"main_equal", "", 0, false},
+		{"main_newer", "", time.Hour, true},
+		{"wal_equal", "-wal", 0, false},
+		{"wal_newer", "-wal", time.Hour, true},
+		{"shm_equal", "-shm", 0, false},
+		{"shm_newer", "-shm", time.Hour, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "archive.db")
+			for _, part := range []string{"", "-wal", "-shm"} {
+				if err := os.WriteFile(path+part, []byte("fixture"), 0o600); err != nil {
+					t.Fatal(err)
 				}
-				if got := SQLiteModifiedAfter(path, cutoff); got != tc.want {
-					t.Fatalf("modified after cutoff = %v, want %v", got, tc.want)
+				modified := cutoff.Add(-time.Hour)
+				if part == tc.suffix {
+					modified = cutoff.Add(tc.delta)
 				}
-			})
-		}
+				if err := os.Chtimes(path+part, modified, modified); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := SQLiteModifiedAfter(path, cutoff); got != tc.want {
+				t.Fatalf("modified after cutoff = %v, want %v", got, tc.want)
+			}
+		})
 	}
 	t.Run("invalid", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "archive.db")
