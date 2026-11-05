@@ -115,3 +115,13 @@ comparison). No production APIs or behavior changed.
   in both versions. Healthy race-enabled rendering tests, full local gates,
   independent review and CI validate the change. No production or API changes,
   live archives, provider calls, or releases.
+
+## crawlkit: compact document preview retention
+
+- Require all 18 lines of the existing compact document preview, rather than
+  accepting any count below the ceiling. Preserve the 30-line fixture and the
+  expansion-hint assertion; no production code or rendering behavior changes.
+- Disposable post-render overlays show that missing all body lines or one body
+  line passes before the fix and fails afterward. Excess lines fail both
+  versions. Validate healthy rendering with the race detector, the full local
+  gate, independent review and PR CI. No live archives or releases.

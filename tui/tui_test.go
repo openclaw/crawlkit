@@ -2192,8 +2192,8 @@ func TestCompactDocumentDetailLimitsLongPreview(t *testing.T) {
 	if !strings.Contains(joined, "Press d for full detail") {
 		t.Fatalf("compact document detail should advertise full mode:\n%s", joined)
 	}
-	if strings.Count(joined, "preview line") > detailBodyLimit(true) {
-		t.Fatalf("compact document detail did not limit preview:\n%s", joined)
+	if got := strings.Count(joined, "preview line"); got != 18 {
+		t.Fatalf("compact document detail has %d preview lines, want 18:\n%s", got, joined)
 	}
 }
 
