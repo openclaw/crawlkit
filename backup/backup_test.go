@@ -202,11 +202,19 @@ func TestPublicBackupHelpers(t *testing.T) {
 	if err := os.WriteFile(stale, []byte("stale"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	keptPath := filepath.Join(cfg.Repo, filepath.FromSlash(entry.Path))
+	before, err := os.ReadFile(keptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := RemoveStaleShards(cfg.Repo, []ShardEntry{entry}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Fatalf("stale shard stat err = %v", err)
+	}
+	if after, err := os.ReadFile(keptPath); err != nil || string(after) != string(before) {
+		t.Fatalf("cleanup changed kept shard: %v", err)
 	}
 }
 

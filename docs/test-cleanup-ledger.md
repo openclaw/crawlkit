@@ -136,3 +136,16 @@ comparison). No production APIs or behavior changed.
   runs, broken reads, retained claims and both faults together before and after.
 - Validate with the race detector, full local gates, independent review and PR
   CI. No production APIs, live archives, provider calls or releases change.
+
+## crawlkit: stale cleanup preserves kept ciphertext
+
+- Extend the existing public backup-helper case to read the kept shard before
+  cleanup and require identical bytes afterward. Preserve its stale-file removal
+  assertion and all encryption, manifest and helper checks; add no fixture.
+- The full original backup suite falsely passes when cleanup deletes or corrupts
+  kept row-shard ciphertext. Both faults fail the strengthened case. Healthy
+  suites pass, and skipped cleanup fails the stale-file assertion in both versions:
+  eight race-enabled before/after outcomes. Production files are unchanged.
+- Validate the full library gate, independent P0–P3 review and PR CI, including
+  Windows and pinned downstream CLI comparison. No public API, live archives,
+  provider calls or releases change.
