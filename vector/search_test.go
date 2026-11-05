@@ -254,7 +254,6 @@ func TestTurboVecHelperProcess(t *testing.T) {
 	if mode == "" {
 		return
 	}
-	defer os.Exit(0)
 	if mode == "sleep" {
 		time.Sleep(time.Second)
 	}
@@ -293,6 +292,7 @@ func TestTurboVecHelperProcess(t *testing.T) {
 	if err := json.NewEncoder(os.Stdout).Encode(response); err != nil {
 		panic(err)
 	}
+	os.Exit(0)
 }
 
 func requireUnitVector(values []float32) {
