@@ -212,3 +212,18 @@ comparison). No production APIs or behavior changed.
   fixtures; equality and newer-file rows remain distinct for main/WAL/SHM.
 - Validate full local gates, independent P0–P3 review, exact-commit CI and
   supported downstream app compatibility. No releases.
+
+## crawlkit: config fixtures and complete metadata assertions
+
+- Consolidate platform fallback fixtures into unset and relative-XDG rows,
+  preserving both input contracts. Compare all path fields, including base and
+  share directories; retain legacy/new precedence and absolute-XDG cases.
+- Fill every runtime config field with a distinct nonzero value and compare the
+  complete TOML round-trip result. Require the complete token diagnostic metadata,
+  including the environment variable name rather than its value.
+- Twenty race-enabled original/final outcomes: healthy suites pass; token-value
+  exposure, missing environment name and loss of version/cache/log/share fields
+  falsely pass before and fail afterward. Database-path loss and broken relative
+  or unset XDG handling fail both versions. Production source is unchanged.
+- Validate full local gates, independent P0–P3 review and Linux/Windows PR CI
+  with pinned downstream CLI comparison. No live archives or releases.
