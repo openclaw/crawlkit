@@ -392,12 +392,7 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 	if err := EnsureRemote(ctx, opts); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("one\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, opts, "archive: seed"); err != nil || !committed {
-		t.Fatalf("seed commit = %v, %v", committed, err)
-	}
+	writeTestCommit(t, ctx, opts, "manifest.json", "one\n", "archive: seed")
 	if err := Push(ctx, opts); err != nil {
 		t.Fatal(err)
 	}
@@ -408,12 +403,7 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	localOpts := Options{RepoPath: repo, Branch: "main"}
-	if err := os.WriteFile(filepath.Join(repo, "local.txt"), []byte("local\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, localOpts, "archive: local"); err != nil || !committed {
-		t.Fatalf("local commit = %v, %v", committed, err)
-	}
+	writeTestCommit(t, ctx, localOpts, "local.txt", "local\n", "archive: local")
 	if tag, err := CreateImmutableTag(ctx, localOpts, "snapshot/local"); err != nil || tag != "snapshot/local" {
 		t.Fatalf("local tag = %q, %v", tag, err)
 	}
@@ -421,12 +411,7 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, "local-two.txt"), []byte("local two\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, localOpts, "archive: local two"); err != nil || !committed {
-		t.Fatalf("second local commit = %v, %v", committed, err)
-	}
+	writeTestCommit(t, ctx, localOpts, "local-two.txt", "local two\n", "archive: local two")
 	if tag, err := CreateImmutableTag(ctx, localOpts, "snapshot/local-two"); err != nil || tag != "snapshot/local-two" {
 		t.Fatalf("second local tag = %q, %v", tag, err)
 	}
@@ -438,12 +423,7 @@ func TestSyncForWriteRebasesUnpushedCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	peerOpts := Options{RepoPath: peer, Branch: "main"}
-	if err := os.WriteFile(filepath.Join(peer, "remote.txt"), []byte("remote\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, peerOpts, "archive: remote"); err != nil || !committed {
-		t.Fatalf("remote commit = %v, %v", committed, err)
-	}
+	writeTestCommit(t, ctx, peerOpts, "remote.txt", "remote\n", "archive: remote")
 	if err := Push(ctx, peerOpts); err != nil {
 		t.Fatal(err)
 	}
@@ -499,12 +479,7 @@ func TestSyncForWriteRetargetsTagsBeforeConflictedStashRestore(t *testing.T) {
 	if err := EnsureRemote(ctx, seedOpts); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("base\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, seedOpts, "seed"); err != nil || !committed {
-		t.Fatalf("seed commit = %v, %v", committed, err)
-	}
+	writeTestCommit(t, ctx, seedOpts, "manifest.json", "base\n", "seed")
 	if err := Push(ctx, seedOpts); err != nil {
 		t.Fatal(err)
 	}
@@ -514,12 +489,7 @@ func TestSyncForWriteRetargetsTagsBeforeConflictedStashRestore(t *testing.T) {
 		}
 	}
 	localOpts := Options{RepoPath: repo, Branch: "main"}
-	if err := os.WriteFile(filepath.Join(repo, "local.txt"), []byte("local\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, localOpts, "local snapshot"); err != nil || !committed {
-		t.Fatalf("local commit = %v, %v", committed, err)
-	}
+	writeTestCommit(t, ctx, localOpts, "local.txt", "local\n", "local snapshot")
 	if tag, err := CreateImmutableTag(ctx, localOpts, "snapshot/conflict"); err != nil || tag != "snapshot/conflict" {
 		t.Fatalf("local tag = %q, %v", tag, err)
 	}
@@ -531,12 +501,7 @@ func TestSyncForWriteRetargetsTagsBeforeConflictedStashRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	peerOpts := Options{RepoPath: peer, Branch: "main"}
-	if err := os.WriteFile(filepath.Join(peer, "manifest.json"), []byte("remote update\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, peerOpts, "remote update"); err != nil || !committed {
-		t.Fatalf("remote commit = %v, %v", committed, err)
-	}
+	writeTestCommit(t, ctx, peerOpts, "manifest.json", "remote update\n", "remote update")
 	if err := Push(ctx, peerOpts); err != nil {
 		t.Fatal(err)
 	}
@@ -578,12 +543,7 @@ func TestPushSnapshotRebasesAndRetargetsTag(t *testing.T) {
 			if err := EnsureRemote(ctx, seedOpts); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("seed\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if committed, err := Commit(ctx, seedOpts, "seed"); err != nil || !committed {
-				t.Fatalf("seed commit = %v, %v", committed, err)
-			}
+			writeTestCommit(t, ctx, seedOpts, "manifest.json", "seed\n", "seed")
 			if err := Push(ctx, seedOpts); err != nil {
 				t.Fatal(err)
 			}
@@ -593,22 +553,12 @@ func TestPushSnapshotRebasesAndRetargetsTag(t *testing.T) {
 				}
 			}
 			publisherOpts := Options{RepoPath: publisher, Branch: "main"}
-			if err := os.WriteFile(filepath.Join(publisher, "manifest.json"), []byte("publisher\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if committed, err := Commit(ctx, publisherOpts, "publisher snapshot"); err != nil || !committed {
-				t.Fatalf("publisher commit = %v, %v", committed, err)
-			}
+			writeTestCommit(t, ctx, publisherOpts, "manifest.json", "publisher\n", "publisher snapshot")
 			if tag, err := CreateImmutableTag(ctx, publisherOpts, "snapshot/race"); err != nil || tag != "snapshot/race" {
 				t.Fatalf("publisher tag = %q, %v", tag, err)
 			}
 			peerOpts := Options{RepoPath: peer, Branch: "main"}
-			if err := os.WriteFile(filepath.Join(peer, "peer.txt"), []byte("peer\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if committed, err := Commit(ctx, peerOpts, "peer update"); err != nil || !committed {
-				t.Fatalf("peer commit = %v, %v", committed, err)
-			}
+			writeTestCommit(t, ctx, peerOpts, "peer.txt", "peer\n", "peer update")
 			if err := Push(ctx, peerOpts); err != nil {
 				t.Fatal(err)
 			}
@@ -657,25 +607,15 @@ func TestSyncCurrentForWritePreservesLegacyBranch(t *testing.T) {
 	if err := run(ctx, seed, "git", "checkout", "-B", "legacy"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(seed, "manifest.json"), []byte("one\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	seedOpts := Options{RepoPath: seed, Branch: "legacy"}
-	if committed, err := Commit(ctx, seedOpts, "archive: seed"); err != nil || !committed {
-		t.Fatalf("seed commit = %v, %v", committed, err)
-	}
+	writeTestCommit(t, ctx, seedOpts, "manifest.json", "one\n", "archive: seed")
 	if err := PushAtomic(ctx, seedOpts, "HEAD"); err != nil {
 		t.Fatal(err)
 	}
 	if err := run(ctx, "", "git", "clone", "--branch", "legacy", remote, repo); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(seed, "remote.txt"), []byte("remote\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, seedOpts, "archive: remote"); err != nil || !committed {
-		t.Fatalf("remote commit = %v, %v", committed, err)
-	}
+	writeTestCommit(t, ctx, seedOpts, "remote.txt", "remote\n", "archive: remote")
 	if err := PushAtomic(ctx, seedOpts, "HEAD"); err != nil {
 		t.Fatal(err)
 	}
@@ -692,22 +632,12 @@ func TestSyncCurrentForWritePreservesLegacyBranch(t *testing.T) {
 	if strings.TrimSpace(branch) != "legacy" {
 		t.Fatalf("branch = %q, want legacy", strings.TrimSpace(branch))
 	}
-	if err := os.WriteFile(filepath.Join(repo, "local-snapshot.txt"), []byte("local\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	localOpts := Options{RepoPath: repo, Branch: "main"}
-	if committed, err := Commit(ctx, localOpts, "archive: local snapshot"); err != nil || !committed {
-		t.Fatalf("local snapshot commit = %v, %v", committed, err)
-	}
+	writeTestCommit(t, ctx, localOpts, "local-snapshot.txt", "local\n", "archive: local snapshot")
 	if tag, err := CreateImmutableTag(ctx, localOpts, "snapshot/legacy"); err != nil || tag != "snapshot/legacy" {
 		t.Fatalf("legacy snapshot tag = %q, %v", tag, err)
 	}
-	if err := os.WriteFile(filepath.Join(seed, "remote-two.txt"), []byte("remote two\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if committed, err := Commit(ctx, seedOpts, "archive: remote two"); err != nil || !committed {
-		t.Fatalf("second remote commit = %v, %v", committed, err)
-	}
+	writeTestCommit(t, ctx, seedOpts, "remote-two.txt", "remote two\n", "archive: remote two")
 	if err := PushAtomic(ctx, seedOpts, "HEAD"); err != nil {
 		t.Fatal(err)
 	}

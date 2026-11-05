@@ -8,6 +8,16 @@ import (
 	"testing"
 )
 
+func writeTestCommit(t *testing.T, ctx context.Context, opts Options, name, contents, message string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(opts.RepoPath, name), []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, opts, message); err != nil || !committed {
+		t.Fatalf("commit %q = %v, %v", message, committed, err)
+	}
+}
+
 func TestPullCurrentExplicitRemotePreservesLocalHistory(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -19,16 +29,7 @@ func TestPullCurrentExplicitRemotePreservesLocalHistory(t *testing.T) {
 	if err := EnsureRepo(ctx, seed); err != nil {
 		t.Fatal(err)
 	}
-	writeCommit := func(opts Options, name, value string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(opts.RepoPath, name), []byte(value), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if changed, err := Commit(ctx, opts, value); err != nil || !changed {
-			t.Fatalf("commit: %v, %v", changed, err)
-		}
-	}
-	writeCommit(seed, "base", "base")
+	writeTestCommit(t, ctx, seed, "base", "base", "base")
 	if err := Push(ctx, seed); err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +37,7 @@ func TestPullCurrentExplicitRemotePreservesLocalHistory(t *testing.T) {
 	if err := PullCurrent(ctx, opts); err != nil {
 		t.Fatal(err)
 	}
-	writeCommit(seed, "remote", "new remote")
+	writeTestCommit(t, ctx, seed, "remote", "new remote", "new remote")
 	if err := Push(ctx, seed); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +47,7 @@ func TestPullCurrentExplicitRemotePreservesLocalHistory(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(opts.RepoPath, "remote")); err != nil {
 		t.Fatal("remote update not pulled")
 	}
-	writeCommit(opts, "local", "unpublished")
+	writeTestCommit(t, ctx, opts, "local", "unpublished", "unpublished")
 	before, err := output(ctx, opts.RepoPath, "git", "rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +59,7 @@ func TestPullCurrentExplicitRemotePreservesLocalHistory(t *testing.T) {
 	if err != nil || after != before {
 		t.Fatalf("ahead HEAD changed: %q -> %q, %v", before, after, err)
 	}
-	writeCommit(seed, "diverged", "divergent remote")
+	writeTestCommit(t, ctx, seed, "diverged", "divergent remote", "divergent remote")
 	if err := Push(ctx, seed); err != nil {
 		t.Fatal(err)
 	}
