@@ -149,3 +149,16 @@ comparison). No production APIs or behavior changed.
 - Validate the full library gate, independent P0–P3 review and PR CI, including
   Windows and pinned downstream CLI comparison. No public API, live archives,
   provider calls or releases change.
+
+## crawlkit: duplicate cache path rejection
+
+- Remove the standalone escaped-name test. The existing non-basename table
+  already covers the same path, requires the validation diagnostic, preserves
+  an existing outside file and rejects cache debris. Keep that case unchanged.
+- Nine race-enabled before/after outcomes confirm both cases reject a bypassed
+  name guard. Deleting the outside file while returning the validation error
+  falsely passes the removed case but fails the exact shared row in the retained
+  case, before and after deletion. Healthy variants pass; production is unchanged.
+- Validate the full library gate, uncached Go suite, independent P0–P3 review
+  and PR CI with Windows and pinned downstream CLI comparison. No public API,
+  fixture, live archive, provider call or release changes.
