@@ -24,17 +24,28 @@ type SQLiteSnapshot struct {
 }
 
 // SnapshotSQLite copies a SQLite database and its optional WAL/SHM sidecars.
+// SourcePath and DestinationDir retain literal whitespace. Ambiguous trailing
+// spaces or dots in Windows path components are rejected.
 // The caller owns DestinationDir and decides whether snapshots are temporary
 // or retained. The caller must exclude concurrent destination readers/writers
 // during replacement; publishing three fixed filenames is not atomic.
 func SnapshotSQLite(opts SQLiteSnapshotOptions) (SQLiteSnapshot, error) {
-	source := strings.TrimSpace(opts.SourcePath)
+	source := opts.SourcePath
 	if source == "" {
 		return SQLiteSnapshot{}, errors.New("sqlite source path is required")
 	}
-	destination := strings.TrimSpace(opts.DestinationDir)
+	destination := opts.DestinationDir
 	if destination == "" {
 		return SQLiteSnapshot{}, errors.New("sqlite destination dir is required")
+	}
+	if filepath.Separator == '\\' {
+		for _, path := range []string{source, destination} {
+			for _, component := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+				if component != "." && component != ".." && strings.TrimRight(component, " .") != component {
+					return SQLiteSnapshot{}, fmt.Errorf("sqlite snapshot path has ambiguous trailing spaces or dots on Windows: %q", component)
+				}
+			}
+		}
 	}
 	info, err := os.Stat(source)
 	if err != nil {

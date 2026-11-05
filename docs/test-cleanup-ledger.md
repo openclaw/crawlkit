@@ -162,3 +162,19 @@ comparison). No production APIs or behavior changed.
 - Validate the full library gate, uncached Go suite, independent P0–P3 review
   and PR CI with Windows and pinned downstream CLI comparison. No public API,
   fixture, live archive, provider call or release changes.
+
+## crawlkit: SQLite snapshots preserve literal paths
+
+- Preserve literal source and destination paths instead of trimming whitespace.
+  The original suite missed selection of a neighboring database and replacement
+  of a neighboring archive. Reject trailing spaces and dots in Windows path
+  components before filesystem access, following the existing snapshot policy.
+- New temporary SQLite fixtures contain distinct rows for neighboring sources;
+  destination checks require both the intended database contents and unchanged
+  neighboring bytes. Reintroducing either trim independently fails its regression
+  case; healthy race-enabled tests pass. Native Windows cases require ambiguous
+  path rejection while preserving both canonical files.
+- Validate the full library gate, uncached Go suite, independent P0–P3 review,
+  PR CI and supported downstream compatibility checks. No live archives, provider
+  calls or releases. The separate store path-normalization boundary remains a
+  follow-up.

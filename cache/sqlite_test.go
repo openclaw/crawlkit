@@ -2,8 +2,12 @@ package cache
 
 import (
 	"context"
+	"database/sql"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/openclaw/crawlkit/store"
@@ -159,6 +163,103 @@ func TestSnapshotSQLitePreservesExistingAliasCompatibility(t *testing.T) {
 				after, err := os.Stat(source)
 				if err != nil || !os.SameFile(before, after) {
 					t.Fatalf("distinct source inode replaced: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestSnapshotSQLitePreservesLiteralPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Win32 aliases trailing spaces; covered by the rejection test")
+	}
+	for _, part := range []string{"source", "destination"} {
+		t.Run(part, func(t *testing.T) {
+			ctx := context.Background()
+			root := t.TempDir()
+			sourceName, destinationName := "source.db", "capture"
+			if part == "source" {
+				sourceName += " "
+			} else {
+				destinationName += " "
+			}
+			fixtureNames := []string{sourceName}
+			if part == "source" {
+				fixtureNames = append(fixtureNames, "source.db")
+			}
+			for _, name := range fixtureNames {
+				uri := (&url.URL{Scheme: "file", Path: filepath.Join(root, name)}).String()
+				db, err := sql.Open("sqlite", uri)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, writeErr := db.ExecContext(ctx, `create table items(value text); insert into items values(?);`, name)
+				closeErr := db.Close()
+				if writeErr != nil || closeErr != nil {
+					t.Fatalf("fixture database: write=%v close=%v", writeErr, closeErr)
+				}
+			}
+			source := filepath.Join(root, sourceName)
+			destination := filepath.Join(root, destinationName)
+			neighbor := filepath.Join(root, "capture", "archive.db")
+			if part == "destination" {
+				if err := os.MkdirAll(filepath.Dir(neighbor), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(neighbor, []byte("preserved neighbor"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			snap, err := SnapshotSQLite(SQLiteSnapshotOptions{SourcePath: source, DestinationDir: destination, Name: "archive.db"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantPath := filepath.Join(destination, "archive.db")
+			if snap.SourcePath != source || snap.Path != wantPath {
+				t.Errorf("snapshot paths = %q, %q; want %q, %q", snap.SourcePath, snap.Path, source, wantPath)
+			}
+			if part == "destination" {
+				if body, err := os.ReadFile(neighbor); err != nil || string(body) != "preserved neighbor" {
+					t.Errorf("neighbor changed: bytes=%d read error=%v", len(body), err)
+				}
+			}
+			ro, err := store.OpenReadOnly(ctx, wantPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ro.Close()
+			var value string
+			if err := ro.DB().QueryRowContext(ctx, `select value from items`).Scan(&value); err != nil || value != sourceName {
+				t.Fatalf("captured value = %q, %v; want %q", value, err, sourceName)
+			}
+		})
+	}
+}
+
+func TestSnapshotSQLiteRejectsAmbiguousWindowsPaths(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Win32 path aliases")
+	}
+	for _, paths := range [][2]string{{"source.db ", "capture"}, {"source.db.", "capture"}, {"source.db", "capture "}, {"source.db", "capture."}} {
+		t.Run(paths[0]+"_"+paths[1], func(t *testing.T) {
+			root := t.TempDir()
+			source := filepath.Join(root, "source.db")
+			target := filepath.Join(root, "capture", "archive.db")
+			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{source, target} {
+				if err := os.WriteFile(path, []byte("preserved"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := SnapshotSQLite(SQLiteSnapshotOptions{SourcePath: filepath.Join(root, paths[0]), DestinationDir: filepath.Join(root, paths[1]), Name: "archive.db"})
+			if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+				t.Errorf("expected ambiguous-path rejection, got %v", err)
+			}
+			for _, path := range []string{source, target} {
+				if body, err := os.ReadFile(path); err != nil || string(body) != "preserved" {
+					t.Errorf("neighbor changed: bytes=%d read error=%v", len(body), err)
 				}
 			}
 		})

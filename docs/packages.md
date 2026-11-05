@@ -14,6 +14,10 @@ text, including whitespace. An empty name uses the source basename. Paths and
 parent-directory components are rejected before copying so captures stay inside
 `CacheDir`.
 
+`cache.SnapshotSQLite` preserves literal `SourcePath` and `DestinationDir` paths,
+including whitespace. On Windows, path components ending in spaces or dots are
+rejected before access because Win32 can alias them to neighboring paths.
+
 `cache.CopyStableFiles` copies files in the caller's order into a private directory (0700 on Unix; a protected, current-user-only ACL on Windows) and returns the copies plus an idempotent cleanup that also runs on error and context cancel. Close open copies before final cleanup; if the OS blocks deletion, call cleanup again after releasing the handles. `StableOptions` sets the attempt count (default 5), settle and retry waits, a size bound, a free-space check, `AllowMissing` for stores that delete files mid-copy, and a `Verify` callback. File order and store-specific validation stay with the caller. A stat check cannot see a write that changes neither size nor modification time, so use `Settle` and `Verify` where the store needs them.
 
 A positive `MaxFileBytes` bounds each captured source file, including SQLite

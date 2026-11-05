@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve literal source and destination paths in SQLite cache snapshots so trailing spaces cannot select or overwrite a neighboring archive; reject ambiguous trailing spaces and dots in Windows path components.
+
 - Update the indirect x/crypto dependency to remove the retired OpenPGP package flagged by GO-2026-5932; Crawlkit does not import that package.
 
 - Update SQLite to v1.61.1 while retaining its required libc v1.79.0 runtime and the Go 1.27.0 minimum.
