@@ -141,6 +141,14 @@ func eventually(t *testing.T, f func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 }
+func waitForHandler(t *testing.T, started <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("handler did not start")
+	}
+}
 func run(t *testing.T, q *testQueue, h Handler[string, string], opts Options) (*Runner[string, string], context.CancelFunc) {
 	t.Helper()
 	r, e := New[string, string](q, h, opts)
@@ -279,7 +287,7 @@ func TestFreshnessWhileCatchupAndSlowWork(t *testing.T) {
 		}
 		return upper(ctx, j)
 	}, opts)
-	<-started
+	waitForHandler(t, started)
 	before := time.Now()
 	q.put(t, "fresh", "1", "new", Fresh)
 	r.Notify()
@@ -333,7 +341,7 @@ func TestHandlerCancellationReleasesClaim(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}, fastOpts())
-	<-entered
+	waitForHandler(t, entered)
 	if e := r.Run(context.Background()); e == nil {
 		t.Fatal("allowed duplicate runner")
 	}
@@ -354,11 +362,15 @@ func TestInputEditDuringHandlerDiscardsOldResult(t *testing.T) {
 	r, _ := run(t, q, func(ctx context.Context, j []Job[string]) ([]string, error) {
 		if once.CompareAndSwap(false, true) {
 			close(entered)
-			<-proceed
+			select {
+			case <-proceed:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 		return upper(ctx, j)
 	}, fastOpts())
-	<-entered
+	waitForHandler(t, entered)
 	q.put(t, "a", "2", "new", Fresh)
 	r.Notify()
 	close(proceed)
@@ -455,7 +467,7 @@ func TestIndependentTaskKinds(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}, fastOpts())
-	<-entered
+	waitForHandler(t, entered)
 	opts := fastOpts()
 	opts.Kind = "document_hash"
 	other, _ := run(t, available, upper, opts)
