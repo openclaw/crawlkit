@@ -91,3 +91,15 @@ comparison). No production APIs or behavior changed.
   the change, then verify the targeted failure and clean shutdown afterward.
   Validate with the full local gate, independent review, and PR CI; no
   production code, exported APIs, live archives, or releases change.
+
+## crawlkit: vector helper process failure status
+
+- Move the helper's success exit from a defer to its normal completion path.
+  Panics must fail the helper process, including after it writes valid JSON;
+  deferred success previously concealed those failures from the parent test.
+- Preserve every bridge request check, canned response, mode, and test body.
+  Healthy completion still exits before the test runner can append output.
+- A temporary post-response panic leaves the existing bridge test green before
+  the fix and fails it afterward. Validate healthy bridge cases with the race
+  detector, full local gates, independent review, and CI. No production APIs,
+  live archives, provider calls, or releases change.
