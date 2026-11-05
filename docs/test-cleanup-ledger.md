@@ -78,3 +78,16 @@ comparison). No production APIs or behavior changed.
   typed HTTP 400 errors without EOF. Validate with race-enabled probes, full
   local gates, independent review, and PR CI; no production/API changes, live
   archives, credentials, or releases.
+
+## crawlkit: worker fixture phase waits
+
+- Bound four handler-start waits using the same ten-second budget as the
+  existing eventual assertions. A missing handler now fails at the waiting
+  test with a useful diagnostic instead of hanging until the suite timeout.
+- Let the paused input-edit handler observe cancellation so test cleanup can
+  stop its runner after a setup failure. Keep all queue, freshness, revision,
+  cancellation, and independent-kind assertions and synthetic SQLite fixtures.
+- Temporary Go overlays reproduce the global timeout and stuck cleanup before
+  the change, then verify the targeted failure and clean shutdown afterward.
+  Validate with the full local gate, independent review, and PR CI; no
+  production code, exported APIs, live archives, or releases change.
