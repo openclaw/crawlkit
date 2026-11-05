@@ -627,12 +627,12 @@ func TestChatDetailFallsBackToConversationWindow(t *testing.T) {
 	})
 	m.selectItemIndex(1)
 	joined := stripANSI(strings.Join(m.detailLinesForWidth(m.items[1], 60), "\n"))
-	for _, want := range []string{"Conversation 1-3/3", "amy", "before", "> bob", "selected", "cam", "after"} {
+	for _, want := range []string{"Selected Message", "Conversation 1-3/3", "amy", "before", "> bob", "selected", "cam", "after"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("conversation detail missing %q:\n%s", want, joined)
 		}
 	}
-	if strings.Index(joined, "Message") > strings.Index(joined, "Conversation 1-3/3") {
+	if strings.Index(joined, "Selected Message") > strings.Index(joined, "Conversation 1-3/3") {
 		t.Fatalf("selected message should appear before conversation context:\n%s", joined)
 	}
 }
@@ -2206,7 +2206,7 @@ func TestDocumentDetailSeparatesProviderAndSource(t *testing.T) {
 		Fields: map[string]string{"source": "desktop", "zeta": "last", "alpha": "first"},
 	}.ItemForLayout(LayoutDocument)
 	joined := strings.Join(documentDetailLinesForWidth(item, 1000, false), "\n")
-	for _, want := range []string{"provider: notion", "source: desktop"} {
+	for _, want := range []string{"provider: notion", "source: desktop", "alpha: first", "zeta: last"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("document detail missing %q:\n%s", want, joined)
 		}
