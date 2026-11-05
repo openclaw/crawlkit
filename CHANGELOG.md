@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Update the indirect x/crypto dependency to remove the retired OpenPGP package flagged by GO-2026-5932; Crawlkit does not import that package.
+
+- Update SQLite to v1.61.1 while retaining its required libc v1.79.0 runtime and the Go 1.27.0 minimum.
 - Run pinned downstream compatibility checks alongside library validation to shorten CI feedback without skipping either gate.
 
 - Keep weekly main CodeQL scans instead of repeating analysis on every main push, retain every pull-request scan, and add independently scheduled manual full scans.
