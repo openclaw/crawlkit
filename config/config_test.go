@@ -138,55 +138,35 @@ func TestPlatformDefaultPathsUseXDGDirs(t *testing.T) {
 }
 
 func TestPlatformDefaultPathsUsePlatformFallbacks(t *testing.T) {
-	home := t.TempDir()
-	configHome, dataHome, cacheHome, stateHome := defaultPlatformTestDirs(home)
-	setTestHome(t, home)
-	clearXDGEnv(t)
+	for _, mode := range []string{"unset", "relative"} {
+		t.Run(mode, func(t *testing.T) {
+			home := t.TempDir()
+			configHome, dataHome, cacheHome, stateHome := defaultPlatformTestDirs(home)
+			setTestHome(t, home)
+			clearXDGEnv(t)
+			if mode == "relative" {
+				t.Setenv("XDG_CONFIG_HOME", "relative-config")
+				t.Setenv("XDG_DATA_HOME", "relative-data")
+				t.Setenv("XDG_CACHE_HOME", "relative-cache")
+				t.Setenv("XDG_STATE_HOME", "relative-state")
+			}
 
-	app := App{Name: "thingcrawl", PlatformDirs: true}
-	paths, err := app.DefaultPaths()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if paths.ConfigPath != filepath.Join(configHome, "thingcrawl", "config.toml") {
-		t.Fatalf("config path = %q", paths.ConfigPath)
-	}
-	if paths.DBPath != filepath.Join(dataHome, "thingcrawl", "thingcrawl.db") {
-		t.Fatalf("db path = %q", paths.DBPath)
-	}
-	if paths.CacheDir != filepath.Join(cacheHome, "thingcrawl") {
-		t.Fatalf("cache dir = %q", paths.CacheDir)
-	}
-	if paths.LogDir != filepath.Join(stateHome, "thingcrawl", "logs") {
-		t.Fatalf("log dir = %q", paths.LogDir)
-	}
-}
-
-func TestPlatformDefaultPathsIgnoreRelativeXDGDirs(t *testing.T) {
-	home := t.TempDir()
-	configHome, dataHome, cacheHome, stateHome := defaultPlatformTestDirs(home)
-	setTestHome(t, home)
-	t.Setenv("XDG_CONFIG_HOME", "relative-config")
-	t.Setenv("XDG_DATA_HOME", "relative-data")
-	t.Setenv("XDG_CACHE_HOME", "relative-cache")
-	t.Setenv("XDG_STATE_HOME", "relative-state")
-
-	app := App{Name: "thingcrawl", PlatformDirs: true}
-	paths, err := app.DefaultPaths()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if paths.ConfigPath != filepath.Join(configHome, "thingcrawl", "config.toml") {
-		t.Fatalf("config path = %q", paths.ConfigPath)
-	}
-	if paths.DBPath != filepath.Join(dataHome, "thingcrawl", "thingcrawl.db") {
-		t.Fatalf("db path = %q", paths.DBPath)
-	}
-	if paths.CacheDir != filepath.Join(cacheHome, "thingcrawl") {
-		t.Fatalf("cache dir = %q", paths.CacheDir)
-	}
-	if paths.LogDir != filepath.Join(stateHome, "thingcrawl", "logs") {
-		t.Fatalf("log dir = %q", paths.LogDir)
+			paths, err := (App{Name: "thingcrawl", PlatformDirs: true}).DefaultPaths()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := Paths{
+				BaseDir:    filepath.Join(dataHome, "thingcrawl"),
+				ConfigPath: filepath.Join(configHome, "thingcrawl", "config.toml"),
+				DBPath:     filepath.Join(dataHome, "thingcrawl", "thingcrawl.db"),
+				CacheDir:   filepath.Join(cacheHome, "thingcrawl"),
+				LogDir:     filepath.Join(stateHome, "thingcrawl", "logs"),
+				ShareDir:   filepath.Join(dataHome, "thingcrawl", "share"),
+			}
+			if paths != want {
+				t.Fatalf("paths = %+v, want %+v", paths, want)
+			}
+		})
 	}
 }
 
@@ -359,7 +339,13 @@ func defaultPlatformTestDirs(home string) (configHome, dataHome, cacheHome, stat
 func TestRuntimeConfigRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	cfg := RuntimeConfig{Version: 1, DBPath: filepath.Join(dir, "x.db")}
+	cfg := RuntimeConfig{
+		Version:  1,
+		DBPath:   filepath.Join(dir, "x.db"),
+		CacheDir: filepath.Join(dir, "cache"),
+		LogDir:   filepath.Join(dir, "logs"),
+		ShareDir: filepath.Join(dir, "share"),
+	}
 	if err := WriteTOML(path, cfg, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -375,8 +361,8 @@ func TestRuntimeConfigRoundTrip(t *testing.T) {
 	if err := LoadTOML(path, &loaded); err != nil {
 		t.Fatal(err)
 	}
-	if loaded.DBPath != cfg.DBPath {
-		t.Fatalf("loaded db path = %q", loaded.DBPath)
+	if loaded != cfg {
+		t.Fatalf("loaded config = %+v, want %+v", loaded, cfg)
 	}
 }
 
@@ -415,7 +401,8 @@ func TestRuntimeDefaultsFillAndCreateDirs(t *testing.T) {
 func TestTokenDiagnosticDoesNotExposeValue(t *testing.T) {
 	t.Setenv("SECRET_TOKEN", "super-secret")
 	got := TokenDiagnosticForEnv("SECRET_TOKEN")
-	if !got.Present || got.Source != "env" {
-		t.Fatalf("diagnostic = %+v", got)
+	want := TokenDiagnostic{Env: "SECRET_TOKEN", Present: true, Source: "env"}
+	if got != want {
+		t.Fatalf("diagnostic = %+v, want %+v", got, want)
 	}
 }
