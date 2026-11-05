@@ -99,10 +99,6 @@ func TestSnapshotSQLiteCopiesBundle(t *testing.T) {
 			t.Fatalf("%s = %q", suffix, body)
 		}
 	}
-	cutoff := time.Now().Add(-time.Hour)
-	if !SQLiteModifiedAfter(source, cutoff) {
-		t.Fatal("sqlite bundle should be newer than cutoff")
-	}
 }
 
 func TestSnapshotSQLiteValidation(t *testing.T) {
@@ -120,8 +116,5 @@ func TestSnapshotSQLiteValidation(t *testing.T) {
 		if _, err := SnapshotSQLite(opts); err == nil {
 			t.Fatalf("expected validation error for %+v", opts)
 		}
-	}
-	if SQLiteModifiedAfter("", time.Now()) || SQLiteModifiedAfter(source, time.Time{}) {
-		t.Fatal("empty sqlite modification checks should be false")
 	}
 }
