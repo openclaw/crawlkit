@@ -103,3 +103,15 @@ comparison). No production APIs or behavior changed.
   the fix and fails it afterward. Validate healthy bridge cases with the race
   detector, full local gates, independent review, and CI. No production APIs,
   live archives, provider calls, or releases change.
+
+## crawlkit: ordering assertions require rendered content
+
+- Require the selected-message heading and both sorted document fields before
+  checking their order. Use the complete heading when locating the selected
+  message; a missing string previously returned -1 and passed the comparison.
+- Preserve both rendering fixtures and all existing content/order assertions.
+  Disposable post-render overlays show that a missing heading, first field or
+  both fields passes before the fix and fails afterward; reversed fields fail
+  in both versions. Healthy race-enabled rendering tests, full local gates,
+  independent review and CI validate the change. No production or API changes,
+  live archives, provider calls, or releases.
