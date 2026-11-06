@@ -1,0 +1,1 @@
+{"type":"object","properties":{"cursor":{"type":"string","maxLength":87423}},"required":["cursor"],"additionalProperties":false}

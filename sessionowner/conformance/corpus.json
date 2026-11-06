@@ -1,0 +1,238 @@
+[
+  {
+    "name": "inspect",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"inspect\"}",
+    "want": true
+  },
+  {
+    "name": "read",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":null}",
+    "want": true
+  },
+  {
+    "name": "write",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.write\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":\"approval-1\"}",
+    "want": true
+  },
+  {
+    "name": "recover-new",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"recover\",\"mode\":\"new\",\"expectedGeneration\":\"epoch-1\",\"cause\":\"expired_session\",\"rejectedRequestId\":\"rejected-1\",\"recoveryAuthorizationRef\":\"policy-1\"}",
+    "want": true
+  },
+  {
+    "name": "recover-resume",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"recover\",\"mode\":\"resume\",\"expectedGeneration\":\"epoch-1\",\"claimId\":\"claim-1\",\"recoveryAuthorizationRef\":\"policy-1\"}",
+    "want": true
+  },
+  {
+    "name": "cancel",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"cancel\",\"targetRequestId\":\"request-0\",\"reason\":\"caller_request\"}",
+    "want": true
+  },
+  {
+    "name": "unknown-unexpected",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"inspect\",\"unexpected\":\"x\"}",
+    "want": false
+  },
+  {
+    "name": "unknown-deadlineUnixMs",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"inspect\",\"deadlineUnixMs\":123}",
+    "want": false
+  },
+  {
+    "name": "unknown-callerId",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"inspect\",\"callerId\":\"attacker\"}",
+    "want": false
+  },
+  {
+    "name": "offset",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000+00:00\",\"kind\":\"inspect\"}",
+    "want": false
+  },
+  {
+    "name": "invalid-date",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-02-30T03:04:05.000Z\",\"kind\":\"inspect\"}",
+    "want": false
+  },
+  {
+    "name": "no-millis",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05Z\",\"kind\":\"inspect\"}",
+    "want": false
+  },
+  {
+    "name": "year-zero",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"0000-01-01T00:00:00.000Z\",\"kind\":\"inspect\"}",
+    "want": false
+  },
+  {
+    "name": "unknown-version",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/2\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"inspect\"}",
+    "want": false
+  },
+  {
+    "name": "wrong-binding",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"other\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"inspect\"}",
+    "want": false
+  },
+  {
+    "name": "missing-null",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"}}",
+    "want": false
+  },
+  {
+    "name": "read-approval-escalation",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":\"approval\"}",
+    "want": false
+  },
+  {
+    "name": "write-missing-approval",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.write\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":null}",
+    "want": false
+  },
+  {
+    "name": "target-extra",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"x\",\"url\":\"https://invalid.example\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":null}",
+    "want": false
+  },
+  {
+    "name": "arg-code",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\",\"code\":\"x\"},\"confirmationRef\":null}",
+    "want": false
+  },
+  {
+    "name": "resume-new-fields",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"recover\",\"mode\":\"resume\",\"expectedGeneration\":\"epoch-1\",\"claimId\":\"claim-1\",\"recoveryAuthorizationRef\":\"policy-1\",\"cause\":\"expired_session\"}",
+    "want": false
+  },
+  {
+    "name": "new-missing-rejection",
+    "plane": "request",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"recover\",\"mode\":\"new\",\"expectedGeneration\":\"epoch-1\",\"cause\":\"expired_session\",\"rejectedRequestId\":null,\"recoveryAuthorizationRef\":\"policy-1\"}",
+    "want": false
+  },
+  {
+    "name": "duplicate-key",
+    "plane": "json",
+    "wire": "{\"a\":1,\"a\":2}",
+    "want": false
+  },
+  {
+    "name": "escaped-duplicate",
+    "plane": "json",
+    "wire": "{\"a\":1,\"\\u0061\":2}",
+    "want": false
+  },
+  {
+    "name": "unpaired-high",
+    "plane": "json",
+    "wire": "{\"a\":\"\\ud800\"}",
+    "want": false
+  },
+  {
+    "name": "unpaired-low",
+    "plane": "json",
+    "wire": "{\"a\":\"\\udfff\"}",
+    "want": false
+  },
+  {
+    "name": "surrogate-pair",
+    "plane": "json",
+    "wire": "{\"a\":\"\\ud83d\\ude00\"}",
+    "want": true
+  },
+  {
+    "name": "trailing",
+    "plane": "json",
+    "wire": "{}{}",
+    "want": false
+  },
+  {
+    "name": "nonfinite",
+    "plane": "json",
+    "wire": "{\"a\":1e999}",
+    "want": false
+  },
+  {
+    "name": "invalid-utf8",
+    "plane": "json",
+    "wireHex": "ff",
+    "want": false
+  },
+  {
+    "name": "performed",
+    "plane": "response",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"kind\":\"performed\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"acceptedGeneration\":\"epoch-1\",\"finalGeneration\":\"epoch-1\",\"stateRevision\":\"1\",\"receiptRef\":\"receipt-1\",\"certainty\":\"completed\",\"nextAction\":\"none\",\"retryNotBefore\":null,\"operationId\":\"fixture.read\",\"operationVersion\":1,\"result\":{\"value\":\"ordinary public output\"}}",
+    "want": true,
+    "request": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":null}"
+  },
+  {
+    "name": "uint64-overflow",
+    "plane": "response",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"kind\":\"performed\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"acceptedGeneration\":\"epoch-1\",\"finalGeneration\":\"epoch-1\",\"stateRevision\":\"18446744073709551616\",\"receiptRef\":\"receipt-1\",\"certainty\":\"completed\",\"nextAction\":\"none\",\"retryNotBefore\":null,\"operationId\":\"fixture.read\",\"operationVersion\":1,\"result\":{\"value\":\"ordinary public output\"}}",
+    "want": false,
+    "request": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":null}"
+  },
+  {
+    "name": "uint64-max",
+    "plane": "response",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"kind\":\"performed\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"acceptedGeneration\":\"epoch-1\",\"finalGeneration\":\"epoch-1\",\"stateRevision\":\"18446744073709551615\",\"receiptRef\":\"receipt-1\",\"certainty\":\"completed\",\"nextAction\":\"none\",\"retryNotBefore\":null,\"operationId\":\"fixture.read\",\"operationVersion\":1,\"result\":{\"value\":\"ordinary public output\"}}",
+    "want": true,
+    "request": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":null}"
+  },
+  {
+    "name": "response-correlation",
+    "plane": "response",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"kind\":\"performed\",\"requestId\":\"other\",\"bindingId\":\"fixture-binding\",\"acceptedGeneration\":\"epoch-1\",\"finalGeneration\":\"epoch-1\",\"stateRevision\":\"1\",\"receiptRef\":\"receipt-1\",\"certainty\":\"completed\",\"nextAction\":\"none\",\"retryNotBefore\":null,\"operationId\":\"fixture.read\",\"operationVersion\":1,\"result\":{\"value\":\"ordinary public output\"}}",
+    "want": false,
+    "request": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":null}"
+  },
+  {
+    "name": "result-extra-secret",
+    "plane": "response",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"kind\":\"performed\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"acceptedGeneration\":\"epoch-1\",\"finalGeneration\":\"epoch-1\",\"stateRevision\":\"1\",\"receiptRef\":\"receipt-1\",\"certainty\":\"completed\",\"nextAction\":\"none\",\"retryNotBefore\":null,\"operationId\":\"fixture.read\",\"operationVersion\":1,\"result\":{\"value\":\"x\",\"cookie\":\"not-allowed\"}}",
+    "want": false,
+    "request": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":null}"
+  },
+  {
+    "name": "unknown-failure-state",
+    "plane": "response",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"kind\":\"failed\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"acceptedGeneration\":null,\"finalGeneration\":null,\"stateRevision\":null,\"receiptRef\":\"receipt-1\",\"certainty\":\"not_dispatched\",\"nextAction\":\"operator_review\",\"retryNotBefore\":null,\"requestKind\":\"perform\",\"failure\":{\"category\":\"protocol_mismatch\",\"retryable\":false,\"certainty\":\"not_dispatched\",\"nextAction\":\"operator_review\",\"retryNotBefore\":null,\"detailCode\":null},\"claim\":null}",
+    "want": true,
+    "request": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":null}"
+  },
+  {
+    "name": "failure-certainty-conflict",
+    "plane": "response",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"kind\":\"failed\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"acceptedGeneration\":null,\"finalGeneration\":null,\"stateRevision\":null,\"receiptRef\":\"receipt-1\",\"certainty\":\"uncertain\",\"nextAction\":\"operator_review\",\"retryNotBefore\":null,\"requestKind\":\"perform\",\"failure\":{\"category\":\"protocol_mismatch\",\"retryable\":false,\"certainty\":\"not_dispatched\",\"nextAction\":\"operator_review\",\"retryNotBefore\":null,\"detailCode\":null},\"claim\":null}",
+    "want": false,
+    "request": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":null}"
+  },
+  {
+    "name": "failure-unknown-detail",
+    "plane": "response",
+    "wire": "{\"protocol\":\"sessionowner/1\",\"kind\":\"failed\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"acceptedGeneration\":null,\"finalGeneration\":null,\"stateRevision\":null,\"receiptRef\":\"receipt-1\",\"certainty\":\"not_dispatched\",\"nextAction\":\"operator_review\",\"retryNotBefore\":null,\"requestKind\":\"perform\",\"failure\":{\"category\":\"protocol_mismatch\",\"retryable\":false,\"certainty\":\"not_dispatched\",\"nextAction\":\"operator_review\",\"retryNotBefore\":null,\"detailCode\":\"raw-exception\"},\"claim\":null}",
+    "want": false,
+    "request": "{\"protocol\":\"sessionowner/1\",\"requestId\":\"request-1\",\"bindingId\":\"fixture-binding\",\"deadline\":\"2099-01-02T03:04:05.000Z\",\"kind\":\"perform\",\"expectedGeneration\":\"epoch-1\",\"operationId\":\"fixture.read\",\"operationVersion\":1,\"target\":{\"id\":\"target-1\"},\"args\":{\"cursor\":\"\"},\"confirmationRef\":null}"
+  }
+]
