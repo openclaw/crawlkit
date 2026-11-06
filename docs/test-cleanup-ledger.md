@@ -284,3 +284,16 @@ comparison). No production APIs or behavior changed.
   pass. Temporary overlays leave tracked source bytes unchanged.
 - Require full local gates, independent P0–P3 review and exact-head PR CI.
   Synthetic SQLite data only; no public API, production or release changes.
+
+## crawlkit: backup file roots preserve literal paths
+
+- Stop trimming collection and restore filesystem roots. The existing file
+  integration case now uses distinct neighboring source and restore directories,
+  checks selected paths and restored contents, and preserves neighboring bytes.
+- Reject ambiguous trailing spaces or dots in Windows root components before
+  filesystem access. Reuse the same encrypted fixture for root/parent-component
+  rejection and ordinary-path controls; no new fixture files or test helpers.
+- Five race-enabled overlay outcomes: old and fixed healthy suites pass; the new
+  case fails against old code and either independently reintroduced trim.
+  Tracked bytes remain unchanged. Require full local gates, independent P0–P3
+  review, native Windows CI and supported downstream compatibility. No releases.

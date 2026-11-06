@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -44,7 +45,10 @@ type indexedFile struct {
 type encryptedFileLoader func(string) (io.ReadCloser, error)
 
 func CollectFiles(ctx context.Context, root, prefix string) ([]File, error) {
-	root = filepath.Clean(strings.TrimSpace(root))
+	if err := validateFileRoot(root); err != nil {
+		return nil, err
+	}
+	root = filepath.Clean(root)
 	if root == "" || root == "." {
 		return nil, fmt.Errorf("file root is required")
 	}
@@ -574,7 +578,10 @@ func safeRestoreTarget(root, logical string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	root = filepath.Clean(strings.TrimSpace(root))
+	if err := validateFileRoot(root); err != nil {
+		return "", err
+	}
+	root = filepath.Clean(root)
 	if root == "" || root == "." {
 		return "", fmt.Errorf("restore root is required")
 	}
@@ -598,6 +605,17 @@ func safeRestoreTarget(root, logical string) (string, error) {
 		return "", err
 	}
 	return target, nil
+}
+
+func validateFileRoot(root string) error {
+	if runtime.GOOS == "windows" {
+		for _, component := range strings.FieldsFunc(root, func(r rune) bool { return r == '/' || r == '\\' }) {
+			if component != "." && component != ".." && (strings.HasSuffix(component, " ") || strings.HasSuffix(component, ".")) {
+				return fmt.Errorf("backup file root has ambiguous trailing spaces or dots on Windows: %q", component)
+			}
+		}
+	}
+	return nil
 }
 
 func ensureDirectory(dir string) error {

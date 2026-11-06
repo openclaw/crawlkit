@@ -13,6 +13,17 @@ func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	source := filepath.Join(dir, "source")
+	if runtime.GOOS != "windows" {
+		if err := os.MkdirAll(filepath.Join(source, "nested"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"photo.jpg", filepath.Join("nested", "copy.jpg")} {
+			if err := os.WriteFile(filepath.Join(source, name), []byte("neighbor media"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		source += " "
+	}
 	if err := os.MkdirAll(filepath.Join(source, "nested"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -30,6 +41,9 @@ func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 	}
 	if len(files) != 2 {
 		t.Fatalf("collected files = %#v", files)
+	}
+	if files[0].Source != filepath.Join(source, "nested", "copy.jpg") || files[1].Source != filepath.Join(source, "photo.jpg") {
+		t.Fatalf("collected files lost literal root: %#v", files)
 	}
 	identity := filepath.Join(dir, "age.key")
 	recipient, err := EnsureIdentity(identity)
@@ -98,6 +112,16 @@ func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 		t.Fatalf("removed file manifest = %#v", withoutFiles.Files)
 	}
 	restoreRoot := filepath.Join(dir, "restore")
+	neighborPhoto := filepath.Join(restoreRoot, "media", "photo.jpg")
+	if runtime.GOOS != "windows" {
+		if err := os.MkdirAll(filepath.Dir(neighborPhoto), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(neighborPhoto, []byte("neighbor restore"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		restoreRoot += " "
+	}
 	if err := os.MkdirAll(restoreRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -107,6 +131,33 @@ func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("restored files = %d", count)
+	}
+	if runtime.GOOS != "windows" {
+		if body, err := os.ReadFile(neighborPhoto); err != nil || string(body) != "neighbor restore" {
+			t.Fatalf("restore changed neighboring root: %q, %v", body, err)
+		}
+	} else {
+		for _, test := range []struct {
+			name, source, target string
+		}{
+			{"root-space", source + " ", restoreRoot + " "},
+			{"root-dot", source + ".", restoreRoot + "."},
+			{"parent-space", filepath.Join(dir+" ", "source"), filepath.Join(dir+" ", "restore")},
+			{"parent-dot", filepath.Join(dir+".", "source"), filepath.Join(dir+".", "restore")},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				const diagnostic = "ambiguous trailing spaces or dots on Windows"
+				if _, err := CollectFiles(ctx, test.source, "media"); err == nil || !strings.Contains(err.Error(), diagnostic) {
+					t.Fatalf("ambiguous collection root error = %v", err)
+				}
+				if _, err := RestoreFiles(ctx, cfg, manifest, test.target); err == nil || !strings.Contains(err.Error(), diagnostic) {
+					t.Fatalf("ambiguous restore root error = %v", err)
+				}
+				if body, err := os.ReadFile(neighborPhoto); err != nil || string(body) != "same private media" {
+					t.Fatalf("rejected restore changed canonical file: %q, %v", body, err)
+				}
+			})
+		}
 	}
 	for _, name := range []string{filepath.Join("media", "photo.jpg"), filepath.Join("media", "nested", "copy.jpg")} {
 		body, err := os.ReadFile(filepath.Join(restoreRoot, name))
