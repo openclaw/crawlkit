@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.17.4 - 2026-11-06
+
+**Highlights:** Preserve literal SQLite archive paths during store access, snapshots, and freshness checks.
+
 - Preserve literal paths in SQLite freshness checks to prevent missed or spurious refreshes caused by neighboring files; reject ambiguous Windows paths.
 
 - Preserve literal filesystem paths when opening SQLite stores so trailing whitespace cannot select or modify a neighboring archive; reject ambiguous trailing spaces and dots in plain Windows filesystem paths.
