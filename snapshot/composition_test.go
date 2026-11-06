@@ -199,6 +199,14 @@ func TestImportCompositionGeneratedShardIntegrity(t *testing.T) {
 			if len(files) != 2 || !strings.HasPrefix(files[1], "tables/.generations/") {
 				t.Fatalf("fixture lacks generated physical shards: %v", files)
 			}
+			if len(manifest.Tables[0].FileManifests) != len(manifest.Tables[0].Files) {
+				t.Fatalf("file manifests = %+v, files = %+v", manifest.Tables[0].FileManifests, manifest.Tables[0].Files)
+			}
+			for _, file := range manifest.Tables[0].FileManifests {
+				if file.Path == "" || file.Rows == 0 || file.Size == 0 || len(file.SHA256) != 64 {
+					t.Fatalf("bad file manifest = %+v", file)
+				}
+			}
 			dst := exportTestDB(t, `create table things(id integer primary key, value integer); create table audit(event text);`)
 			if err := runIntegrityImport(t, mode, manifest, ImportOptions{DB: dst, RootDir: root}); err != nil {
 				t.Fatalf("generated manifest rejected: %v", err)
