@@ -272,3 +272,15 @@ comparison). No production APIs or behavior changed.
 - Remove 41 net test lines without new helpers or fixtures. Require full local
   gates, independent P0–P3 review and exact-head Linux/Windows/downstream CI.
   Temporary synthetic archives only; no provider calls or releases.
+
+## crawlkit: share default state constructor fixtures
+
+- Move default-constructor read checks and the manifest key into the existing
+  three-schema coexistence case. Read all three records after all writes, with
+  literal identities and values. Remove three database setups and 36 test lines.
+- Keep each clock/staleness case and mapped-table checks. Twelve paired race
+  outcomes preserve rejection of broken default constructors and now reject a
+  wrong manifest key or a cursor write that removes scoped state. Healthy cases
+  pass. Temporary overlays leave tracked source bytes unchanged.
+- Require full local gates, independent P0–P3 review and exact-head PR CI.
+  Synthetic SQLite data only; no public API, production or release changes.
