@@ -707,39 +707,6 @@ func TestImportReportsTableAndFileProgress(t *testing.T) {
 	}
 }
 
-func TestImportLegacySingularFileManifest(t *testing.T) {
-	ctx := context.Background()
-	root := t.TempDir()
-	rel := filepath.ToSlash(filepath.Join("tables", "things", "legacy.jsonl.gz"))
-	writeGzipJSONL(t, filepath.Join(root, filepath.FromSlash(rel)), map[string]any{"id": "new", "body": "from legacy"})
-	if err := WriteManifest(root, Manifest{
-		Version:     1,
-		GeneratedAt: time.Date(2026, 5, 2, 9, 0, 0, 0, time.UTC),
-		Tables: []TableManifest{{
-			Name:    "things",
-			File:    rel,
-			Columns: []string{"id", "body"},
-			Rows:    1,
-		}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	dst := openThingsStore(t, ctx, "dst.db")
-	defer dst.Close()
-	mustExec(t, dst.DB(), `insert into things(id, body) values('old', 'before')`)
-	if _, err := Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root}); err != nil {
-		t.Fatal(err)
-	}
-	var got string
-	if err := dst.DB().QueryRowContext(ctx, `select group_concat(id || ':' || body, ',') from things`).Scan(&got); err != nil {
-		t.Fatal(err)
-	}
-	if got != "new:from legacy" {
-		t.Fatalf("things = %q", got)
-	}
-}
-
 func TestImportFilterSkipsRows(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

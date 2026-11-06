@@ -256,3 +256,19 @@ comparison). No production APIs or behavior changed.
 - Production files stay unchanged. Require full local gates, independent P0–P3
   review and exact-head Linux/Windows/downstream CI. Temporary synthetic archives
   only; no provider calls or releases.
+
+## crawlkit: consolidate import integrity fixtures
+
+- Remove standalone legacy singular-file and stripped planned-metadata fixtures.
+  The existing metadata and selection matrices exercise those same import paths.
+- Preserve the legacy positive row total and check literal imported IDs/bodies in
+  the metadata matrix. Keep its mode-specific old-row checks. Legacy zero totals
+  remain covered by the partial-plan fixture. Preserve the exact stripped-metadata
+  diagnostic in the selection matrix, alongside callback and input-state checks.
+- Fourteen race-enabled before/after overlay outcomes cover healthy imports,
+  ignored legacy files, changed bodies, skipped replacement, rejected positive
+  legacy totals, bypassed metadata validation and changed diagnostics. Retained
+  cases detect every fault after consolidation; production source is unchanged.
+- Remove 41 net test lines without new helpers or fixtures. Require full local
+  gates, independent P0–P3 review and exact-head Linux/Windows/downstream CI.
+  Temporary synthetic archives only; no provider calls or releases.

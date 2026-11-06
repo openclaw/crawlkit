@@ -177,6 +177,9 @@ func TestImportCompositionValidatesSelectionBeforeHooks(t *testing.T) {
 			if err == nil || called {
 				t.Errorf("invalid selection reached hook: err=%v called=%v", err, called)
 			}
+			if invalid == "stripped metadata" && (err == nil || !strings.Contains(err.Error(), "inconsistent planned file manifest")) {
+				t.Fatalf("expected planned metadata error, got %v", err)
+			}
 			assertIntegrityCount(t, dst, `select count(*) from things where id='old'`, 1)
 			assertIntegrityCount(t, dst, `select count(*) from audit`, 0)
 			if !bytes.Equal(before, compositionInputs(t, current, plan)) {
