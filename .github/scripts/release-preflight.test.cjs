@@ -44,19 +44,11 @@ for (const kind of ['commit', 'tree', 'blob']) {
 
 for (const draft of [false, true]) {
   test(`existing ${draft ? 'draft' : 'public release'} blocks publication`, async () => {
-    const { github } = fixture({ release: () => ({ data: { id: 123, draft } }) });
-    await assert.rejects(preflight({ github, context, version: '0.14.7' }), /already has a GitHub release/);
+    const { github, calls } = fixture({ release: () => ({ data: { id: 123, draft } }) });
+    await assert.rejects(preflight({ github, context, version: '0.14.7' }), /already has a GitHub release; refusing to rebuild/);
+    assert.equal(calls.length, 3);
   });
 }
-
-test('the halted v0.14.7 state cannot reach build or draft creation', async () => {
-  const { github, calls } = fixture({
-    tag: () => ({ data: { object: { type: 'tag', sha: 'f0b0ee206d874feea0304d076246e2ae9277bb9c' } } }),
-    release: () => ({ data: { id: 370802867, draft: false } }),
-  });
-  await assert.rejects(preflight({ github, context, version: '0.14.7' }), /refusing to rebuild/);
-  assert.equal(calls.length, 3);
-});
 
 for (const endpoint of ['tag', 'annotated', 'release']) {
   for (const status of [401, 403, 429, 500]) {
