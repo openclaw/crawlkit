@@ -5,6 +5,9 @@ Go module with a private thin Node binding. It is not imported by the root modul
 registered with Crawlctl, installed, or published. No provider, browser, Gateway,
 credential discovery, SDK import, timer or background service is included.
 
+See [independent artifact preparation and release gates](RELEASE.md) for the
+opt-in offline packaging adapter and remaining distribution requirements.
+
 The source implements the frozen `sessionowner/1` public protocol and
 `sessionowner-adapter/1` private protocol. The five schemas **and** normative
 manifest in `schema/v1/` are the contract. Protocol types are closed; provider
