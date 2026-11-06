@@ -140,46 +140,40 @@ func TestCopyStableRetriesOnReplacementWithSameSizeAndModTime(t *testing.T) {
 }
 
 func TestCopyStableSourceBusyAfterAttempts(t *testing.T) {
-	src := filepath.Join(t.TempDir(), "store.db")
-	writeFile(t, src, "v")
-	parent := t.TempDir()
-	calls := 0
-	path, cleanup, err := CopyStable(context.Background(), src, StableOptions{
-		Attempts: 3,
-		TempDir:  parent,
-		afterCopy: func(attempt int) {
-			calls++
-			writeFile(t, src, strings.Repeat("x", attempt+1))
-		},
-	})
-	var busy *SourceBusyError
-	if !errors.As(err, &busy) {
-		t.Fatalf("err = %v, want SourceBusyError", err)
-	}
-	if busy.Attempts != 3 || calls != 3 || busy.Path != src || busy.Reason == "" {
-		t.Fatalf("busy = %+v calls=%d", busy, calls)
-	}
-	if path != "" || cleanup == nil {
-		t.Fatalf("path=%q cleanup nil=%v", path, cleanup == nil)
-	}
-	cleanup()
-	assertEmptyDir(t, parent)
-}
-
-func TestCopyStableDefaultsToFiveAttempts(t *testing.T) {
-	src := filepath.Join(t.TempDir(), "store.db")
-	writeFile(t, src, "v")
-	calls := 0
-	_, _, err := CopyStable(context.Background(), src, StableOptions{
-		TempDir: t.TempDir(),
-		afterCopy: func(attempt int) {
-			calls++
-			writeFile(t, src, strings.Repeat("x", attempt+1))
-		},
-	})
-	var busy *SourceBusyError
-	if !errors.As(err, &busy) || calls != DefaultStableAttempts || busy.Attempts != DefaultStableAttempts {
-		t.Fatalf("err=%v calls=%d", err, calls)
+	for _, tt := range []struct {
+		name     string
+		attempts int
+		want     int
+	}{
+		{name: "explicit", attempts: 3, want: 3},
+		{name: "default", want: 5},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			src := filepath.Join(t.TempDir(), "store.db")
+			writeFile(t, src, "v")
+			parent := t.TempDir()
+			calls := 0
+			path, cleanup, err := CopyStable(context.Background(), src, StableOptions{
+				Attempts: tt.attempts,
+				TempDir:  parent,
+				afterCopy: func(attempt int) {
+					calls++
+					writeFile(t, src, strings.Repeat("x", attempt+1))
+				},
+			})
+			var busy *SourceBusyError
+			if !errors.As(err, &busy) {
+				t.Fatalf("err = %v, want SourceBusyError", err)
+			}
+			if busy.Attempts != tt.want || calls != tt.want || busy.Path != src || busy.Reason == "" {
+				t.Fatalf("busy = %+v calls=%d, want %d attempts", busy, calls, tt.want)
+			}
+			if path != "" || cleanup == nil {
+				t.Fatalf("path=%q cleanup nil=%v", path, cleanup == nil)
+			}
+			cleanup()
+			assertEmptyDir(t, parent)
+		})
 	}
 }
 
