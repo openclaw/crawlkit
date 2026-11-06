@@ -1,1 +1,0 @@
-{"type":"object","properties":{"stage":{"type":"string","enum":["synthetic-before-effect","synthetic-no-effect","synthetic-after-effect"]}},"required":["stage"],"additionalProperties":false}

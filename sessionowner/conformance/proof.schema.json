@@ -1,1 +1,0 @@
-{"type":"object","properties":{"account":{"type":"string","enum":["expected"]}},"required":["account"],"additionalProperties":false}
