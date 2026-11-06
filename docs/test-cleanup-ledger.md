@@ -327,3 +327,16 @@ comparison). No production APIs or behavior changed.
 - Production and workflow files stay unchanged. Require full local gates,
   independent P0–P3 review and exact-head PR CI. These are synthetic command
   contract checks; no external app, live archive or release proof is claimed.
+
+## crawlkit: require the intended mirror validation errors
+
+- Keep the local-fetch validation fixture, then seed one local commit so the
+  escaping-path check reaches path validation instead of failing on unborn HEAD.
+  Require exact ref, path and limit diagnostics and stable tag-error prefixes
+  for the existing creation, validation and two snapshot-push calls.
+- Twenty paired race-enabled overlay outcomes cover healthy runs, four bypassed
+  guards, four incorrect diagnostics and the already-detected zero-limit bypass.
+  The revised test catches all eight faults the old test missed. Temporary
+  overlays are removed and production bytes stay unchanged.
+- Require full local gates, independent P0–P3 review and exact-head PR CI.
+  No production changes, remote repositories, live archives or releases.
