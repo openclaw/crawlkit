@@ -369,3 +369,18 @@ comparison). No production APIs or behavior changed.
   assertion. Temporary overlays are removed; production bytes stay unchanged.
 - Require full local gates, independent P0–P3 review and exact-head PR CI.
   No production changes, live archives or releases.
+
+## crawlkit: share legacy mutable upload transport fixtures
+
+- Share one loopback HTTP fixture across known-length/digest, unknown-length/
+  digest and known-length/no-digest uploads. Preserve all three cases and apply
+  the existing index, length, digest, chunked-body, payload, minimal-manifest and
+  upload-order assertions consistently. Keep snapshot and direct-part cases.
+- Remove the no-op TestMain that only invokes the default test runner.
+- Eighteen paired race-enabled overlay outcomes preserve minimal-manifest,
+  optional-digest and unknown-length compatibility and index/order controls.
+  The revised table also catches wrong unknown-length indexes, known-length
+  digest headers and unknown-length manifest identity missed by the old tests.
+  Temporary overlays are removed; production bytes stay unchanged.
+- Require full local gates, independent P0–P3 review and exact-head PR CI.
+  These are synthetic HTTP tests, not live-service E2E proof. No releases.
