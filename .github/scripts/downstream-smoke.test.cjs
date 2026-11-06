@@ -90,7 +90,7 @@ with tempfile.TemporaryDirectory() as directory:
     def command(argv, **kwargs):
         assert kwargs["timeout"] == 30 and kwargs["input"] == b""
         assert kwargs["cwd"] == runtime
-        calls.append(argv[3:])
+        calls.append(argv)
         name = argv[3]
         if name == "init":
             (runtime / "fixture").write_text("local init")
@@ -98,12 +98,20 @@ with tempfile.TemporaryDirectory() as directory:
         return SimpleNamespace(returncode=0, stdout=text.encode(), stderr=b"")
     with patch.object(smoke.subprocess, "run", command):
         smoke.run("${app}", "/test/bin/${app}", str(runtime), str(root / "evidence"))
-    expected = list(smoke.SMOKES.values())
+    expected = [
+        ["--help"],
+        ["--version"],
+        ["tui", "--help"],
+        ["metadata", "--json"],
+        ["status", "--json"],
+        ["tui", "--json"],
+    ]
     if "${app}" == "slacrawl":
         expected.insert(0, ["init", "--db", str(runtime / "runtime" / "archive.db")])
     elif "${app}" == "notcrawl":
         expected.insert(0, ["init"])
-    assert calls == expected
+    prefix = ["/test/bin/${app}", "--config", str(runtime / "config" / "${app}.toml")]
+    assert calls == [prefix + args for args in expected]
     result = json.loads((root / "evidence/result.json").read_text())
     assert result["passed"] and result["before"] == result["after"]
     assert len(list((root / "evidence").glob("*.stdout"))) == len(expected)
