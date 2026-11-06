@@ -355,3 +355,17 @@ comparison). No production APIs or behavior changed.
   production bytes stay unchanged.
 - Require full local gates, independent P0–P3 review and exact-head PR CI.
   No production changes, live archives or releases.
+
+## crawlkit: reuse scheduler recovery and explicit-path fixtures
+
+- Remove the short interrupted-tail fixture: the retained byte-prefix recovery
+  test reads every incomplete record prefix, preserves the preceding identity
+  and verifies append repair. Keep the public Run integration separate.
+- Fold history placement into the explicit-config-without-HOME fixture and
+  require the complete history filename alongside config, log and state paths.
+- Twelve paired race-enabled overlay outcomes preserve detection of wrong
+  directories, rejected truncation, dropped preceding records and skipped
+  repair. A wrong history filename passes the old checks and fails the new
+  assertion. Temporary overlays are removed; production bytes stay unchanged.
+- Require full local gates, independent P0–P3 review and exact-head PR CI.
+  No production changes, live archives or releases.
