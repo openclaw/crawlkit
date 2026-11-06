@@ -244,13 +244,10 @@ func TestRunBatchesAndGitcrawlHashRevision(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		q.put(t, fmt.Sprint(i), "sha256:gitcrawl-title_original", fmt.Sprint(i), Fresh)
 	}
-	var peak atomic.Int64
 	r, cancel := run(t, q, func(ctx context.Context, j []Job[string]) ([]string, error) {
 		if len(j) > 4 {
 			t.Error("unbounded batch")
 		}
-		peak.Add(1)
-		defer peak.Add(-1)
 		return upper(ctx, j)
 	}, fastOpts())
 	// SQLite can publish the final row before Complete returns. Wait for the
@@ -485,12 +482,10 @@ func TestIndependentTaskKinds(t *testing.T) {
 type budgetQueue struct {
 	leaseUntil         time.Time
 	completed, retried int
-	jobs               int
 }
 
 func (q *budgetQueue) Claim(_ context.Context, r ClaimRequest) ([]Job[string], error) {
 	q.leaseUntil = r.LeaseUntil
-	q.jobs = r.Limit
 	out := make([]Job[string], r.Limit)
 	for i := range out {
 		key := fmt.Sprint(i)

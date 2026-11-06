@@ -1,386 +1,91 @@
 # Test cleanup ledger
 
-Scope: crawlkit, photoscrawl, imsgcrawl, crawl-remote, graincrawl, notcrawl,
-discrawl, and gitcrawl. Land narrow PRs; no releases.
+This records the crawlkit portion of the crawl-app test cleanup campaign.
+Land narrow PRs; no releases. Other repositories keep their own audit evidence.
 
-Remove tests only with evidence of redundancy, no meaningful assertion, or an
-obsolete contract. Keep subprocess helpers and isolated integration fixtures
-when their callers verify behavior. Unit tests are not end-to-end proof.
+## Bounded coverage
 
-## crawlkit: release notification decisions
+Read all 53 Go test files (including platform tests and benchmarks) and all
+three Node test files. Inspect fixture consumers and owning code before removing
+coverage or fixing a demonstrated gap. Inline fixtures and temporary archives
+are included; the tracked inventory contains no `testdata/` or fixture-named files.
 
-- Replaced `TestStderrIsTerminalReturnsBool`: it discarded the result of a thin
-  dependency wrapper. Its replacement redirects stderr to a pipe and asserts
-  non-terminal detection. Removing the only local caller exposed the exported
-  helper to CI dead-code detection; keep a meaningful test of its contract.
-- Extended the existing `ShouldNotify` decision table with interactive success,
-  explicit `check-update` suppression, and bare `--json` suppression. The
-  positive case detects an implementation that simply always returns false.
-- Retained notification writer/error tests and subprocess helpers: they check
-  distinct output, error handling, or child-process behavior.
-- Validation: workspace-disabled module tidy (unchanged module files), vet,
-  and uncached full Go suite; structured autoreview before landing. PR CI runs
-  Linux and Windows suites plus the pinned downstream gitcrawl comparison.
+Remove cases only with evidence of redundancy, a vacuous assertion or an obsolete
+contract. Retain distinct behavior even when setup looks similar. This bounded
+read is complete; it does not certify every product path or provider integration.
 
-## crawlkit: vector assertions
+## Landed changes
 
-- Removed `TestFloat32EncodingRoundTrip`: `TestFloat32EncodingMatchesBinary`
-  already verifies encoded bytes and decoded float bits, including arbitrary
-  finite/non-finite bit patterns, nil/empty vectors, and invalid byte lengths.
-- Removed the single-use `InDelta`, `Greater`, and reflection-based `Nil`
-  assertion helpers and their private nil detector. The first two silently
-  accepted NaN because both `NaN > delta` and `NaN <= other` are false.
-- Reused the existing finite-aware kernel number checker for cosine results;
-  check rank ordering and the nil TopK result directly. Kept both rank-fusion
-  cases: accumulated rankings and tied scores are distinct contracts.
+Each linked PR owns its exact diff, fault probes, review and validation evidence.
 
-Validation: full local gates, focused vector race tests, synthetic NaN failure
-probes, and PR CI (including SIMD/scalar variants and pinned downstream CLI
-comparison). No production APIs or behavior changed.
+| PR | Area | Result |
+| --- | --- | --- |
+| [176](https://github.com/openclaw/crawlkit/pull/176) | Notifications | Replace a discarded terminal result; cover positive and suppressed notifications. |
+| [182](https://github.com/openclaw/crawlkit/pull/182) | Vectors | Remove duplicate round-trip coverage and NaN-unsafe assertion helpers; retain bit and rank oracles. |
+| [184](https://github.com/openclaw/crawlkit/pull/184) | Remote HTTP fixtures | Report callback failures with HTTP errors instead of aborting connections via FailNow. |
+| [185](https://github.com/openclaw/crawlkit/pull/185) | Provider/update fixtures | Apply the same callback correction while preserving payload, cache and root-test assertions. |
+| [186](https://github.com/openclaw/crawlkit/pull/186) | Manifest fixtures | Return strict decoder errors to callers; retain unknown-field and trailing-JSON rejection. |
+| [188](https://github.com/openclaw/crawlkit/pull/188) | Worker fixtures | Bound phase waits and let cancelled setup stop its handler; retain queue and revision checks. |
+| [189](https://github.com/openclaw/crawlkit/pull/189) | Vector subprocess helper | Do not conceal a panic with a deferred success exit. |
+| [190](https://github.com/openclaw/crawlkit/pull/190) | TUI ordering | Require rendered content before comparing its positions. |
+| [191](https://github.com/openclaw/crawlkit/pull/191) | TUI preview | Require all 18 compact preview lines, rather than only a ceiling. |
+| [193](https://github.com/openclaw/crawlkit/pull/193) | Worker cancellation | A failed token read cannot prove claim release. |
+| [194](https://github.com/openclaw/crawlkit/pull/194) | Backup cleanup | Require kept ciphertext to remain byte-identical while stale shards are removed. |
+| [195](https://github.com/openclaw/crawlkit/pull/195) | Cache names | Remove a duplicate escape fixture; retain the stronger outside-file and cache-debris checks. |
+| [196](https://github.com/openclaw/crawlkit/pull/196) | SQLite snapshots | Preserve literal source/destination paths and neighboring bytes; reject ambiguous Windows aliases. |
+| [197](https://github.com/openclaw/crawlkit/pull/197) | SQLite stores | Preserve literal writable/read-only paths, URI and memory contracts; reject Windows aliases. |
+| [198](https://github.com/openclaw/crawlkit/pull/198) | SQLite freshness | Inspect the requested main/WAL/SHM paths; use fixed cutoff and neighboring-file cases. |
+| [199](https://github.com/openclaw/crawlkit/pull/199) | Config | Share fallback setup and compare complete paths, runtime fields and token metadata. |
+| [201](https://github.com/openclaw/crawlkit/pull/201) | Snapshot rotation | Fold the 25-row fixture into the retained rotating-shard case; preserve file metadata checks. |
+| [202](https://github.com/openclaw/crawlkit/pull/202) | Snapshot filters | Check literal identities, bodies and sync state instead of counts alone. |
+| [203](https://github.com/openclaw/crawlkit/pull/203) | Snapshot imports | Fold legacy-file and stripped-metadata fixtures into existing import matrices. |
+| [206](https://github.com/openclaw/crawlkit/pull/206) | State | Share default-constructor setup; read all records after all schema writes. |
+| [207](https://github.com/openclaw/crawlkit/pull/207) | Backup file roots | Preserve literal collection/restore roots and neighbors; reject Windows aliases. |
+| [208](https://github.com/openclaw/crawlkit/pull/208) | Backup validation | Require the intended namespace/path diagnostic, not an unrelated filesystem error. |
+| [209](https://github.com/openclaw/crawlkit/pull/209) | Downstream smoke contract | Freeze all six commands and complete binary/config invocations independently of production. |
+| [210](https://github.com/openclaw/crawlkit/pull/210) | Mirror validation | Seed a local commit and require intended ref, path, limit and tag errors. |
+| [211](https://github.com/openclaw/crawlkit/pull/211) | Cache copies | Share exact-limit/retry fixtures; use an independent literal five-attempt default. |
+| [212](https://github.com/openclaw/crawlkit/pull/212) | Scheduler | Retain byte-prefix recovery and public Run coverage; fold explicit history placement into path checks. |
+| [213](https://github.com/openclaw/crawlkit/pull/213) | Legacy uploads | Share three mutable transport fixtures, strengthen their common assertions and remove a no-op TestMain. |
 
-## Remaining audit
+## Closeout cleanup
 
-- crawlkit: review remaining packages, fixture consumers, duplicated coverage,
-  flaky timing assumptions, and behavior gaps.
-- photoscrawl, imsgcrawl, crawl-remote, graincrawl, notcrawl, discrawl, gitcrawl:
-  full test and fixture audit pending; validate each change against its actual
-  app behavior using isolated archives and platform-appropriate execution.
+- Fold the historical v0.14.7 release fixture into the existing public/draft
+  rows for that same version. Preserve the rebuild diagnostic and three-lookups
+  assertion. Eight paired Node outcomes retain rejection, diagnostic and lookup
+  controls; temporary test copies are removed and production bytes stay unchanged.
+- Remove the worker peak counter and budgetQueue.jobs field: both were written
+  but never inspected. Preserve batching, completion and lease-budget assertions.
+- Replace repeated validation prose and obsolete pending-audit notes with this
+  index. Keep every landed change represented; production stays unchanged.
 
-## crawlkit: HTTP fixture assertion failures
+## Retained contracts
 
-- Replaced fatal assertions in remote HTTP handlers with non-fatal test errors,
-  an HTTP error response, and a normal handler return. `FailNow` belongs to the
-  test goroutine; in these callbacks it aborted the connection and exposed an
-  unrelated EOF to the client.
-- Keep every request assertion and expected response. Root-test fatal assertions
-  remain intact, and failed handlers stop before sending the success response.
-- All fixtures stay local and synthetic; no production transport or API changes.
+- Snapshot format/version/metadata/selection matrices, corruption rollback,
+  encrypted publication and owned-versus-unowned cleanup cover distinct paths.
+- SQLite WAL/SHM, URI/memory semantics, literal Unix names and native Windows
+  alias/ACL cases differ. Stable-copy identity, growth, cancellation and cleanup
+  retry cases remain separate.
+- Worker durable leases/revisions and slow-storage adapters protect different
+  boundaries. Scheduler public Run, long records, corrupt/truncated tails,
+  valid EOF and persistence failures remain.
+- TUI startup shortcuts before window sizing, sized rendering, mouse menus,
+  focused-pane actions and cancellation/layout states remain distinct.
+- Mutable/immutable uploads, direct-part transport, independent wire schemas,
+  staging, bounds and manifest preflight remain distinct synthetic contracts.
+- Vector bit/arithmetic/rank oracles, SIMD/scalar checks and opt-in external
+  bridge tests differ. Provider, lock, config, output and control tests retain
+  their separate success, failure and ownership contracts.
 
-## crawlkit: remaining provider and update-check handler failures
+## Verification and limits
 
-- Replaced the two remaining direct fatal assertions in embedding-provider and
-  release-check HTTP callbacks with nonfatal errors, HTTP 400, and return.
-- Preserve request conditions, successful embedding and cached-update responses,
-  vector/auth/dimension assertions, cache counts, and root-test fatal assertions.
-- Forced decoder/path failures reproduce EOF before the fix and fail with the
-  original diagnostic plus HTTP 400 afterward. Full local gates, independent
-  review, and PR CI validate synthetic fixtures; no live APIs or releases.
+Use workspace-disabled tidy with unchanged module files, vet and uncached Go
+tests. The repository gate also covers formatting, analysis, vulnerabilities,
+race tests and Node scripts. Independent P0–P3 review and exact-head Linux,
+native Windows and pinned gitcrawl CI qualify each changed diff. Production
+path fixes also require isolated downstream checks; consult their linked PRs
+for the actual scope and results.
 
-## crawlkit: strict manifest fixture decoder errors
-
-- Make the strict SQLite bundle fixture decoder return an error. The root test
-  still fails fast; the HTTP callback reports the error, sends HTTP 400, and
-  returns normally. Keep unknown-field and trailing-JSON rejection unchanged.
-- Preserve success payloads, addressing-mode checks, manifest fields, upload
-  counts, and the file-handle closure check for both legacy and snapshot modes.
-- Forced unknown fields and trailing JSON reproduce connection EOF before the
-  change. Afterward, root failures retain their diagnostics and uploads report
-  typed HTTP 400 errors without EOF. Validate with race-enabled probes, full
-  local gates, independent review, and PR CI; no production/API changes, live
-  archives, credentials, or releases.
-
-## crawlkit: worker fixture phase waits
-
-- Bound four handler-start waits using the same ten-second budget as the
-  existing eventual assertions. A missing handler now fails at the waiting
-  test with a useful diagnostic instead of hanging until the suite timeout.
-- Let the paused input-edit handler observe cancellation so test cleanup can
-  stop its runner after a setup failure. Keep all queue, freshness, revision,
-  cancellation, and independent-kind assertions and synthetic SQLite fixtures.
-- Temporary Go overlays reproduce the global timeout and stuck cleanup before
-  the change, then verify the targeted failure and clean shutdown afterward.
-  Validate with the full local gate, independent review, and PR CI; no
-  production code, exported APIs, live archives, or releases change.
-
-## crawlkit: vector helper process failure status
-
-- Move the helper's success exit from a defer to its normal completion path.
-  Panics must fail the helper process, including after it writes valid JSON;
-  deferred success previously concealed those failures from the parent test.
-- Preserve every bridge request check, canned response, mode, and test body.
-  Healthy completion still exits before the test runner can append output.
-- A temporary post-response panic leaves the existing bridge test green before
-  the fix and fails it afterward. Validate healthy bridge cases with the race
-  detector, full local gates, independent review, and CI. No production APIs,
-  live archives, provider calls, or releases change.
-
-## crawlkit: ordering assertions require rendered content
-
-- Require the selected-message heading and both sorted document fields before
-  checking their order. Use the complete heading when locating the selected
-  message; a missing string previously returned -1 and passed the comparison.
-- Preserve both rendering fixtures and all existing content/order assertions.
-  Disposable post-render overlays show that a missing heading, first field or
-  both fields passes before the fix and fails afterward; reversed fields fail
-  in both versions. Healthy race-enabled rendering tests, full local gates,
-  independent review and CI validate the change. No production or API changes,
-  live archives, provider calls, or releases.
-
-## crawlkit: compact document preview retention
-
-- Require all 18 lines of the existing compact document preview, rather than
-  accepting any count below the ceiling. Preserve the 30-line fixture and the
-  expansion-hint assertion; no production code or rendering behavior changes.
-- Disposable post-render overlays show that missing all body lines or one body
-  line passes before the fix and fails afterward. Excess lines fail both
-  versions. Validate healthy rendering with the race detector, the full local
-  gate, independent review and PR CI. No live archives or releases.
-
-## crawlkit: cancellation claim read errors
-
-- Require a successful token read before accepting cancellation claim release.
-  A failed read must not leave an empty token that falsely passes the assertion;
-  the pending-job count alone does not prove the claim token was cleared.
-- Preserve the real runner, cancellation, duplicate-run guard, pending count,
-  temporary SQLite queue and timing. Disposable Go overlays compare healthy
-  runs, broken reads, retained claims and both faults together before and after.
-- Validate with the race detector, full local gates, independent review and PR
-  CI. No production APIs, live archives, provider calls or releases change.
-
-## crawlkit: stale cleanup preserves kept ciphertext
-
-- Extend the existing public backup-helper case to read the kept shard before
-  cleanup and require identical bytes afterward. Preserve its stale-file removal
-  assertion and all encryption, manifest and helper checks; add no fixture.
-- The full original backup suite falsely passes when cleanup deletes or corrupts
-  kept row-shard ciphertext. Both faults fail the strengthened case. Healthy
-  suites pass, and skipped cleanup fails the stale-file assertion in both versions:
-  eight race-enabled before/after outcomes. Production files are unchanged.
-- Validate the full library gate, independent P0–P3 review and PR CI, including
-  Windows and pinned downstream CLI comparison. No public API, live archives,
-  provider calls or releases change.
-
-## crawlkit: duplicate cache path rejection
-
-- Remove the standalone escaped-name test. The existing non-basename table
-  already covers the same path, requires the validation diagnostic, preserves
-  an existing outside file and rejects cache debris. Keep that case unchanged.
-- Nine race-enabled before/after outcomes confirm both cases reject a bypassed
-  name guard. Deleting the outside file while returning the validation error
-  falsely passes the removed case but fails the exact shared row in the retained
-  case, before and after deletion. Healthy variants pass; production is unchanged.
-- Validate the full library gate, uncached Go suite, independent P0–P3 review
-  and PR CI with Windows and pinned downstream CLI comparison. No public API,
-  fixture, live archive, provider call or release changes.
-
-## crawlkit: SQLite snapshots preserve literal paths
-
-- Preserve literal source and destination paths instead of trimming whitespace.
-  The original suite missed selection of a neighboring database and replacement
-  of a neighboring archive. Reject trailing spaces and dots in Windows path
-  components before filesystem access, following the existing snapshot policy.
-- New temporary SQLite fixtures contain distinct rows for neighboring sources;
-  destination checks require both the intended database contents and unchanged
-  neighboring bytes. Reintroducing either trim independently fails its regression
-  case; healthy race-enabled tests pass. Native Windows cases require ambiguous
-  path rejection while preserving both canonical files.
-- Validate the full library gate, uncached Go suite, independent P0–P3 review,
-  PR CI and supported downstream compatibility checks. No live archives, provider
-  calls or releases. The separate store path-normalization boundary remains a
-  follow-up.
-
-## crawlkit: SQLite stores preserve literal paths
-
-- Preserve literal filesystem paths in both writable and read-only store opens.
-  The original tests missed reading a neighboring database and applying schema
-  writes to that neighbor when a requested filename ends in whitespace.
-- Real temporary SQLite fixtures distinguish requested and neighboring rows.
-  Plain-path cases fail before the fix; equivalent escaped URI cases pass.
-  Require the selected row, retained path and unchanged neighboring contents.
-  Native Windows cases reject ambiguous trailing spaces and dots before access
-  and require unchanged canonical database bytes.
-- Retain existing caller URI-parameter and named/anonymous memory-store tests;
-  these are distinct contracts, not duplicates of filesystem path handling.
-  Validate full local gates, independent P0–P3 review and exact-commit CI with
-  supported downstream app compatibility. No live archives or releases.
-
-## crawlkit: SQLite freshness checks use the requested bundle
-
-- Preserve the literal database path when checking freshness. Trimming selected
-  neighboring main/WAL/SHM files, causing both missed and spurious refreshes.
-  Reuse the snapshot Windows component check; ambiguous paths return false.
-- Replace unrelated freshness assertions embedded in snapshot copying and
-  validation tests with dedicated fixed-timestamp cases: older, equal and newer
-  main/WAL/SHM files, empty/missing paths and zero cutoff. No sleeps or live
-  archives. Preserve all snapshot-specific assertions and fixtures.
-- Distinct neighboring timestamps prove literal-path selection in both
-  directions for all three files. Native Windows cases reject both filename
-  and parent-directory aliases while retaining a fresh canonical-path control.
-- Healthy race-enabled suites pass; trimming, ignored sidecars, inclusive cutoff
-  and always-fresh-for-valid-input faults all falsely pass the original suite and
-  fail the dedicated cases. One stale-bundle row replaces identical older-file
-  fixtures; equality and newer-file rows remain distinct for main/WAL/SHM.
-- Validate full local gates, independent P0–P3 review, exact-commit CI and
-  supported downstream app compatibility. No releases.
-
-## crawlkit: config fixtures and complete metadata assertions
-
-- Consolidate platform fallback fixtures into unset and relative-XDG rows,
-  preserving both input contracts. Compare all path fields, including base and
-  share directories; retain legacy/new precedence and absolute-XDG cases.
-- Fill every runtime config field with a distinct nonzero value and compare the
-  complete TOML round-trip result. Require the complete token diagnostic metadata,
-  including the environment variable name rather than its value.
-- Twenty race-enabled original/final outcomes: healthy suites pass; token-value
-  exposure, missing environment name and loss of version/cache/log/share fields
-  falsely pass before and fail afterward. Database-path loss and broken relative
-  or unset XDG handling fail both versions. Production source is unchanged.
-- Validate full local gates, independent P0–P3 review and Linux/Windows PR CI
-  with pinned downstream CLI comparison. No live archives or releases.
-
-## crawlkit: consolidate shard rotation fixtures
-
-- Remove the standalone 25-row rotation fixture. The existing two-row generated
-  shard case already requires two shards, imports literal rows in full, replace
-  and merge modes, and verifies later-shard corruption rolls back the import.
-- Move every exported file-metadata assertion into that retained case. Import
-  intentionally accepts omitted sizes, so deleting those checks would lose the
-  writer's complete-metadata contract. No new helper, fixture or production API.
-- Ten race-enabled before/after overlay outcomes preserve detection of disabled
-  rotation, absent metadata, zero sizes and missing hashes. The original retained
-  case alone accepts zero sizes; the consolidated case rejects them. Healthy
-  variants pass and production files remain unchanged.
-- Require the full library gate, independent P0–P3 review and exact-head PR CI,
-  including Windows and pinned downstream comparison. Synthetic archives only;
-  no provider calls or releases.
-
-## crawlkit: check filtered snapshot contents
-
-- Replace count-only assertions in the existing export and import filter cases
-  with literal message identities, destinations and bodies. Check the sync-state
-  row already present in the export fixture as well. No new fixtures or helpers.
-- The old export case accepts the private message instead of the public message,
-  or a missing sync-state row. The old import case accepts dropping all messages
-  or changing the retained body. Ten race-enabled before/after overlay outcomes
-  verify these four false positives are rejected while healthy cases pass.
-- Production files stay unchanged. Require full local gates, independent P0–P3
-  review and exact-head Linux/Windows/downstream CI. Temporary synthetic archives
-  only; no provider calls or releases.
-
-## crawlkit: consolidate import integrity fixtures
-
-- Remove standalone legacy singular-file and stripped planned-metadata fixtures.
-  The existing metadata and selection matrices exercise those same import paths.
-- Preserve the legacy positive row total and check literal imported IDs/bodies in
-  the metadata matrix. Keep its mode-specific old-row checks. Legacy zero totals
-  remain covered by the partial-plan fixture. Preserve the exact stripped-metadata
-  diagnostic in the selection matrix, alongside callback and input-state checks.
-- Fourteen race-enabled before/after overlay outcomes cover healthy imports,
-  ignored legacy files, changed bodies, skipped replacement, rejected positive
-  legacy totals, bypassed metadata validation and changed diagnostics. Retained
-  cases detect every fault after consolidation; production source is unchanged.
-- Remove 41 net test lines without new helpers or fixtures. Require full local
-  gates, independent P0–P3 review and exact-head Linux/Windows/downstream CI.
-  Temporary synthetic archives only; no provider calls or releases.
-
-## crawlkit: share default state constructor fixtures
-
-- Move default-constructor read checks and the manifest key into the existing
-  three-schema coexistence case. Read all three records after all writes, with
-  literal identities and values. Remove three database setups and 36 test lines.
-- Keep each clock/staleness case and mapped-table checks. Twelve paired race
-  outcomes preserve rejection of broken default constructors and now reject a
-  wrong manifest key or a cursor write that removes scoped state. Healthy cases
-  pass. Temporary overlays leave tracked source bytes unchanged.
-- Require full local gates, independent P0–P3 review and exact-head PR CI.
-  Synthetic SQLite data only; no public API, production or release changes.
-
-## crawlkit: backup file roots preserve literal paths
-
-- Stop trimming collection and restore filesystem roots. The existing file
-  integration case now uses distinct neighboring source and restore directories,
-  checks selected paths and restored contents, and preserves neighboring bytes.
-- Reject ambiguous trailing spaces or dots in Windows root components before
-  filesystem access. Reuse the same encrypted fixture for root/parent-component
-  rejection and ordinary-path controls; no new fixture files or test helpers.
-- Five race-enabled overlay outcomes: old and fixed healthy suites pass; the new
-  case fails against old code and either independently reintroduced trim.
-  Tracked bytes remain unchanged. Require full local gates, independent P0–P3
-  review, native Windows CI and supported downstream compatibility. No releases.
-
-
-## crawlkit: require the intended backup namespace rejection
-
-- Keep all five existing shard rows and identify them by name. Require the exact
-  reserved-namespace or invalid-path diagnostic, including the rejected path.
-  An unrelated filesystem error must not satisfy the preflight contract.
-- Fourteen paired race-enabled outcomes cover healthy cases, the disabled whole
-  namespace guard, disabled table/path arms, wrong namespace/path diagnostics and
-  accepted invalid inputs. Healthy cases pass; the revised test rejects every
-  fault. The old test missed all error-cause faults. Temporary overlays leave
-  tracked bytes unchanged and are removed.
-- Production code is unchanged. Require full local gates, independent P0–P3
-  review and exact-head Linux/Windows/pinned-downstream CI. No new fixture files,
-  encryption setup, live archives or releases.
-
-
-## crawlkit: freeze the downstream smoke command contract
-
-- Replace the smoke test's production-derived expected commands with the six
-  literal read-only argument lists. Compare full invocations, including the
-  selected binary and isolated config path. Keep each app's native init step,
-  timeout, empty stdin, runtime directory and unchanged-file receipt checks.
-- Twelve paired Node outcomes cover healthy runs, a removed command, changed
-  flags, changed order, a wrong binary and a wrong config path. The old test
-  accepted all five faults; the revised test rejects each fault for all three
-  apps. Temporary test copies are removed and tracked bytes stay unchanged.
-- Production and workflow files stay unchanged. Require full local gates,
-  independent P0–P3 review and exact-head PR CI. These are synthetic command
-  contract checks; no external app, live archive or release proof is claimed.
-
-## crawlkit: require the intended mirror validation errors
-
-- Keep the local-fetch validation fixture, then seed one local commit so the
-  escaping-path check reaches path validation instead of failing on unborn HEAD.
-  Require exact ref, path and limit diagnostics and stable tag-error prefixes
-  for the existing creation, validation and two snapshot-push calls.
-- Twenty paired race-enabled overlay outcomes cover healthy runs, four bypassed
-  guards, four incorrect diagnostics and the already-detected zero-limit bypass.
-  The revised test catches all eight faults the old test missed. Temporary
-  overlays are removed and production bytes stay unchanged.
-- Require full local gates, independent P0–P3 review and exact-head PR CI.
-  No production changes, remote repositories, live archives or releases.
-
-## crawlkit: share cache copy fixtures without weakening checks
-
-- Fold the four-byte exact-limit case into the existing read-only snapshot
-  fixture, preserving copied bytes, private mode, size and fixed-clock setup.
-  Keep oversize and maximum-int64 copy-limit tests separate.
-- Share the changing-source fixture across explicit three-attempt and default
-  five-attempt rows. Use a literal default count and check the busy error,
-  returned path, cleanup callback and empty copy directory for both rows.
-- Twenty paired race-enabled overlay outcomes retain detection of exact-limit,
-  content, size, Unix-mode, retry and cleanup faults. A changed default count
-  passes the old test and fails the revised table. Overlays are removed and
-  production bytes stay unchanged.
-- Require full local gates, independent P0–P3 review and exact-head PR CI.
-  No production changes, live archives or releases.
-
-## crawlkit: reuse scheduler recovery and explicit-path fixtures
-
-- Remove the short interrupted-tail fixture: the retained byte-prefix recovery
-  test reads every incomplete record prefix, preserves the preceding identity
-  and verifies append repair. Keep the public Run integration separate.
-- Fold history placement into the explicit-config-without-HOME fixture and
-  require the complete history filename alongside config, log and state paths.
-- Twelve paired race-enabled overlay outcomes preserve detection of wrong
-  directories, rejected truncation, dropped preceding records and skipped
-  repair. A wrong history filename passes the old checks and fails the new
-  assertion. Temporary overlays are removed; production bytes stay unchanged.
-- Require full local gates, independent P0–P3 review and exact-head PR CI.
-  No production changes, live archives or releases.
-
-## crawlkit: share legacy mutable upload transport fixtures
-
-- Share one loopback HTTP fixture across known-length/digest, unknown-length/
-  digest and known-length/no-digest uploads. Preserve all three cases and apply
-  the existing index, length, digest, chunked-body, payload, minimal-manifest and
-  upload-order assertions consistently. Keep snapshot and direct-part cases.
-- Remove the no-op TestMain that only invokes the default test runner.
-- Eighteen paired race-enabled overlay outcomes preserve minimal-manifest,
-  optional-digest and unknown-length compatibility and index/order controls.
-  The revised table also catches wrong unknown-length indexes, known-length
-  digest headers and unknown-length manifest identity missed by the old tests.
-  Temporary overlays are removed; production bytes stay unchanged.
-- Require full local gates, independent P0–P3 review and exact-head PR CI.
-  These are synthetic HTTP tests, not live-service E2E proof. No releases.
+Fault overlays prove targeted assertions; mocked HTTP and command tests remain
+synthetic. This ledger claims no live archive, live provider, installed-app or
+whole-system E2E proof. No release or deployment is part of this campaign.
