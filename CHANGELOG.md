@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve literal filesystem roots when collecting and restoring backup files so trailing whitespace cannot select or overwrite a neighboring directory; reject ambiguous Windows root components.
+
 ## 0.17.4 - 2026-11-06
 
 **Highlights:** Preserve literal SQLite archive paths during store access, snapshots, and freshness checks.
