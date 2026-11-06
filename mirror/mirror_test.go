@@ -806,26 +806,32 @@ func TestHistoryValidationAndLocalFetch(t *testing.T) {
 	if err := Fetch(ctx, opts); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResolveCommit(ctx, opts, ""); err == nil {
-		t.Fatal("empty ref should fail")
+	if _, err := ResolveCommit(ctx, opts, ""); err == nil || err.Error() != "git ref is required" {
+		t.Fatalf("empty ref error = %v", err)
 	}
-	if _, _, err := ReadFileAt(ctx, opts, "HEAD", "../secret"); err == nil {
-		t.Fatal("escaping tree path should fail")
+	if err := os.WriteFile(filepath.Join(repo, "manifest.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := CommitsChanging(ctx, opts, "manifest.json", 0); err == nil {
-		t.Fatal("zero history limit should fail")
+	if committed, err := Commit(ctx, opts, "archive: validation"); err != nil || !committed {
+		t.Fatalf("validation commit = %v, %v", committed, err)
 	}
-	if _, err := CreateImmutableTag(ctx, opts, "bad tag"); err == nil {
-		t.Fatal("invalid tag should fail")
+	if _, _, err := ReadFileAt(ctx, opts, "HEAD", "../secret"); err == nil || err.Error() != `invalid git tree path "../secret"` {
+		t.Fatalf("escaping tree path error = %v", err)
 	}
-	if err := ValidateTag(ctx, opts, "bad tag"); err == nil {
-		t.Fatal("invalid tag validation should fail")
+	if _, err := CommitsChanging(ctx, opts, "manifest.json", 0); err == nil || err.Error() != "commit limit must be greater than zero" {
+		t.Fatalf("zero history limit error = %v", err)
 	}
-	if err := PushSnapshot(ctx, opts, "snapshot/good:refs/heads/release"); err == nil {
-		t.Fatal("snapshot push should reject refspec syntax")
+	if _, err := CreateImmutableTag(ctx, opts, "bad tag"); err == nil || !strings.HasPrefix(err.Error(), `invalid snapshot tag "bad tag": `) {
+		t.Fatalf("invalid tag error = %v", err)
 	}
-	if err := PushCurrentSnapshot(ctx, opts, "snapshot/good:refs/heads/release"); err == nil {
-		t.Fatal("current snapshot push should reject refspec syntax")
+	if err := ValidateTag(ctx, opts, "bad tag"); err == nil || !strings.HasPrefix(err.Error(), `invalid snapshot tag "bad tag": `) {
+		t.Fatalf("invalid tag validation error = %v", err)
+	}
+	if err := PushSnapshot(ctx, opts, "snapshot/good:refs/heads/release"); err == nil || !strings.HasPrefix(err.Error(), `invalid snapshot tag "snapshot/good:refs/heads/release": `) {
+		t.Fatalf("snapshot refspec error = %v", err)
+	}
+	if err := PushCurrentSnapshot(ctx, opts, "snapshot/good:refs/heads/release"); err == nil || !strings.HasPrefix(err.Error(), `invalid snapshot tag "snapshot/good:refs/heads/release": `) {
+		t.Fatalf("current snapshot refspec error = %v", err)
 	}
 	if err := ValidateTag(ctx, opts, ""); err != nil {
 		t.Fatalf("empty optional tag: %v", err)
