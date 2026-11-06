@@ -291,15 +291,22 @@ func symlinkOrSkip(t *testing.T, oldname, newname string) {
 
 func TestWriteSnapshotRejectsReservedFileIndexNamespace(t *testing.T) {
 	ctx := context.Background()
-	for _, shard := range []Shard{
-		{Table: fileIndexTable, Path: "data/custom.jsonl.gz.age", Rows: []row{}},
-		{Table: "custom", Path: fileIndexPath, Rows: []row{}},
-		{Table: "custom", Path: "data/files/aa/custom.gz.age", Rows: []row{}},
-		{Table: "custom", Path: `data\files\index.jsonl.gz.age`, Rows: []row{}},
-		{Table: "custom", Path: `data/files\index.jsonl.gz.age`, Rows: []row{}},
+	for _, tt := range []struct {
+		name      string
+		shard     Shard
+		wantError string
+	}{
+		{"reserved-table", Shard{Table: fileIndexTable, Path: "data/custom.jsonl.gz.age", Rows: []row{}}, "backup shard uses reserved file index namespace"},
+		{"file-index", Shard{Table: "custom", Path: fileIndexPath, Rows: []row{}}, "backup shard uses reserved file index namespace"},
+		{"file-object", Shard{Table: "custom", Path: "data/files/aa/custom.gz.age", Rows: []row{}}, "backup shard uses reserved file index namespace"},
+		{"backslashes", Shard{Table: "custom", Path: `data\files\index.jsonl.gz.age`, Rows: []row{}}, "invalid backup shard path"},
+		{"mixed-separators", Shard{Table: "custom", Path: `data/files\index.jsonl.gz.age`, Rows: []row{}}, "invalid backup shard path"},
 	} {
-		if _, err := WriteSnapshotWithFiles(ctx, Config{}, []Shard{shard}, nil, Manifest{}); err == nil {
-			t.Fatalf("reserved shard should fail: %#v", shard)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := WriteSnapshotWithFiles(ctx, Config{}, []Shard{tt.shard}, nil, Manifest{})
+			if want := tt.wantError + ": " + tt.shard.Path; err == nil || err.Error() != want {
+				t.Fatalf("error = %v, want %q", err, want)
+			}
+		})
 	}
 }

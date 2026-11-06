@@ -297,3 +297,18 @@ comparison). No production APIs or behavior changed.
   case fails against old code and either independently reintroduced trim.
   Tracked bytes remain unchanged. Require full local gates, independent P0–P3
   review, native Windows CI and supported downstream compatibility. No releases.
+
+
+## crawlkit: require the intended backup namespace rejection
+
+- Keep all five existing shard rows and identify them by name. Require the exact
+  reserved-namespace or invalid-path diagnostic, including the rejected path.
+  An unrelated filesystem error must not satisfy the preflight contract.
+- Fourteen paired race-enabled outcomes cover healthy cases, the disabled whole
+  namespace guard, disabled table/path arms, wrong namespace/path diagnostics and
+  accepted invalid inputs. Healthy cases pass; the revised test rejects every
+  fault. The old test missed all error-cause faults. Temporary overlays leave
+  tracked bytes unchanged and are removed.
+- Production code is unchanged. Require full local gates, independent P0–P3
+  review and exact-head Linux/Windows/pinned-downstream CI. No new fixture files,
+  encryption setup, live archives or releases.
