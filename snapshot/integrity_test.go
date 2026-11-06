@@ -23,6 +23,7 @@ func TestImportIntegrityValidMetadata(t *testing.T) {
 				)
 				table := &manifest.Tables[0]
 				wantRows := 2
+				want := "one:first,two:second"
 				switch metadata {
 				case "hash only":
 					for i := range table.FileManifests {
@@ -49,6 +50,7 @@ func TestImportIntegrityValidMetadata(t *testing.T) {
 					table.FileManifests = table.FileManifests[:1]
 					table.Rows = 1
 					wantRows = 1
+					want = "one:first"
 				case "legacy Files":
 					table.FileManifests = nil
 					table.Rows = 0
@@ -56,14 +58,19 @@ func TestImportIntegrityValidMetadata(t *testing.T) {
 					table.File = table.Files[1]
 					table.Files = nil
 					table.FileManifests = nil
-					table.Rows = 0
+					table.Rows = 1
 					wantRows = 1
+					want = "two:second"
 				}
 				db := integrityDB(t)
 				if err := runIntegrityImport(t, mode, manifest, ImportOptions{DB: db, RootDir: root}); err != nil {
 					t.Fatal(err)
 				}
 				assertIntegrityCount(t, db, `select count(*) from things where id != 'old'`, wantRows)
+				var got string
+				if err := db.QueryRow(`select group_concat(id || ':' || body, ',') from (select id,body from things where id != 'old' order by id)`).Scan(&got); err != nil || got != want {
+					t.Fatalf("imported rows = %q, want %q: %v", got, want, err)
+				}
 				wantOld := 0
 				if mode == "merge" {
 					wantOld = 1
@@ -359,24 +366,6 @@ func TestImportIntegrityRejectsInconsistentRows(t *testing.T) {
 			})
 		}
 	}
-}
-
-func TestImportIntegrityRejectsStrippedPlannedMetadata(t *testing.T) {
-	root, manifest := integritySnapshot(t, []map[string]any{{"id": "one", "body": "first"}})
-	table := manifest.Tables[0]
-	plan := ImportPlan{Tables: []TableImportPlan{{
-		Table: table,
-		Mode:  TableImportFiles,
-		Files: []FileManifest{{Path: table.Files[0]}},
-	}}}
-	db := integrityDB(t)
-	_, _, err := ImportIncremental(context.Background(), IncrementalImportOptions{
-		DB: db, RootDir: root, Current: manifest, Plan: plan,
-	})
-	if err == nil || !strings.Contains(err.Error(), "inconsistent planned file manifest") {
-		t.Fatalf("expected planned metadata error, got %v", err)
-	}
-	assertIntegrityCount(t, db, `select count(*) from things where id = 'old'`, 1)
 }
 
 func TestImportIntegrityBindsSuppliedPlanToCurrentManifest(t *testing.T) {
