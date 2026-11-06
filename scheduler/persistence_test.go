@@ -104,7 +104,7 @@ func TestExplicitConfigPathsDoNotRequireHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if paths.ConfigPath != path || paths.LogDir != filepath.Join(filepath.Dir(path), "logs") || paths.StateDir != filepath.Join(filepath.Dir(path), "state") {
+	if paths.ConfigPath != path || paths.LogDir != filepath.Join(filepath.Dir(path), "logs") || paths.StateDir != filepath.Join(filepath.Dir(path), "state") || paths.History != filepath.Join(filepath.Dir(path), "state", "runs.jsonl") {
 		t.Fatalf("explicit paths = %#v", paths)
 	}
 	for _, homePath := range []string{"", "~/config.toml"} {

@@ -246,33 +246,6 @@ func TestParseEveryRejectsSubMinute(t *testing.T) {
 	}
 }
 
-func TestDefaultPathsCustomConfigKeepsStateNearby(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "crawlctl.toml")
-	paths, err := DefaultPaths(path)
-	if err != nil {
-		t.Fatalf("paths: %v", err)
-	}
-	if filepath.Dir(paths.History) != filepath.Join(filepath.Dir(path), "state") {
-		t.Fatalf("history = %s, want state next to config", paths.History)
-	}
-}
-
-func TestReadHistoryIgnoresTruncatedLastLine(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "runs.jsonl")
-	complete := `{"id":"1","job":"ok","command":["true"],"started_at":"2026-01-01T00:00:00Z","finished_at":"2026-01-01T00:00:01Z","duration_ms":1,"exit_code":0,"status":"success","log_path":"ok.log"}` + "\n"
-	if err := os.WriteFile(path, []byte(complete+`{"id":"2","job":"ok"`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	history, err := ReadHistory(path)
-	if err != nil {
-		t.Fatalf("history: %v", err)
-	}
-	if len(history) != 1 || history[0].ID != "1" {
-		t.Fatalf("history = %#v", history)
-	}
-}
-
 func TestRunDoesNotRefuseOnTruncatedHistoryLine(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell command path differs on windows")
