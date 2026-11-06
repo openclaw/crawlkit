@@ -3,6 +3,13 @@ name: Release (unified)
 on:
   workflow_dispatch:
     inputs:
+      component:
+        description: Explicit release component; omitted keeps the Crawlkit CLI route
+        type: choice
+        default: crawlkit
+        options:
+          - crawlkit
+          - sessionowner
       version:
         description: SemVer to release
         required: true
@@ -21,6 +28,7 @@ concurrency:
 
 jobs:
   preflight:
+    if: ${{ inputs.component != 'sessionowner' }}
     runs-on: xcode-27
     permissions:
       contents: read
@@ -33,10 +41,11 @@ jobs:
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           DRY_RUN: ${{ inputs.dry_run }}
+          RELEASE_COMPONENT: ${{ inputs.component || 'crawlkit' }}
         with:
           script: |
             const preflight = require('./.github/scripts/release-preflight.cjs');
-            await preflight({ github, context, version: process.env.RELEASE_VERSION, dryRun: process.env.DRY_RUN === 'true' });
+            await preflight({ github, context, version: process.env.RELEASE_VERSION, dryRun: process.env.DRY_RUN === 'true', component: process.env.RELEASE_COMPONENT });
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -83,6 +92,7 @@ jobs:
 
   release:
     needs: preflight
+    if: ${{ inputs.component != 'sessionowner' }}
     permissions:
       actions: read
       checks: read
@@ -106,3 +116,52 @@ jobs:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+
+  component-preflight:
+    if: ${{ inputs.component == 'sessionowner' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.component.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate the component release prerequisites
+        id: component
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        with:
+          script: |
+            const preflight = require('./.github/scripts/release-preflight.cjs');
+            const version = await preflight({ github, context, version: process.env.RELEASE_VERSION, dryRun: process.env.DRY_RUN === 'true', component: 'sessionowner' });
+            core.setOutput('version', version);
+
+  component-release:
+    needs: component-preflight
+    if: ${{ inputs.component == 'sessionowner' }}
+    permissions:
+      actions: read
+      checks: read
+      contents: write
+      statuses: read
+    # Provisional local candidate, not remotely qualified; replace with the landed SHA before final review.
+    uses: openclaw/release-workflows/.github/workflows/release-source.yml@a4662ed0e732860a19f6a487151486faaf5ec2e0
+    with:
+      version: ${{ needs.component-preflight.outputs.version }}
+      dry_run: ${{ inputs.dry_run }}
+      tag-prefix: sessionowner/v
+      component-path: sessionowner
+      make-latest: 'false'
+      go-modules: '["sessionowner"]'
+      require-signed-tag: true
+      source-archives: false
+      homebrew-formula: ''
+      ci-check-events: '["push","pull_request"]'
+      generated-asset: sessionowner-${{ needs.component-preflight.outputs.version }}.tar.gz
+      test-command: |
+        node --test .github/scripts/release-preflight.test.cjs
+        node sessionowner/release/package.mjs --version '${{ needs.component-preflight.outputs.version }}' --commit "$(git rev-parse HEAD)"

@@ -23,14 +23,14 @@ that root and the accepted candidate. The admitted local integration imported
 only the component addition onto the newer main commit above, leaving its root
 tree unchanged. It does not establish release or consumer qualification.
 
-The existing release route is root-only. Inspection of the shared
-`release-source.yml@v1` at `9d81ab3d2877f9900ef787e6dbcf4d9af96eb013` found no
-supported namespaced primary tag with a separate module version, component
-metadata scope, or explicit `make_latest=false`. A narrow shared extension has
-separate owner authorization. Crawlkit caller wiring still awaits its frozen,
-verified interface; no input names are guessed or root-tag fallback introduced.
-A later reviewed opt-in component route must preserve root behavior, workflow
-pins, root tags, Crawlctl build/install and its default update selector.
+The default release route remains the root Crawlkit CLI route. Inspection of
+`release-source.yml@v1` at `9d81ab3d2877f9900ef787e6dbcf4d9af96eb013` found missing
+component capabilities. The local opt-in caller now follows the frozen extension
+contract at `a4662ed0e732860a19f6a487151486faaf5ec2e0`, which is a provisional shared
+candidate, not a remotely qualified pin. The landed shared SHA must replace it
+before final caller review or landing; old `v1` is not a compatible fallback.
+Root behavior, action pins, root tags, Crawlctl build/install and its default
+update selector remain unchanged.
 A namespaced GitHub release must explicitly use `make_latest=false`; verify both root `/releases/latest` and the Crawlctl selector
 before and after. The newer upstream policy requires a qualified dry run and a
 fleet-signed annotated tag on the exact release commit. Follow the admitted route;
@@ -47,6 +47,39 @@ pinned ClawSweeper final-candidate coverage, immutable source/checksum/API/schem
 manifests and exact Go proxy identity. Native owners separately pin and qualify
 the component. Browser/SDK/actor proof, installed identity, sequential provider
 acceptance and every starter dependent remain independent gates.
+
+## Opt-in caller prerequisites
+
+The unified workflow's optional `component` selector defaults to `crawlkit`;
+omission preserves the existing root jobs and repository-wide release lock.
+Only `component=sessionowner` selects the separate Linux preflight and shared
+source job. It does not run Crawlctl builds, Rosetta, notarization or root
+closeout, and receives no root signing secrets.
+
+The frozen interface uses normalized plain SemVer, `tag-prefix=sessionowner/v`,
+`component-path=sessionowner`, string `make-latest: 'false'`, and
+`go-modules: '["sessionowner"]'`. Go queries use `v<version>`, not a namespaced
+version or root module. The generated command takes its quoted version only
+from validated preflight output and uses the existing temporary
+`RELEASE_ASSET_PATH` seam. Component versions currently exclude build metadata,
+matching the unchanged artifact adapter; legacy root version handling is intact.
+
+Real component release metadata is not present. Before a future release, a
+separately reviewed preparation must supply `sessionowner/CHANGELOG.md` with the
+shared workflow's dated section and matching visible component-root metadata
+(`VERSION`, `version.txt`, or `package.json`). The private binding's
+`1.0.0-candidate.0` does not substitute for this metadata. Although the shared
+workflow supports `.release-version`, this caller refuses that hidden path
+because the committed artifact adapter rejects hidden source files. No version
+or release history is invented here. Missing, mismatched or symlinked metadata
+fails before remote reads, including for dry runs.
+
+Live preflight requires an annotated `sessionowner/v<version>` tag pointing
+directly to the workflow commit and rejects any existing draft or public release;
+the shared workflow separately verifies its fleet signature. Dry runs skip tag
+and release queries and retain the shared no-publication policy. Local caller
+validation uses only synthetic metadata and mocked GitHub reads. Neither a real
+dispatch nor remote qualification of the provisional pin has occurred.
 
 ## Offline generated-asset adapter
 
@@ -96,8 +129,9 @@ node --test sessionowner/release/package.test.mjs
 Those tests create isolated synthetic Git repositories, never import the actual
 binding, and cover source custody, private layout, archive integrity, metadata,
 unsafe paths, credential rejection and output preservation. Root/default release
-behavior is unchanged; component caller integration and final joint review are
-still pending.
+behavior is unchanged. Local component caller wiring has focused mock coverage;
+its landed shared pin, real release metadata, required validation and final joint
+review remain pending.
 
 Do not publish or activate this component as a way to resolve a held consumer,
 shared-profile dependency or missing browser capability. No Bird enrollment or
