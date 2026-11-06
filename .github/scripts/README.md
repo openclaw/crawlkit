@@ -1,22 +1,5 @@
 # CI Helpers
 
-## Release dispatch guard
-
-`release-preflight.cjs` keeps the omitted/default `crawlkit` route unchanged and
-admits `sessionowner` only through its namespaced tag and component metadata.
-Both live routes require an annotated exact-workflow-commit tag and no existing
-release; the shared workflow owns signature verification. Component dry runs
-still require real component-root release metadata but perform no GitHub reads.
-Hidden `.release-version` is refused because the unchanged artifact adapter
-excludes hidden source files; use reviewed visible version metadata instead.
-
-Run `node --test .github/scripts/release-preflight.test.cjs` for offline mocked
-endpoint, synthetic metadata and caller-isolation fixtures. These do not execute
-the root CLI/notary preflight or the accepted component suites. See
-[component release prerequisites](../../sessionowner/RELEASE.md) and
-[publishing](../../docs/publishing.md). The component shared pin is provisional
-until its landed SHA and final joint review are verified.
-
 ## Crabbox hydration
 
 The hydration workflow writes lease-scoped `<id>.env` and `<id>.env.sh` files

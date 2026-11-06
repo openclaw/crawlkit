@@ -86,6 +86,7 @@ first crawl
 | Search | `embed`, `vector` | Embedding providers, vector encoding, exact search, and result fusion |
 | App contracts | `control`, `output`, `progress` | Machine-readable metadata, output formats, and CI-safe progress logs |
 | Remote archives | `remote` | Provider-neutral HTTP client and versioned archive protocol |
+| Session coordination | [`sessionowner`](sessionowner/README.md) | Provider-neutral guarded session state, recovery, and private adapter transport |
 | Background processing | `worker` | Bounded continuous workers over application-owned durable queues |
 | User surfaces | `scheduler`, `tui`, `releasecheck` | Refresh jobs, terminal browsing, and release notices |
 

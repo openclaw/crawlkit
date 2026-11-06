@@ -16,36 +16,6 @@ A second dispatch for v0.14.7 rebuilt the payload and correctly
 failed its comparison with the existing public release; it left a separate
 unpublished draft. See the [incident evidence](release-31838411168.md).
 
-## Opt-in session owner source route
-
-Omitting `component`, or selecting `component=crawlkit`, preserves the root
-release process below. The explicit `sessionowner` choice uses separate Linux
-preflight/source jobs under the same repository-wide lock, without Crawlctl,
-Rosetta, notarization, root closeout or root signing secrets.
-
-This route is a local candidate, not ready for dispatch. Its shared workflow pin
-`a4662ed0e732860a19f6a487151486faaf5ec2e0` is provisional and must be replaced by
-the verified landed SHA before final caller review or landing. It uses the frozen
-`tag-prefix=sessionowner/v`, `component-path=sessionowner`, string
-`make-latest: 'false'`, and `go-modules: '["sessionowner"]'` interface. No root
-version tag, root-module proxy warming or automatic latest-release selection is
-part of this route.
-
-A future, separately reviewed release preparation must add a dated component
-`CHANGELOG.md` and matching visible component-root version metadata. Neither
-exists yet; the private binding remains `1.0.0-candidate.0`. The caller refuses
-missing or symlinked metadata and hidden `.release-version`, which the unchanged
-artifact adapter cannot package. Focused tests use synthetic metadata rather
-than fabricate a real release. Live namespaced tags retain annotated exact-commit,
-fleet-signature and no-existing-release gates. Dry runs perform no publication.
-
-The generated asset contains committed component source, a private binding pack,
-ABI/source manifests and checksums. See [the component release contract](../sessionowner/RELEASE.md)
-for its layout, validation and remaining gates. Before and after any separately
-authorized publication, verify root GitHub `/releases/latest` and the Crawlctl
-update selector remain unchanged. This code route does not authorize package
-publication, installation, consumer upgrades or provider access.
-
 ## Release assets
 
 The archive prefix is the repository name; the executable inside every archive

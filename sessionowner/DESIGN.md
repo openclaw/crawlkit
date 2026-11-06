@@ -1,4 +1,19 @@
-# Candidate design and acceptance boundaries
+# Session owner design and acceptance boundaries
+
+## Package ownership
+
+`sessionowner` is an ordinary package of the root
+`github.com/openclaw/crawlkit` module, retaining import path
+`github.com/openclaw/crawlkit/sessionowner`. It shares Crawlkit's normal version
+and release route. There is no independent module, tag, source envelope or
+shared-publisher extension for this package. The private Node binding stays
+source inside Crawlkit; its existing metadata, API and schema bytes are unchanged.
+
+The root package layout changes validation and distribution ownership, not session
+behavior or automatic adoption. Root compilation/tests and final-candidate review
+remain required. Earlier stage records retain their original offline and nested-
+module context as history; [RELEASE.md](RELEASE.md) is the current distribution
+boundary.
 
 ## Implemented seams
 
@@ -69,10 +84,11 @@ or acceptance of whole requirements. Historical receipts are not rewritten.
    results. Provider-specific redaction, cursor mapping, identity proof and
    transport/token semantics still need disjoint provider fixtures. No real SDK,
    account, browser or native-store proof follows from the common-core tests.
-6. Complete relevant conformance, independent final-delta review and the supported
-   pinned ClawSweeper route remain before acceptance. The current uncommitted
-   candidate is not clean committed-range coverage; no auto-commit or stash is
-   used to manufacture it. Distribution and per-consumer rollout remain separate.
+6. Complete relevant conformance, root-module compilation/tests, independent
+   final-delta review and the supported pinned ClawSweeper route remain before
+   acceptance. Local append-only commits preserve the candidate and prior work;
+   their existence is not completed final-candidate review. Ordinary Crawlkit
+   distribution and separately qualified consumer adoption remain distinct.
 
 ## Native equivalence is a future qualification
 
@@ -86,9 +102,10 @@ reconciliation.
 
 ## Explicit exclusions
 
-No root-module import, root dependency/default change, root workflow edit,
-consumer dependency update, installed artifact change, live enrollment, provider
-request, SDK import, browser start, service, scheduler or publication. Bird/Birdcrawl
+Root-module ownership does not add production imports or enrollment in other
+packages. No root dependency/default or release-workflow change, consumer
+dependency update, installed artifact change, live enrollment, provider request,
+SDK import, browser start, service, scheduler or publication is included. Bird/Birdcrawl
 and consumed dependencies remain frozen; X, Main, remote readers and SQL holds
 remain unchanged. No Peter environment was inspected.
 

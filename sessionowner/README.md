@@ -1,12 +1,16 @@
-# Session owner (offline candidate)
+# Session owner
 
-`github.com/openclaw/crawlkit/sessionowner` is an additive, independently versioned
-Go module with a private thin Node binding. It is not imported by the root module,
-registered with Crawlctl, installed, or published. No provider, browser, Gateway,
-credential discovery, SDK import, timer or background service is included.
+`github.com/openclaw/crawlkit/sessionowner` is a provider-neutral package in the
+existing `github.com/openclaw/crawlkit` Go module. It uses Crawlkit's normal module
+version and release, without a nested module, separate tag or packaging workflow.
+The private thin Node binding remains source within Crawlkit, not a separately
+published artifact. No provider, browser, Gateway, credential discovery, SDK
+import, timer or background service is included; adding the package does not
+register it with Crawlctl or activate any consumer.
 
-See [independent artifact preparation and release gates](RELEASE.md) for the
-opt-in offline packaging adapter and remaining distribution requirements.
+See [distribution with Crawlkit](RELEASE.md) for validation and adoption boundaries.
+The stage documents below retain historical offline qualification, including the
+superseded nested-module setup; they do not override the current package layout.
 
 The source implements the frozen `sessionowner/1` public protocol and
 `sessionowner-adapter/1` private protocol. The five schemas **and** normative
@@ -71,11 +75,16 @@ startup, and a separate recovery cannot revive an expired business operation.
 
 ## Validation
 
-The source-only admission uses cached Go 1.27.1 and Node. The parent explicitly
-approved `go test`/`go vet -mod=vendor` for this standard-library-only module after
-tool policy refused GOPATH/GOPROXY environment overrides. Those denied variables
-were not set through another route. No `go mod vendor`, package installation or
-root repository gate was run.
+Run package validation in the root module with its required Go 1.27.3 toolchain.
+Removing the nested `go.mod` puts this directory under the existing root
+`go test ./...` and `make check` entrypoints; no extra workspace, replacement or
+CI job is needed. Compilation and tests in this root-module context remain a
+required validation gate before landing, not a result inferred from file layout.
+
+Earlier offline stages used a separately admitted cached Go 1.27.1 route. Their
+receipts remain historical behavior evidence, not permission to bypass the root
+toolchain or replay older module/vendor workarounds. This package-layout change
+does not rewrite the implementation, existing tests or Node/schema contracts.
 
 The shared corpus has 38 valid/invalid cases. Executable fixtures cover large
 cursor/body limits and escaping, guarded CAS/readback, cross-process contention,
@@ -86,7 +95,7 @@ root, not in this repository. Passing the current suite does not claim exhaustiv
 conformance or provider acceptance.
 
 See [DESIGN.md](DESIGN.md) for remaining acceptance work and
-[RELEASE.md](RELEASE.md) for the independent distribution gate.
+[RELEASE.md](RELEASE.md) for normal Crawlkit distribution and consumer gates.
 
 ## Focused hardening
 
