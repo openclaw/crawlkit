@@ -340,3 +340,18 @@ comparison). No production APIs or behavior changed.
   overlays are removed and production bytes stay unchanged.
 - Require full local gates, independent P0–P3 review and exact-head PR CI.
   No production changes, remote repositories, live archives or releases.
+
+## crawlkit: share cache copy fixtures without weakening checks
+
+- Fold the four-byte exact-limit case into the existing read-only snapshot
+  fixture, preserving copied bytes, private mode, size and fixed-clock setup.
+  Keep oversize and maximum-int64 copy-limit tests separate.
+- Share the changing-source fixture across explicit three-attempt and default
+  five-attempt rows. Use a literal default count and check the busy error,
+  returned path, cleanup callback and empty copy directory for both rows.
+- Twenty paired race-enabled overlay outcomes retain detection of exact-limit,
+  content, size, Unix-mode, retry and cleanup faults. A changed default count
+  passes the old test and fails the revised table. Overlays are removed and
+  production bytes stay unchanged.
+- Require full local gates, independent P0–P3 review and exact-head PR CI.
+  No production changes, live archives or releases.
