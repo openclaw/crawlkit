@@ -1843,222 +1843,108 @@ func TestClientUploadSQLiteBundleFilesPreservesAddressingMode(t *testing.T) {
 	}
 }
 
-func TestClientPreservesMinimalMutableBundleManifestCompatibility(t *testing.T) {
+func TestClientPreservesLegacyMutableBundleFiles(t *testing.T) {
 	content := []byte("compressed")
 	digest := sha256.Sum256(content)
-	part := SQLiteBundlePartFile{
-		SQLiteBundlePart: SQLiteBundlePart{
-			Index:  3,
-			Key:    "legacy-part",
-			Size:   int64(len(content)),
-			SHA256: fmt.Sprintf("%x", digest),
-		},
-		Path: filepath.Join(t.TempDir(), "part"),
-	}
-	if err := os.WriteFile(part.Path, content, 0o600); err != nil {
-		t.Fatalf("write part: %v", err)
-	}
-
-	var uploads []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		uploads = append(uploads, r.Header.Get("x-crawl-sqlite-upload"))
-		switch r.Header.Get("x-crawl-sqlite-upload") {
-		case "bundle-part":
-			if got := r.Header.Get("x-crawl-bundle-part-index"); got != "3" {
-				t.Errorf("part index = %q", got)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
+	for _, tt := range []struct {
+		name   string
+		size   int64
+		sha256 string
+	}{
+		{name: "known-length-with-digest", size: int64(len(content)), sha256: fmt.Sprintf("%x", digest)},
+		{name: "unknown-length-with-digest", size: -1, sha256: fmt.Sprintf("%x", digest)},
+		{name: "known-length-without-digest", size: int64(len(content))},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			part := SQLiteBundlePartFile{
+				SQLiteBundlePart: SQLiteBundlePart{
+					Index:  3,
+					Key:    "legacy-part",
+					Size:   tt.size,
+					SHA256: tt.sha256,
+				},
+				Path: filepath.Join(t.TempDir(), "part"),
 			}
-			if _, err := io.Copy(io.Discard, r.Body); err != nil {
-				t.Errorf("read part: %v", err)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
+			if err := os.WriteFile(part.Path, content, 0o600); err != nil {
+				t.Fatalf("write part: %v", err)
 			}
-			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
-		case "bundle-manifest":
-			var manifest SQLiteBundleManifest
-			if err := json.NewDecoder(r.Body).Decode(&manifest); err != nil {
-				t.Errorf("decode manifest: %v", err)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
+			var uploads []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				uploads = append(uploads, r.Header.Get("x-crawl-sqlite-upload"))
+				switch r.Header.Get("x-crawl-sqlite-upload") {
+				case "bundle-part":
+					if got := r.Header.Get("x-crawl-bundle-part-index"); got != "3" {
+						t.Errorf("part index = %q", got)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
+					}
+					if r.ContentLength != tt.size {
+						t.Errorf("content length = %d, want %d", r.ContentLength, tt.size)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
+					}
+					if got := r.Header.Get("x-crawl-content-sha256"); got != tt.sha256 {
+						t.Errorf("sha256 header = %q, want %q", got, tt.sha256)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
+					}
+					if tt.size < 0 && !slices.Contains(r.TransferEncoding, "chunked") {
+						t.Errorf("transfer encoding = %#v", r.TransferEncoding)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
+					}
+					body, err := io.ReadAll(r.Body)
+					if err != nil {
+						t.Errorf("read part: %v", err)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
+					}
+					if !bytes.Equal(body, content) {
+						t.Errorf("part body = %q", body)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
+					}
+					_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
+				case "bundle-manifest":
+					var manifest SQLiteBundleManifest
+					if err := json.NewDecoder(r.Body).Decode(&manifest); err != nil {
+						t.Errorf("decode manifest: %v", err)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
+					}
+					if manifest.App != "gitcrawl" ||
+						manifest.Archive != "gitcrawl/openclaw__openclaw" ||
+						manifest.Format != "" ||
+						len(manifest.Parts) != 0 {
+						t.Errorf("minimal mutable manifest = %#v", manifest)
+						http.Error(w, "invalid test request", http.StatusBadRequest)
+						return
+					}
+					_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{Complete: true})
+				default:
+					t.Errorf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
+					http.Error(w, "invalid test request", http.StatusBadRequest)
+					return
+				}
+			}))
+			defer server.Close()
+			client := newTestClient(t, Options{
+				Endpoint:      server.URL,
+				TokenProvider: StaticToken("secret"),
+			})
+			if _, err := client.UploadSQLiteBundleFiles(
+				context.Background(),
+				"gitcrawl",
+				"gitcrawl/openclaw__openclaw",
+				SQLiteBundleManifest{},
+				[]SQLiteBundlePartFile{part},
+			); err != nil {
+				t.Fatalf("upload legacy mutable bundle: %v", err)
 			}
-			if manifest.App != "gitcrawl" ||
-				manifest.Archive != "gitcrawl/openclaw__openclaw" ||
-				manifest.Format != "" ||
-				len(manifest.Parts) != 0 {
-				t.Errorf("minimal mutable manifest = %#v", manifest)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
+			if !slices.Equal(uploads, []string{"bundle-part", "bundle-manifest"}) {
+				t.Fatalf("uploads = %#v", uploads)
 			}
-			_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{Complete: true})
-		default:
-			t.Errorf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
-			http.Error(w, "invalid test request", http.StatusBadRequest)
-			return
-		}
-	}))
-	defer server.Close()
-
-	client := newTestClient(t, Options{
-		Endpoint:      server.URL,
-		TokenProvider: StaticToken("secret"),
-	})
-	if _, err := client.UploadSQLiteBundleFiles(
-		context.Background(),
-		"gitcrawl",
-		"gitcrawl/openclaw__openclaw",
-		SQLiteBundleManifest{},
-		[]SQLiteBundlePartFile{part},
-	); err != nil {
-		t.Fatalf("upload minimal mutable bundle: %v", err)
-	}
-	if !slices.Equal(uploads, []string{"bundle-part", "bundle-manifest"}) {
-		t.Fatalf("uploads = %#v", uploads)
-	}
-}
-
-func TestClientPreservesUnknownLengthMutableBundleFileTransport(t *testing.T) {
-	content := []byte("compressed")
-	digest := sha256.Sum256(content)
-	part := SQLiteBundlePartFile{
-		SQLiteBundlePart: SQLiteBundlePart{
-			Index:  3,
-			Key:    "legacy-part",
-			Size:   -1,
-			SHA256: fmt.Sprintf("%x", digest),
-		},
-		Path: filepath.Join(t.TempDir(), "part"),
-	}
-	if err := os.WriteFile(part.Path, content, 0o600); err != nil {
-		t.Fatalf("write part: %v", err)
-	}
-
-	var uploads []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		uploads = append(uploads, r.Header.Get("x-crawl-sqlite-upload"))
-		switch r.Header.Get("x-crawl-sqlite-upload") {
-		case "bundle-part":
-			if r.ContentLength != -1 {
-				t.Errorf("content length = %d, want unknown", r.ContentLength)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
-			}
-			if got := r.Header.Get("x-crawl-content-sha256"); got != fmt.Sprintf("%x", digest) {
-				t.Errorf("sha256 header = %q", got)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
-			}
-			if !slices.Contains(r.TransferEncoding, "chunked") {
-				t.Errorf("transfer encoding = %#v", r.TransferEncoding)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
-			}
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				t.Errorf("read part: %v", err)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
-			}
-			if !bytes.Equal(body, content) {
-				t.Errorf("part body = %q", body)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
-		case "bundle-manifest":
-			_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{Complete: true})
-		default:
-			t.Errorf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
-			http.Error(w, "invalid test request", http.StatusBadRequest)
-			return
-		}
-	}))
-	defer server.Close()
-
-	client := newTestClient(t, Options{
-		Endpoint:      server.URL,
-		TokenProvider: StaticToken("secret"),
-	})
-	if _, err := client.UploadSQLiteBundleFiles(
-		context.Background(),
-		"gitcrawl",
-		"gitcrawl/openclaw__openclaw",
-		SQLiteBundleManifest{},
-		[]SQLiteBundlePartFile{part},
-	); err != nil {
-		t.Fatalf("upload unknown-length mutable bundle file: %v", err)
-	}
-	if !slices.Equal(uploads, []string{"bundle-part", "bundle-manifest"}) {
-		t.Fatalf("uploads = %#v", uploads)
-	}
-}
-
-func TestClientAllowsMutableBundleFileWithoutSHA256(t *testing.T) {
-	content := []byte("compressed")
-	part := SQLiteBundlePartFile{
-		SQLiteBundlePart: SQLiteBundlePart{
-			Index: 3,
-			Key:   "legacy-part",
-			Size:  int64(len(content)),
-		},
-		Path: filepath.Join(t.TempDir(), "part"),
-	}
-	if err := os.WriteFile(part.Path, content, 0o600); err != nil {
-		t.Fatalf("write part: %v", err)
-	}
-
-	var uploads []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		uploads = append(uploads, r.Header.Get("x-crawl-sqlite-upload"))
-		switch r.Header.Get("x-crawl-sqlite-upload") {
-		case "bundle-part":
-			if r.ContentLength != int64(len(content)) {
-				t.Errorf("content length = %d, want %d", r.ContentLength, len(content))
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
-			}
-			if got := r.Header.Get("x-crawl-content-sha256"); got != "" {
-				t.Errorf("sha256 header = %q", got)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
-			}
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				t.Errorf("read part: %v", err)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
-			}
-			if !bytes.Equal(body, content) {
-				t.Errorf("part body = %q", body)
-				http.Error(w, "invalid test request", http.StatusBadRequest)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(SQLiteUploadResult{Complete: true})
-		case "bundle-manifest":
-			_ = json.NewEncoder(w).Encode(SQLiteBundleUploadResult{Complete: true})
-		default:
-			t.Errorf("unexpected upload kind %q", r.Header.Get("x-crawl-sqlite-upload"))
-			http.Error(w, "invalid test request", http.StatusBadRequest)
-			return
-		}
-	}))
-	defer server.Close()
-
-	client := newTestClient(t, Options{
-		Endpoint:      server.URL,
-		TokenProvider: StaticToken("secret"),
-	})
-	if _, err := client.UploadSQLiteBundleFiles(
-		context.Background(),
-		"gitcrawl",
-		"gitcrawl/openclaw__openclaw",
-		SQLiteBundleManifest{},
-		[]SQLiteBundlePartFile{part},
-	); err != nil {
-		t.Fatalf("upload mutable bundle file without sha256: %v", err)
-	}
-	if !slices.Equal(uploads, []string{"bundle-part", "bundle-manifest"}) {
-		t.Fatalf("uploads = %#v", uploads)
+		})
 	}
 }
 
@@ -3719,10 +3605,6 @@ func testServiceContract() Contract {
 		Capabilities: []string{"example.items.search"},
 	}}
 	return contract
-}
-
-func TestMain(m *testing.M) {
-	os.Exit(m.Run())
 }
 
 func newTestClient(t *testing.T, opts Options) *Client {
