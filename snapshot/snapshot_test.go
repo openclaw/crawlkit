@@ -63,12 +63,18 @@ create table sync_state(source_name text, entity_type text, entity_id text, valu
 	if _, err := Import(ctx, ImportOptions{DB: dst.DB(), RootDir: root}); err != nil {
 		t.Fatal(err)
 	}
-	var count int
-	if err := dst.DB().QueryRowContext(ctx, `select count(*) from messages`).Scan(&count); err != nil {
+	var got string
+	if err := dst.DB().QueryRowContext(ctx, `select group_concat(id || ':' || guild_id || ':' || body, ',') from (select * from messages order by id)`).Scan(&got); err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Fatalf("message count = %d", count)
+	if got != "1:guild:hello" {
+		t.Fatalf("exported messages = %q", got)
+	}
+	if err := dst.DB().QueryRowContext(ctx, `select group_concat(source_name || ':' || entity_type || ':' || entity_id || ':' || value || ':' || updated_at, ',') from sync_state`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "api:cursor:x:1:now" {
+		t.Fatalf("exported sync state = %q", got)
 	}
 }
 
@@ -773,12 +779,12 @@ func TestImportFilterSkipsRows(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	var count int
-	if err := dst.DB().QueryRowContext(ctx, `select count(*) from messages where guild_id = '@me'`).Scan(&count); err != nil {
+	var got string
+	if err := dst.DB().QueryRowContext(ctx, `select group_concat(id || ':' || guild_id || ':' || body, ',') from (select * from messages order by id)`).Scan(&got); err != nil {
 		t.Fatal(err)
 	}
-	if count != 0 {
-		t.Fatalf("private rows imported = %d", count)
+	if got != "public:g1:keep" {
+		t.Fatalf("imported messages = %q", got)
 	}
 }
 

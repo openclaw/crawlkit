@@ -243,3 +243,16 @@ comparison). No production APIs or behavior changed.
 - Require the full library gate, independent P0–P3 review and exact-head PR CI,
   including Windows and pinned downstream comparison. Synthetic archives only;
   no provider calls or releases.
+
+## crawlkit: check filtered snapshot contents
+
+- Replace count-only assertions in the existing export and import filter cases
+  with literal message identities, destinations and bodies. Check the sync-state
+  row already present in the export fixture as well. No new fixtures or helpers.
+- The old export case accepts the private message instead of the public message,
+  or a missing sync-state row. The old import case accepts dropping all messages
+  or changing the retained body. Ten race-enabled before/after overlay outcomes
+  verify these four false positives are rejected while healthy cases pass.
+- Production files stay unchanged. Require full local gates, independent P0–P3
+  review and exact-head Linux/Windows/downstream CI. Temporary synthetic archives
+  only; no provider calls or releases.
