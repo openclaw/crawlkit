@@ -72,41 +72,6 @@ create table sync_state(source_name text, entity_type text, entity_id text, valu
 	}
 }
 
-func TestExportRotatesShards(t *testing.T) {
-	ctx := context.Background()
-	src, err := store.Open(ctx, store.Options{
-		Path:   filepath.Join(t.TempDir(), "src.db"),
-		Schema: `create table things(id integer primary key, value text not null);`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer src.Close()
-	for i := 0; i < 25; i++ {
-		mustExec(t, src.DB(), `insert into things(value) values('some repeated text to force shard rotation')`)
-	}
-	manifest, err := Export(ctx, ExportOptions{
-		DB:            src.DB(),
-		RootDir:       t.TempDir(),
-		Tables:        []string{"things"},
-		MaxShardBytes: 1,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(manifest.Tables[0].Files) < 2 {
-		t.Fatalf("expected multiple shards, got %+v", manifest.Tables[0].Files)
-	}
-	if len(manifest.Tables[0].FileManifests) != len(manifest.Tables[0].Files) {
-		t.Fatalf("file manifests = %+v, files = %+v", manifest.Tables[0].FileManifests, manifest.Tables[0].Files)
-	}
-	for _, file := range manifest.Tables[0].FileManifests {
-		if file.Path == "" || file.Rows == 0 || file.Size == 0 || len(file.SHA256) != 64 {
-			t.Fatalf("bad file manifest = %+v", file)
-		}
-	}
-}
-
 func TestExportRejectsUnsafeTablePath(t *testing.T) {
 	ctx := context.Background()
 	src, err := store.Open(ctx, store.Options{

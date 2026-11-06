@@ -227,3 +227,19 @@ comparison). No production APIs or behavior changed.
   or unset XDG handling fail both versions. Production source is unchanged.
 - Validate full local gates, independent P0–P3 review and Linux/Windows PR CI
   with pinned downstream CLI comparison. No live archives or releases.
+
+## crawlkit: consolidate shard rotation fixtures
+
+- Remove the standalone 25-row rotation fixture. The existing two-row generated
+  shard case already requires two shards, imports literal rows in full, replace
+  and merge modes, and verifies later-shard corruption rolls back the import.
+- Move every exported file-metadata assertion into that retained case. Import
+  intentionally accepts omitted sizes, so deleting those checks would lose the
+  writer's complete-metadata contract. No new helper, fixture or production API.
+- Ten race-enabled before/after overlay outcomes preserve detection of disabled
+  rotation, absent metadata, zero sizes and missing hashes. The original retained
+  case alone accepts zero sizes; the consolidated case rejects them. Healthy
+  variants pass and production files remain unchanged.
+- Require the full library gate, independent P0–P3 review and exact-head PR CI,
+  including Windows and pinned downstream comparison. Synthetic archives only;
+  no provider calls or releases.
