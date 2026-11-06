@@ -49,58 +49,6 @@ func TestSetGetAndStale(t *testing.T) {
 	}
 }
 
-func TestDefaultConstructorsAndManifestKey(t *testing.T) {
-	ctx := context.Background()
-	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := EnsureSchema(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-	store := New(db)
-	source, entityType, entityID := ManifestKey("share")
-	if err := store.Set(ctx, source, entityType, entityID, "2026-05-01T12:00:00Z"); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, err := store.Get(ctx, source, entityType, entityID); err != nil || !ok {
-		t.Fatalf("manifest record ok=%v err=%v", ok, err)
-	}
-
-	scopedDB, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "scoped.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer scopedDB.Close()
-	if err := EnsureScopedSchema(ctx, scopedDB); err != nil {
-		t.Fatal(err)
-	}
-	scoped := NewScoped(scopedDB)
-	if err := scoped.Set(ctx, "share:last_import_at", "cursor"); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, err := scoped.Get(ctx, "share:last_import_at"); err != nil || !ok {
-		t.Fatalf("scoped record ok=%v err=%v", ok, err)
-	}
-
-	cursorDB, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "cursor.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cursorDB.Close()
-	if err := EnsureCursorSchema(ctx, cursorDB); err != nil {
-		t.Fatal(err)
-	}
-	cursor := NewCursor(cursorDB)
-	if err := cursor.Set(ctx, "share", "manifest", "generated_at", "cursor"); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, err := cursor.Get(ctx, "share", "manifest", "generated_at"); err != nil || !ok {
-		t.Fatalf("cursor record ok=%v err=%v", ok, err)
-	}
-}
-
 func TestScopedStoreSetGetAndStale(t *testing.T) {
 	ctx := context.Background()
 	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "scoped.db"))
@@ -195,14 +143,30 @@ func TestStateSchemasCoexistInOneDatabase(t *testing.T) {
 	if err := EnsureCursorSchema(ctx, db); err != nil {
 		t.Fatal(err)
 	}
-	if err := New(db).Set(ctx, "share", "repo", "last_import", "value"); err != nil {
+	source, entityType, entityID := ManifestKey("share")
+	if source != "share" || entityType != "manifest" || entityID != "generated_at" {
+		t.Fatalf("manifest key = %q, %q, %q", source, entityType, entityID)
+	}
+	store := New(db)
+	scoped := NewScoped(db)
+	cursor := NewCursor(db)
+	if err := store.Set(ctx, source, entityType, entityID, "value"); err != nil {
 		t.Fatal(err)
 	}
-	if err := NewScoped(db).Set(ctx, "share:last_import_at", "cursor"); err != nil {
+	if err := scoped.Set(ctx, "share:last_import_at", "scoped-cursor"); err != nil {
 		t.Fatal(err)
 	}
-	if err := NewCursor(db).Set(ctx, "share", "manifest", "generated_at", "cursor"); err != nil {
+	if err := cursor.Set(ctx, "share", "manifest", "generated_at", "cursor"); err != nil {
 		t.Fatal(err)
+	}
+	if rec, ok, err := store.Get(ctx, source, entityType, entityID); err != nil || !ok || rec.SourceName != "share" || rec.EntityType != "manifest" || rec.EntityID != "generated_at" || rec.Value != "value" {
+		t.Fatalf("manifest record = %+v ok=%v err=%v", rec, ok, err)
+	}
+	if rec, ok, err := scoped.Get(ctx, "share:last_import_at"); err != nil || !ok || rec.Scope != "share:last_import_at" || rec.Cursor != "scoped-cursor" {
+		t.Fatalf("scoped record = %+v ok=%v err=%v", rec, ok, err)
+	}
+	if rec, ok, err := cursor.Get(ctx, "share", "manifest", "generated_at"); err != nil || !ok || rec.Source != "share" || rec.EntityType != "manifest" || rec.EntityID != "generated_at" || rec.Cursor != "cursor" {
+		t.Fatalf("cursor record = %+v ok=%v err=%v", rec, ok, err)
 	}
 }
 
