@@ -312,3 +312,18 @@ comparison). No production APIs or behavior changed.
 - Production code is unchanged. Require full local gates, independent P0–P3
   review and exact-head Linux/Windows/pinned-downstream CI. No new fixture files,
   encryption setup, live archives or releases.
+
+
+## crawlkit: freeze the downstream smoke command contract
+
+- Replace the smoke test's production-derived expected commands with the six
+  literal read-only argument lists. Compare full invocations, including the
+  selected binary and isolated config path. Keep each app's native init step,
+  timeout, empty stdin, runtime directory and unchanged-file receipt checks.
+- Twelve paired Node outcomes cover healthy runs, a removed command, changed
+  flags, changed order, a wrong binary and a wrong config path. The old test
+  accepted all five faults; the revised test rejects each fault for all three
+  apps. Temporary test copies are removed and tracked bytes stay unchanged.
+- Production and workflow files stay unchanged. Require full local gates,
+  independent P0–P3 review and exact-head PR CI. These are synthetic command
+  contract checks; no external app, live archive or release proof is claimed.
