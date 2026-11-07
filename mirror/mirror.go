@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -168,7 +169,7 @@ func syncBranchForWrite(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("list git remotes: %w", err)
 	}
-	if !containsField(remotes, "origin") {
+	if !slices.Contains(strings.Fields(remotes), "origin") {
 		return nil
 	}
 	if err := run(ctx, opts.RepoPath, opts.Git, "fetch", "--prune", "--tags", "origin"); err != nil {
