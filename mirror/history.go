@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,7 +27,7 @@ func Fetch(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("list git remotes: %w", err)
 	}
-	if !containsField(remotes, "origin") {
+	if !slices.Contains(strings.Fields(remotes), "origin") {
 		return nil
 	}
 	return run(ctx, opts.RepoPath, opts.Git, "fetch", "--prune", "--tags", "origin")
@@ -253,13 +254,4 @@ func cleanTreePath(value string) (string, error) {
 		return "", fmt.Errorf("invalid git tree path %q", value)
 	}
 	return clean, nil
-}
-
-func containsField(value, target string) bool {
-	for _, field := range strings.Fields(value) {
-		if field == target {
-			return true
-		}
-	}
-	return false
 }
