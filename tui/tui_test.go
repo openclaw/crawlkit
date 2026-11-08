@@ -559,7 +559,7 @@ func TestChatDetailUsesTranscriptShapeBeforeMetadata(t *testing.T) {
 	if !ok {
 		t.Fatal("missing selected item")
 	}
-	lines := m.detailLines(item)
+	lines := m.detailLinesForWidth(item, 1000)
 	joined := strings.Join(lines, "\n")
 	for _, want := range []string{"general  bob", "Selected Message", "Thread 1-2/2", "alice", "root message", "> bob", ">   reply message", "Properties", "url: https://example.com/thread", "IDs", "parent: m1"} {
 		if !strings.Contains(joined, want) {
