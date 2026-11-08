@@ -8,10 +8,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func (m model) detailLines(item Item) []string {
-	return m.detailLinesForWidth(item, 1000)
-}
-
 func (m model) detailLinesForWidth(item Item, width int) []string {
 	width = max(20, width)
 	switch m.layoutPreset {
