@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Run independent validation gates two at a time after module tidying to shorten local and CI checks.
+
 - Discard ignored SQLite URI fragments before adding connection options so read-only opens retain filesystem-level write protection.
 
 - Reject snapshot rows above the importer’s 64 MiB line limit before publication, preserving the previous readable pack when export fails.

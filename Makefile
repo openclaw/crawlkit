@@ -55,7 +55,8 @@ lint: vet
 	if [ -s "$$output_file" ]; then cat "$$output_file"; exit 1; fi
 	GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
-check: tidy-check fmt lint test test-race test-release
+check: tidy-check
+	$(MAKE) -j2 fmt lint test test-race test-release
 
 clean:
 	rm -rf bin
