@@ -14,7 +14,10 @@ import (
 	"unicode/utf8"
 )
 
-const maxExactJSONInteger = 1<<53 - 1
+const (
+	maxExactJSONInteger = 1<<53 - 1
+	maxSnapshotRowBytes = 64 * 1024 * 1024
+)
 
 // Decode with exact tokens first, then restore the ordinary legacy callback
 // types. Only integers that float64 cannot safely carry become native int64.
@@ -141,6 +144,10 @@ func encodeSnapshotRow(row map[string]any, blobs map[string]string) ([]byte, err
 	data, err := json.Marshal(row)
 	if err != nil {
 		return nil, err
+	}
+	// Include the JSONL newline in the importer scanner buffer limit.
+	if len(data)+1 > maxSnapshotRowBytes {
+		return nil, fmt.Errorf("snapshot row exceeds %d bytes including newline", maxSnapshotRowBytes)
 	}
 	// Marshal detects cycles/unsupported values first. Inspect original strings
 	// before accepting its output, since the encoder silently repairs UTF-8.

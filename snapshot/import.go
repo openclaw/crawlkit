@@ -223,7 +223,7 @@ func importJSONLGzip(ctx context.Context, tx *sql.Tx, reader io.Reader, table st
 	}
 	defer gz.Close()
 	scanner := bufio.NewScanner(gz)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 64*1024*1024)
+	scanner.Buffer(make([]byte, 0, 1024*1024), maxSnapshotRowBytes)
 	rows := 0
 	decodedRows := 0
 	for scanner.Scan() {
