@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/openclaw/crawlkit/mirror"
@@ -324,5 +325,24 @@ func TestHistoricalEncryptedSnapshot(t *testing.T) {
 	}
 	if secondManifest.Counts["messages"] != 1 {
 		t.Fatalf("second manifest = %#v", secondManifest)
+	}
+}
+
+func TestJSONLRowLimitAllowsMultipleBoundaryRows(t *testing.T) {
+	const limit = 16 * 1024 * 1024
+	value := strings.Repeat("x", limit-3) // Two JSON quotes and the newline fill the row limit.
+	plaintext, count, err := EncodeJSONL([]string{value, value})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 || len(plaintext) != 2*limit {
+		t.Fatalf("encoded rows = %d, bytes = %d", count, len(plaintext))
+	}
+	var decoded []string
+	if err := DecodeJSONL(plaintext, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded) != 2 || decoded[0] != value || decoded[1] != value {
+		t.Fatal("boundary rows did not round-trip")
 	}
 }
