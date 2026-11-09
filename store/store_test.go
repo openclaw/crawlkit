@@ -554,3 +554,31 @@ func TestStoreRejectsAmbiguousWindowsFilesystemPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestReadOnlyPreservesModeWithURIFragments(t *testing.T) {
+	for _, suffix := range []string{"?mode=rw", "?mode=rwc", "?mode=rw#fragment", "?mode=rwc#fragment", "#fragment", "#fragment?ignored", "#"} {
+		t.Run(suffix, func(t *testing.T) {
+			ctx := context.Background()
+			path := filepath.Join(t.TempDir(), "archive.db")
+			st, err := Open(ctx, Options{Path: path, Schema: `create table things(value text)`})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.Close(); err != nil {
+				t.Fatal(err)
+			}
+			uri := strings.TrimSuffix(dsn(path, ""), "?") + suffix
+			ro, err := OpenReadOnly(ctx, uri)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ro.Close()
+			if _, err := ro.DB().ExecContext(ctx, `pragma query_only=0`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ro.DB().ExecContext(ctx, `insert into things values('unexpected write')`); err == nil || !strings.Contains(err.Error(), "readonly") {
+				t.Fatalf("write error = %v, want read-only rejection", err)
+			}
+		})
+	}
+}

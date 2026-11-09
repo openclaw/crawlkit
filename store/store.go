@@ -256,6 +256,8 @@ func dsn(path, pragmas string) string {
 		return "file:crawlkit-" + rand.Text() + "?mode=memory&cache=shared&" + pragmas
 	}
 	if strings.HasPrefix(path, "file:") {
+		// SQLite ignores fragments; remove them before the driver parses pragmas.
+		path, _, _ = strings.Cut(path, "#")
 		sep := "?"
 		if strings.Contains(path, "?") {
 			sep = "&"

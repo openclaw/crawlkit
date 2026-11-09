@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Discard ignored SQLite URI fragments before adding connection options so read-only opens retain filesystem-level write protection.
+
 - Reject snapshot rows above the importer’s 64 MiB line limit before publication, preserving the previous readable pack when export fails.
 
 - Preserve literal filesystem roots when collecting and restoring backup files so trailing whitespace cannot select or overwrite a neighboring directory; reject ambiguous Windows root components.
