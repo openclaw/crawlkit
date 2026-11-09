@@ -23,7 +23,10 @@ import (
 	"github.com/openclaw/crawlkit/internal/filelock"
 )
 
-const FormatVersion = 1
+const (
+	FormatVersion    = 1
+	maxJSONLRowBytes = 16 * 1024 * 1024
+)
 
 type Config struct {
 	Repo       string
@@ -379,8 +382,13 @@ func encodeJSONL(ctx context.Context, rows any) ([]byte, int, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, 0, err
 		}
+		start := buf.Len()
 		if err := enc.Encode(value.Index(i).Interface()); err != nil {
 			return nil, 0, err
+		}
+		// Include the encoder's newline in the decoder scanner buffer limit.
+		if buf.Len()-start > maxJSONLRowBytes {
+			return nil, 0, fmt.Errorf("JSONL row exceeds %d bytes including newline", maxJSONLRowBytes)
 		}
 	}
 	return buf.Bytes(), value.Len(), nil
@@ -388,7 +396,7 @@ func encodeJSONL(ctx context.Context, rows any) ([]byte, int, error) {
 
 func DecodeJSONL[T any](plaintext []byte, out *[]T) error {
 	scanner := bufio.NewScanner(bytes.NewReader(plaintext))
-	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxJSONLRowBytes)
 	for scanner.Scan() {
 		var value T
 		if err := json.Unmarshal(scanner.Bytes(), &value); err != nil {

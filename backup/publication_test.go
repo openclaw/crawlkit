@@ -245,3 +245,42 @@ func TestWriteNewShardDoesNotClobberExistingPath(t *testing.T) {
 		t.Fatalf("existing ciphertext changed: %q, %v", after, err)
 	}
 }
+
+func TestOversizedBackupRowPreservesPublishedSnapshot(t *testing.T) {
+	ctx := context.Background()
+	cfg := publicationConfig(t)
+	shards := []Shard{{Table: "messages", Path: "data/messages/01.jsonl.gz.age", Rows: []row{{ID: "1", Body: "original"}}}}
+	first, err := WriteSnapshot(ctx, cfg, shards, Manifest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := publishedFiles(t, cfg.Repo)
+	shards[0].Rows = []row{{ID: "1", Body: strings.Repeat("x", 16*1024*1024)}}
+	next, err := WriteSnapshot(ctx, cfg, shards, first)
+	if err == nil {
+		decoded, readErr := ReadSnapshot(cfg, next)
+		if readErr != nil {
+			t.Fatalf("read oversized snapshot: %v", readErr)
+		}
+		var rows []row
+		decodeErr := DecodeJSONL(decoded[0].Plaintext, &rows)
+		t.Fatalf("oversized backup was published; decode error: %v", decodeErr)
+	}
+	if !strings.Contains(err.Error(), "JSONL row exceeds") {
+		t.Fatalf("unexpected write error: %v", err)
+	}
+	if !reflect.DeepEqual(before, publishedFiles(t, cfg.Repo)) {
+		t.Fatal("oversized backup changed published files or leaked an object")
+	}
+	decoded, err := ReadSnapshot(cfg, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []row
+	if err := DecodeJSONL(decoded[0].Plaintext, &rows); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(rows, []row{{ID: "1", Body: "original"}}) {
+		t.Fatalf("previous backup rows = %+v", rows)
+	}
+}

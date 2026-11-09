@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject backup JSONL rows above the decoder's 16 MiB line limit before publication, preserving the previous readable backup on failure.
+
 - Avoid creating SQLite database files or directories when opening with an already-canceled context or expired deadline.
 
 - Discard ignored SQLite URI fragments before adding connection options so read-only opens retain filesystem-level write protection.
