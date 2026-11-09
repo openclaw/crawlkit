@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Avoid creating SQLite database files or directories when opening with an already-canceled context or expired deadline.
+
 - Discard ignored SQLite URI fragments before adding connection options so read-only opens retain filesystem-level write protection.
 
 - Reject snapshot rows above the importer’s 64 MiB line limit before publication, preserving the previous readable pack when export fails.

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -55,5 +56,35 @@ func TestWriteLockWaitHonorsContextDeadline(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("row count = %d, want only the retry", count)
+	}
+}
+
+func TestOpenFinishedContextDoesNotCreateDatabase(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	expired, cancelDeadline := context.WithDeadline(context.Background(), time.Unix(0, 0))
+	defer cancelDeadline()
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		want error
+	}{
+		{"cancelled", cancelled, context.Canceled},
+		{"expired deadline", expired, context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "new-directory")
+			st, err := Open(tc.ctx, Options{Path: filepath.Join(dir, "archive.db")})
+			if st != nil {
+				_ = st.Close()
+				t.Fatal("open returned a store for a finished context")
+			}
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("open error = %v, want %v", err, tc.want)
+			}
+			if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("finished-context open created a database directory: %v", err)
+			}
+		})
 	}
 }

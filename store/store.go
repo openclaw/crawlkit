@@ -44,6 +44,9 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if err := validatePath(path); err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := ensureDBFile(path); err != nil {
 		return nil, err
 	}
