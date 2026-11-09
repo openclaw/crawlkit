@@ -298,3 +298,39 @@ func TestPlanStrictGenerationLogicalMatching(t *testing.T) {
 		t.Fatal("unsafe manifest table made a path appear exporter-owned")
 	}
 }
+
+func TestExportOversizedRowPreservesPreviousPack(t *testing.T) {
+	ctx := context.Background()
+	db := exportTestDB(t, `create table things(id integer primary key, value text); insert into things values(1,'old');`)
+	root := t.TempDir()
+	first, err := Export(ctx, ExportOptions{DB: db, RootDir: root, Tables: []string{"things"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := packBytes(t, root, first)
+	_, err = Export(ctx, ExportOptions{DB: db, RootDir: root, Tables: []string{"things"},
+		Filter: func(_ string, row map[string]any) (bool, error) {
+			row["value"] = strings.Repeat("x", 64*1024*1024)
+			return true, nil
+		},
+	})
+	if err == nil {
+		dst := exportTestDB(t, `create table things(id integer primary key, value text);`)
+		_, importErr := Import(ctx, ImportOptions{DB: dst, RootDir: root})
+		t.Fatalf("oversized export succeeded; import error: %v", importErr)
+	}
+	if !strings.Contains(err.Error(), "snapshot row exceeds") {
+		t.Fatalf("unexpected export error: %v", err)
+	}
+	if !reflect.DeepEqual(before, packBytes(t, root, first)) {
+		t.Fatal("oversized export changed prior pack")
+	}
+	dst := exportTestDB(t, `create table things(id integer primary key, value text);`)
+	if _, err := Import(ctx, ImportOptions{DB: dst, RootDir: root}); err != nil {
+		t.Fatalf("import prior pack: %v", err)
+	}
+	var value string
+	if err := dst.QueryRowContext(ctx, `select value from things where id=1`).Scan(&value); err != nil || value != "old" {
+		t.Fatalf("prior value = %q, err=%v", value, err)
+	}
+}
