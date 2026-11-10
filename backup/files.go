@@ -266,6 +266,8 @@ func RestoreFiles(ctx context.Context, cfg Config, manifest Manifest, targetRoot
 	return RestoreFilesUnder(ctx, cfg, manifest, targetRoot, "")
 }
 
+// RestoreFilesUnder requires every file to be under requiredPrefix, if nonempty.
+// Shard paths and prefix membership are validated before any payload is restored.
 func RestoreFilesUnder(ctx context.Context, cfg Config, manifest Manifest, targetRoot, requiredPrefix string) (int, error) {
 	return restoreFilesWith(ctx, cfg.Identity, manifest, targetRoot, requiredPrefix, func(rel string) (io.ReadCloser, error) {
 		shard, err := ResolveShardPath(cfg.Repo, rel)
@@ -320,11 +322,17 @@ func restoreFilesWith(ctx context.Context, identityPath string, manifest Manifes
 		if _, err := ResolveShardPath(".", entry.Shard); err != nil {
 			return 0, err
 		}
+	}
+	for index, entry := range manifest.Files {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		record := records[index]
 		ciphertext, err := load(entry.Shard)
 		if err != nil {
 			return 0, err
 		}
-		err = restoreFile(ctx, identity, ciphertext, targetRoot, logical, record)
+		err = restoreFile(ctx, identity, ciphertext, targetRoot, record.Path, record)
 		closeErr := ciphertext.Close()
 		if err != nil {
 			return 0, err

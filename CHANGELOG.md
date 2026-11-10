@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Validate all backup file shard paths and required prefixes before restoring payloads, preserving existing targets when a later entry has invalid metadata.
+
 - Reject backup JSONL rows above the decoder's 16 MiB line limit before publication, preserving the previous readable backup on failure.
 
 - Avoid creating SQLite database files or directories when opening with an already-canceled context or expired deadline.
