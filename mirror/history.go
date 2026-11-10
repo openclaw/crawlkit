@@ -211,7 +211,7 @@ func ListTreeFiles(ctx context.Context, opts Options, ref, root string) ([]TreeF
 		return nil, err
 	}
 	args := []string{"ls-tree", "-r", "-l", "-z", commit}
-	if strings.TrimSpace(root) != "" {
+	if root != "" {
 		clean, err := cleanTreePath(root)
 		if err != nil {
 			return nil, err
@@ -249,7 +249,8 @@ func ShortRef(ref string) string {
 }
 
 func cleanTreePath(value string) (string, error) {
-	clean := path.Clean(strings.TrimSpace(value))
+	// Whitespace is part of a Git tree filename, including a whitespace-only name.
+	clean := path.Clean(value)
 	if clean == "." || clean == ".." || path.IsAbs(clean) || strings.HasPrefix(clean, "../") || strings.ContainsRune(clean, '\x00') {
 		return "", fmt.Errorf("invalid git tree path %q", value)
 	}

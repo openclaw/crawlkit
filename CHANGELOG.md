@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve literal whitespace in mirror history paths so reads, commit history, and tree selections address the requested filename.
+
 - Validate all backup file shard paths and required prefixes before restoring payloads, preserving existing targets when a later entry has invalid metadata.
 
 - Reject backup JSONL rows above the decoder's 16 MiB line limit before publication, preserving the previous readable backup on failure.
