@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -306,6 +307,58 @@ func TestWriteSnapshotRejectsReservedFileIndexNamespace(t *testing.T) {
 			_, err := WriteSnapshotWithFiles(ctx, Config{}, []Shard{tt.shard}, nil, Manifest{})
 			if want := tt.wantError + ": " + tt.shard.Path; err == nil || err.Error() != want {
 				t.Fatalf("error = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
+func TestRestoreValidatesAllFileMetadataBeforeWriting(t *testing.T) {
+	ctx := context.Background()
+	cfg := publicationConfig(t)
+	source := t.TempDir()
+	files := []File{
+		{Path: "attachments/first.txt", Source: filepath.Join(source, "first")},
+		{Path: "other/second.txt", Source: filepath.Join(source, "second")},
+	}
+	for _, file := range files {
+		if err := os.WriteFile(file.Source, []byte("backup "+file.Path), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest, err := WriteSnapshotWithFiles(ctx, cfg, nil, files, Manifest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Files) != 2 {
+		t.Fatalf("backup file count = %d", len(manifest.Files))
+	}
+	for _, tc := range []struct {
+		name, prefix, diagnostic string
+		badShard                 bool
+	}{
+		{name: "later prefix mismatch", prefix: "attachments", diagnostic: "outside required prefix"},
+		{name: "later invalid shard", diagnostic: "escapes backup root", badShard: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := manifest
+			current.Files = append([]FileEntry(nil), manifest.Files...)
+			if tc.badShard {
+				current.Files[1].Shard = "../escape.age"
+			}
+			target := t.TempDir()
+			if err := os.Mkdir(filepath.Join(target, "attachments"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(target, "attachments", "first.txt"), []byte("existing target"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := publishedFiles(t, target)
+			count, err := RestoreFilesUnder(ctx, cfg, current, target, tc.prefix)
+			if count != 0 || err == nil || !strings.Contains(err.Error(), tc.diagnostic) {
+				t.Fatalf("restore count=%d err=%v, want metadata rejection", count, err)
+			}
+			if !reflect.DeepEqual(before, publishedFiles(t, target)) {
+				t.Fatal("metadata rejection changed an earlier target file")
 			}
 		})
 	}
