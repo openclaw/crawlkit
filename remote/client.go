@@ -118,7 +118,7 @@ func (c *Client) do(ctx context.Context, method, route string, input, output any
 	return c.doRequest(ctx, req, input != nil, output, auth, credentials)
 }
 
-func (c *Client) doRaw(ctx context.Context, method, route string, body io.Reader, size int64, headers http.Header, output any, auth bool) error {
+func (c *Client) doRaw(ctx context.Context, method, route string, body io.Reader, size int64, headers http.Header, output any) error {
 	req, err := http.NewRequestWithContext(ctx, method, c.url(route), body)
 	if err != nil {
 		return err
@@ -133,7 +133,7 @@ func (c *Client) doRaw(ctx context.Context, method, route string, body io.Reader
 			req.Header.Add(name, value)
 		}
 	}
-	return c.doRequest(ctx, req, true, output, auth, auth)
+	return c.doRequest(ctx, req, true, output, true, true)
 }
 
 func (c *Client) doRequest(ctx context.Context, req *http.Request, hasBody bool, output any, auth, credentials bool) error {

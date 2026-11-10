@@ -66,7 +66,7 @@ func (c *Client) UploadSQLite(ctx context.Context, app, archive string, upload S
 	setHeader(headers, "x-crawl-source-sync-at", upload.SourceSyncAt)
 	setHeader(headers, "x-crawl-content-sha256", upload.ContentSHA256)
 	var out SQLiteUploadResult
-	err := c.doRaw(ctx, http.MethodPut, archivePath(app, archive, "sqlite"), upload.Body, upload.Size, headers, &out, true)
+	err := c.doRaw(ctx, http.MethodPut, archivePath(app, archive, "sqlite"), upload.Body, upload.Size, headers, &out)
 	return out, err
 }
 
@@ -97,7 +97,7 @@ func (c *Client) UploadSQLiteBundlePart(ctx context.Context, app, archive string
 	setHeader(headers, "x-crawl-compression", part.Compression)
 	setHeader(headers, "x-crawl-snapshot-id", part.SnapshotID)
 	var out SQLiteUploadResult
-	err := c.doRaw(ctx, http.MethodPut, archivePath(app, archive, "sqlite"), body, part.Size, headers, &out, true)
+	err := c.doRaw(ctx, http.MethodPut, archivePath(app, archive, "sqlite"), body, part.Size, headers, &out)
 	return out, err
 }
 
@@ -277,7 +277,6 @@ func (c *Client) uploadSQLiteBundleManifest(
 		int64(len(manifestBody)),
 		headers,
 		&out,
-		true,
 	)
 	return out, err
 }
