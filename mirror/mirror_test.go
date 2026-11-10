@@ -840,3 +840,50 @@ func TestHistoryValidationAndLocalFetch(t *testing.T) {
 		t.Fatalf("short ref = %q", got)
 	}
 }
+
+func TestHistoryPreservesWhitespacePaths(t *testing.T) {
+	ctx := context.Background()
+	opts := Options{RepoPath: t.TempDir()}
+	if err := EnsureRepo(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	names := []string{"note.txt", " note.txt"}
+	if runtime.GOOS != "windows" {
+		// Win32 aliases trailing spaces instead of storing distinct filenames.
+		names = append(names, "note.txt ", " ")
+	}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(opts.RepoPath, name), []byte("contents: "+name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if committed, err := Commit(ctx, opts, "archive: literal names"); err != nil || !committed {
+		t.Fatalf("initial commit = %v, %v", committed, err)
+	}
+	first, err := ResolveCommit(ctx, opts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(opts.RepoPath, "note.txt"), []byte("changed trimmed name"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := Commit(ctx, opts, "archive: trimmed name"); err != nil || !committed {
+		t.Fatalf("second commit = %v, %v", committed, err)
+	}
+	for _, name := range names[1:] {
+		t.Run(name, func(t *testing.T) {
+			body, _, err := ReadFileAt(ctx, opts, "HEAD", name)
+			if err != nil || string(body) != "contents: "+name {
+				t.Errorf("read %q = %q, %v", name, body, err)
+			}
+			commits, err := CommitsChanging(ctx, opts, name, 10)
+			if err != nil || len(commits) != 1 || commits[0] != first {
+				t.Errorf("commits for %q = %v, %v; want initial commit only", name, commits, err)
+			}
+			files, err := ListTreeFiles(ctx, opts, "HEAD", name)
+			if err != nil || len(files) != 1 || files[0].Path != name {
+				t.Errorf("tree for %q = %v, %v", name, files, err)
+			}
+		})
+	}
+}
