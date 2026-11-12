@@ -3615,3 +3615,55 @@ func newTestClient(t *testing.T, opts Options) *Client {
 	}
 	return client
 }
+
+func TestBatchReadPreservesRequestInputs(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var sent []QueryRequest
+			client, err := NewClient(Options{
+				Endpoint:      "https://remote.test",
+				TokenProvider: tokenProviderFunc(func(context.Context) (string, error) { return "test-token", nil }),
+				HTTPClient: &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+					var body struct {
+						Requests []QueryRequest `json:"requests"`
+					}
+					if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+						t.Fatal(err)
+					}
+					sent = body.Requests
+					return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`{"results":[]}`)), Header: make(http.Header)}, nil
+				})},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			requests := []QueryRequest{
+				{App: "original-app", Archive: "original-archive", Name: "threads", Args: map[string]any{"topic": "archive"}},
+				{Name: "messages", Limit: 5},
+			}
+			before, err := json.Marshal(requests)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.BatchRead(context.Background(), " gitcrawl ", " shared ", requests)
+			if (err != nil) != (status != http.StatusOK) {
+				t.Fatalf("batch read status=%d err=%v", status, err)
+			}
+			if len(sent) != len(requests) {
+				t.Fatalf("sent %d requests, want %d", len(sent), len(requests))
+			}
+			for _, query := range sent {
+				if query.App != "gitcrawl" || query.Archive != "shared" {
+					t.Errorf("sent unscoped query: %#v", query)
+				}
+			}
+			after, err := json.Marshal(requests)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Fatalf("batch read changed caller inputs: before=%s after=%s", before, after)
+			}
+		})
+	}
+}

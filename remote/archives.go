@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/openclaw/crawlkit/control"
@@ -249,10 +250,11 @@ func (c *Client) Query(ctx context.Context, app, archive string, req QueryReques
 	return out, err
 }
 
+// BatchRead scopes a copy of requests to app and archive without modifying requests.
 func (c *Client) BatchRead(ctx context.Context, app, archive string, requests []QueryRequest) ([]QueryResult, error) {
 	body := struct {
 		Requests []QueryRequest `json:"requests"`
-	}{Requests: requests}
+	}{Requests: slices.Clone(requests)}
 	for i := range body.Requests {
 		body.Requests[i].App = strings.TrimSpace(app)
 		body.Requests[i].Archive = strings.TrimSpace(archive)
