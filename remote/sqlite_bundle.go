@@ -143,7 +143,7 @@ func buildGzipSQLiteBundleWithSourceCopy(
 	snapshotScoped bool,
 	limits sqliteBundleBuildLimits,
 	copySource sqliteBundleSourceCopy,
-) (SQLiteBundleBuild, error) {
+) (_ SQLiteBundleBuild, err error) {
 	if opts.SourcePath == "" {
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source path is required")
 	}
@@ -204,6 +204,11 @@ func buildGzipSQLiteBundleWithSourceCopy(
 		return SQLiteBundleBuild{}, fmt.Errorf("create sqlite bundle dir: %w", err)
 	}
 	cleanup := func() { _ = os.RemoveAll(tmpDir) }
+	defer func() {
+		if err != nil {
+			cleanup()
+		}
+	}()
 	compressedPath := filepath.Join(tmpDir, "current.db.gz")
 	compressedLimit := int64(math.MaxInt64)
 	compressedLimitErr := fmt.Errorf("compressed sqlite bundle exceeds the supported size")
@@ -225,7 +230,6 @@ func buildGzipSQLiteBundleWithSourceCopy(
 	}
 	boundedSource, err := sqliteBundleDeclaredSizeReader(source, sourceInfo.Size())
 	if err != nil {
-		cleanup()
 		return SQLiteBundleBuild{}, err
 	}
 	sourceSHA, sourceSize, err := gzipFile(
@@ -238,11 +242,9 @@ func buildGzipSQLiteBundleWithSourceCopy(
 		copySource,
 	)
 	if err != nil {
-		cleanup()
 		return SQLiteBundleBuild{}, err
 	}
 	if sourceSize != sourceInfo.Size() {
-		cleanup()
 		return SQLiteBundleBuild{}, fmt.Errorf("sqlite bundle source changed during bundle construction")
 	}
 	if err := validateSQLiteBundleSourceStable(
@@ -253,17 +255,14 @@ func buildGzipSQLiteBundleWithSourceCopy(
 		sourceSize,
 		sourceSHA,
 	); err != nil {
-		cleanup()
 		return SQLiteBundleBuild{}, err
 	}
 	compressedInfo, err := os.Stat(compressedPath)
 	if err != nil {
-		cleanup()
 		return SQLiteBundleBuild{}, fmt.Errorf("stat compressed sqlite bundle: %w", err)
 	}
 	compressedSHA, err := fileSHA256(ctx, compressedPath, compressedInfo.Size())
 	if err != nil {
-		cleanup()
 		return SQLiteBundleBuild{}, err
 	}
 	snapshotID := ""
@@ -287,7 +286,6 @@ func buildGzipSQLiteBundleWithSourceCopy(
 		limits,
 	)
 	if err != nil {
-		cleanup()
 		return SQLiteBundleBuild{}, err
 	}
 	manifestParts := make([]SQLiteBundlePart, len(parts))
