@@ -887,3 +887,44 @@ func TestHistoryPreservesWhitespacePaths(t *testing.T) {
 		})
 	}
 }
+
+func TestCommitsChangingTreatsPathsLiterally(t *testing.T) {
+	ctx := context.Background()
+	opts := Options{RepoPath: t.TempDir()}
+	if err := EnsureRepo(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	names := []string{"notes[1].md", "notes1.md", "archives[1]/note.md", "archives1/note.md"}
+	for _, name := range names {
+		file := filepath.Join(opts.RepoPath, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte("original"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if committed, err := Commit(ctx, opts, "archive: literal paths"); err != nil || !committed {
+		t.Fatalf("initial commit = %v, %v", committed, err)
+	}
+	first, err := ResolveCommit(ctx, opts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"notes1.md", "archives1/note.md"} {
+		if err := os.WriteFile(filepath.Join(opts.RepoPath, filepath.FromSlash(name)), []byte("unrelated change"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if committed, err := Commit(ctx, opts, "archive: unrelated paths"); err != nil || !committed {
+		t.Fatalf("unrelated commit = %v, %v", committed, err)
+	}
+	for _, name := range []string{"notes[1].md", "archives[1]"} {
+		t.Run(name, func(t *testing.T) {
+			commits, err := CommitsChanging(ctx, opts, name, 10)
+			if err != nil || len(commits) != 1 || commits[0] != first {
+				t.Fatalf("commits for %q = %v, %v; want initial commit only", name, commits, err)
+			}
+		})
+	}
+}

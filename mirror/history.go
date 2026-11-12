@@ -67,6 +67,7 @@ func ReadFileAt(ctx context.Context, opts Options, ref, filePath string) ([]byte
 	return []byte(out), commit, nil
 }
 
+// CommitsChanging lists commits for a literal file or directory path, not a Git pathspec pattern.
 func CommitsChanging(ctx context.Context, opts Options, filePath string, limit int) ([]string, error) {
 	opts = normalize(opts)
 	clean, err := cleanTreePath(filePath)
@@ -76,7 +77,7 @@ func CommitsChanging(ctx context.Context, opts Options, filePath string, limit i
 	if limit <= 0 {
 		return nil, errors.New("commit limit must be greater than zero")
 	}
-	out, err := output(ctx, opts.RepoPath, opts.Git, "log", "--all", "--format=%H", "-n", strconv.Itoa(limit), "--", clean)
+	out, err := output(ctx, opts.RepoPath, opts.Git, "--literal-pathspecs", "log", "--all", "--format=%H", "-n", strconv.Itoa(limit), "--", clean)
 	if err != nil {
 		return nil, fmt.Errorf("list commits changing %s: %w\n%s", clean, err, strings.TrimSpace(out))
 	}
