@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Use Go 1.27.4 for development and downstream qualification to pick up the standard-library fix for GO-2026-6859.
+
 - Preserve literal whitespace in mirror history paths so reads, commit history, and tree selections address the requested filename.
 
 - Validate all backup file shard paths and required prefixes before restoring payloads, preserving existing targets when a later entry has invalid metadata.
