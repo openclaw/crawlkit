@@ -26,35 +26,42 @@ func DecodeChangeBatch(body []byte) (ChangeBatch, error) {
 	if err := jsontext.Validate(body); err != nil {
 		return ChangeBatch{}, err
 	}
-	var changes []json.RawMessage
-	if err := json.Unmarshal(fields["changes"], &changes); err != nil {
+	if err := validateChangesJSON(fields["changes"]); err != nil {
 		return ChangeBatch{}, err
-	}
-	for _, raw := range changes {
-		var change Change
-		fields, err := decodeChangeObject(raw, "table operation key", "row", &change)
-		if err != nil {
-			return ChangeBatch{}, err
-		}
-		for _, name := range []string{"key", "row"} {
-			if data, ok := fields[name]; ok {
-				var values []json.RawMessage
-				if err := json.Unmarshal(data, &values); err != nil {
-					return ChangeBatch{}, err
-				}
-				for _, data := range values {
-					var value ChangeValue
-					if _, err := decodeChangeObject(data, "kind", "value", &value); err != nil {
-						return ChangeBatch{}, err
-					}
-				}
-			}
-		}
 	}
 	if err := validateChangeBatch(batch); err != nil {
 		return ChangeBatch{}, err
 	}
 	return batch, nil
+}
+
+func validateChangesJSON(body []byte) error {
+	var changes []json.RawMessage
+	if err := json.Unmarshal(body, &changes); err != nil {
+		return err
+	}
+	for _, raw := range changes {
+		var change Change
+		fields, err := decodeChangeObject(raw, "table operation key", "row", &change)
+		if err != nil {
+			return err
+		}
+		for _, name := range []string{"key", "row"} {
+			if data, ok := fields[name]; ok {
+				var values []json.RawMessage
+				if err := json.Unmarshal(data, &values); err != nil {
+					return err
+				}
+				for _, data := range values {
+					var value ChangeValue
+					if _, err := decodeChangeObject(data, "kind", "value", &value); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func decodeChangeReceipt(body []byte) (ChangeReceipt, error) {

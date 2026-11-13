@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add optional private Slack seed codecs and exact-byte clients with an immutable manifest plan, typed row preservation and verified receipts. Receiver eligibility, durable staging and activation remain downstream.
+
 - Expose the change-batch decoder so receivers and clients share strict wire validation while retaining separate authorization and original-byte hashing.
 
 - Add an optional change-batch client that sends persisted bytes unchanged, preserves typed values and verifies durable receipt identities. Receiver deployment, source projection and outbox ownership remain downstream; the base service contract does not advertise this route.

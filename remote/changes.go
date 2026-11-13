@@ -99,16 +99,21 @@ func (c *Client) ApplyChanges(ctx context.Context, app, archive string, body []b
 	if batch.App != strings.TrimSpace(app) || batch.Archive != strings.TrimSpace(archive) {
 		return ChangeReceipt{}, errors.New("change app/archive must match the route")
 	}
+	return c.sendChangeRequest(ctx, archivePath(app, archive, "changes"), body, batch.App, batch.Archive, batch.BindingID, batch.BatchID())
+}
+
+// The optional seed and change protocols share exact-byte receipt identity.
+func (c *Client) sendChangeRequest(ctx context.Context, route string, body []byte, app, archive, binding, batchID string) (ChangeReceipt, error) {
 	digest := sha256.Sum256(body)
 	var response json.RawMessage
-	if err := c.doRaw(ctx, http.MethodPost, archivePath(app, archive, "changes"), bytes.NewReader(body), int64(len(body)), nil, &response); err != nil {
+	if err := c.doRaw(ctx, http.MethodPost, route, bytes.NewReader(body), int64(len(body)), nil, &response); err != nil {
 		return ChangeReceipt{}, err
 	}
 	receipt, err := decodeChangeReceipt(response)
 	if err != nil {
 		return ChangeReceipt{}, err
 	}
-	if receipt.App != batch.App || receipt.Archive != batch.Archive || receipt.BindingID != batch.BindingID || receipt.BatchID != batch.BatchID() || receipt.Cursor != batch.BatchID() || receipt.PayloadSHA256 != hex.EncodeToString(digest[:]) {
+	if receipt.App != app || receipt.Archive != archive || receipt.BindingID != binding || receipt.BatchID != batchID || receipt.Cursor != batchID || receipt.PayloadSHA256 != hex.EncodeToString(digest[:]) {
 		return ChangeReceipt{}, errors.New("change receipt does not match the persisted batch")
 	}
 	sequence, err := strconv.ParseInt(receipt.Sequence, 10, 64)
@@ -141,13 +146,17 @@ func validateChangeBatch(batch ChangeBatch) error {
 	if !changeMetadata(batch.NativeFrom, maxChangeCursorBytes, false) || !changeMetadata(batch.NativeThrough, maxChangeCursorBytes, false) || !changeMetadata(batch.ExpectedCursor, maxChangeCursorBytes, true) {
 		return errors.New("change native anchors must be nonempty; cursors must be at most 512 UTF-8 bytes")
 	}
-	if batch.Changes == nil || len(batch.Changes) > MaxChanges {
+	return validateChanges(batch.Changes)
+}
+
+func validateChanges(changes []Change) error {
+	if changes == nil || len(changes) > MaxChanges {
 		return errors.New("changes must be an array of at most 500 observations")
 	}
 	// Bound input before marshaling; escaping can expand it, so encoded bytes
 	// are checked separately. Neither limit is an RSS or durable outbox budget.
 	textBytes := 0
-	for _, change := range batch.Changes {
+	for _, change := range changes {
 		if !changeMetadata(change.Table, maxChangeIDBytes, false) || len(change.Key) == 0 {
 			return errors.New("change table and key are required")
 		}

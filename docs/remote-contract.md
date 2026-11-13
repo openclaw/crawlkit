@@ -115,3 +115,111 @@ After every part's matching receipt is durable, the source atomically acknowledg
 the outbox and advances its native cursor. On an unknown HTTP outcome, retain and
 replay the same persisted bytes; do not capture a replacement first. The client
 does not automatically retry, allocate IDs, register bindings or activate workers.
+
+## Optional private Slack seed contract
+
+`SlackSeedManifest`, `SlackSeedChunk` and `SlackSeedComplete` describe
+`slacrawl-seed-v1`. This shared wire contract connects Slacrawl's explicitly
+projected private seed to a receiver; it does not parse native schemas, collect
+Slack data, authorize scope or implement a receiver. The three optional POST
+routes are:
+
+| Request | Route | Derived batch ID and next cursor |
+| --- | --- | --- |
+| Manifest | `/v1/apps/slacrawl/archives/:archive/seeds` | `seed1:<seed_id>:begin` |
+| Chunk | `/v1/apps/slacrawl/archives/:archive/seeds/:seed_id/chunks/:index` | `seed1:<seed_id>:<index>` |
+| Completion | `/v1/apps/slacrawl/archives/:archive/seeds/:seed_id/complete` | `seed1:<seed_id>:complete` |
+
+These routes are absent from `BaseContract()`. No receiver, outbox migration,
+source registration, worker or baseline activation is supplied by this library.
+Existing snapshot and `changes-v1` contracts are unchanged.
+
+The manifest requires contract, app, archive, binding ID, seed ID, profile,
+native schema, native-through anchor, scope and tables. App is `slacrawl`, profile
+is `slacrawl-private-archive-v1`, and native schema is `9`. Scope contains a
+workspace ID, a nonempty unique channel-ID array and an explicit
+`include_workspace_users` boolean. These are consistency facts to compare with
+operator-approved admission, never authorization. Source-local file identities,
+paths, cache paths, credentials and private admission metadata do not belong in
+these envelopes. Row projection and raw-JSON provenance remain downstream policy.
+
+Allocate a random 32-character lowercase hexadecimal seed ID before constructing
+chunks. The real native anchor is
+`slacrawl-native-v1:<generation>:<sequence>:<entry>`, where generation and entry
+are 32 lowercase hexadecimal characters and sequence is a canonical decimal
+int64 in `0..9223372036854775807`. H0 is valid: do not invent a journal event or
+an incremental native-from anchor to bootstrap an empty journal.
+
+Tables appear exactly once in this order: `workspaces`, `channels`, `users`,
+`messages`, `message_files`, `message_mentions`. Every table includes a canonical
+nonnegative decimal row count, SHA-256 and ordered chunk descriptors with integer
+`rows`, integer `bytes` and SHA-256. Empty tables require `rows: "0"`, `chunks: []`
+and SHA-256 of empty bytes. Without workspace-user opt-in, `users` must be empty.
+Flattening the table descriptors defines contiguous global chunk indices; no
+second per-table chunk index is needed.
+
+Chunks contain identity fields, index, expected cursor and typed `Change`
+observations. Every chunk contains 1..500 upserts from one descriptor-selected
+table. Keys and full rows retain the existing NULL/text/integer scalar contract,
+order and multiplicity. Column layouts and key/row correspondence remain the
+source projector and receiver's responsibility. In particular, NULL or duplicate
+natural keys are retained as evidence; this codec does not establish that such a
+seed can become an incremental baseline. A receiver must hold affected scopes
+ineligible until that ambiguity is resolved, without dropping rows or inventing
+public row IDs.
+
+All three request kinds reuse `MaxChangeBytes` (4 MiB), and chunks reuse
+`MaxChanges` (500 observations). There are at most `MaxSeedChunks` (8192) chunks
+across all tables. Each descriptor has 1..500 rows and 1..4 MiB of bytes. Total row
+counts must equal descriptor sums, checked after bounding the total descriptor
+count so arithmetic cannot overflow. Archive/binding/workspace/channel IDs use
+the existing nonempty, NUL-free, 128-byte UTF-8 metadata limit. All fields are
+required and non-null, including empty arrays. Existing strict JSON rules apply
+at every object level, including descriptors and scalar values. Producer capture,
+RSS and durable staging budgets are separate and must be bounded by the caller.
+
+Hash exact persisted request bytes, not canonical JSON or decoded values:
+
+1. Construct and persist each chunk body; chunks contain no manifest hash.
+2. A descriptor's SHA-256 hashes its exact chunk body, including whitespace.
+3. A table SHA-256 hashes the concatenation of the ordered **binary 32-byte chunk
+   digests**, not their hexadecimal text and not re-encoded rows.
+4. Encode the manifest and hash its exact bytes. Completion includes that
+   `manifest_sha256` and the expected final archive cursor.
+
+This order has no hash cycle. Encoders produce deterministic sender bytes;
+`EncodeSlackSeedManifest` sorts its own copy of channel IDs and preserves table,
+chunk and row order. Decoders accept valid alternative field order, whitespace
+and channel order. That accepted representation remains the payload identity.
+
+`DecodeSlackSeedManifest` returns an immutable `SlackSeedPlan` with the saved
+manifest hash and flattened descriptors. `Manifest()` returns caller-owned
+metadata. Reuse the plan: `ValidateChunk` checks one chunk against one indexed
+descriptor, without rescanning the manifest. `DecodeSlackSeedChunk` alone checks
+only the envelope/scalars; it cannot establish descriptor consistency.
+`ValidateComplete` checks the exact manifest hash and final cursor, while
+`DecodeSlackSeedComplete` alone validates its envelope.
+
+`Client.BeginSlackSeed`, `ApplySlackSeedChunk` and `CompleteSlackSeed` take that
+plan and persisted request bytes. Begin checks the saved manifest hash; chunk
+and completion use the plan's contextual validators before credentials or HTTP.
+All reuse existing authenticated transport and `ChangeReceipt` validation
+(`SeedReceipt` is an alias), preserve supplied bytes and return conflicts without
+hidden retries. Do not mutate supplied bytes until a call returns.
+
+A new manifest requires an explicitly admitted pristine source. The first chunk
+expects the begin cursor; each later chunk expects its predecessor; completion
+expects the last chunk cursor, or begin when all tables are empty. Exact receipt
+replay must precede expected-cursor rejection and return the original service
+sequence. Every successful receipt uses a positive canonical int64 service
+sequence, even when the native anchor is H0. Earlier receipts identify the
+intended binding without making it live.
+
+The producer must durably stage all exact requests before sending. The receiver
+must retain every row by source/service-sequence/ordinal, verify all ordered
+receipts, counts and hashes, and atomically commit completion plus the qualified
+binding. Only that matching completion receipt can initialize the producer's
+saved native baseline. Crash recovery replays saved bytes. Neither a begin/chunk
+receipt, row counts nor the final seed binding establishes acquisition freshness
+or complete upstream coverage. These lifecycle requirements belong to the
+future source outbox and receiver implementation, not this codec/client slice.
