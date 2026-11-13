@@ -142,6 +142,66 @@ Dry-run previews can still render plans for another operating system.
 
 See [Background workers](docs/background-workers.md) for content-triggered processing alongside ingestion.
 
+## Private native backup transport
+
+`crawlctl preservation` transfers existing native backup files to the opt-in
+admin-only preservation API in `crawl-remote`. It does not query a provider,
+prune a store, decompress a backup, or activate a publication. Configure the
+service's dedicated private preservation bucket before using it. Enabling these
+routes advertises the `admin` auth role; keep them on an isolated endpoint until
+existing contract consumers support that role. The default base contract and
+existing archive publication paths remain unchanged.
+
+Provide the admin credential through an environment variable managed by your
+normal credential helper. Do not put a credential on the command line. For
+example, with `PRESERVATION_TOKEN` already injected:
+
+```sh
+crawlctl preservation upload \
+  --endpoint https://archive.example.com \
+  --app discrawl --archive discrawl/example \
+  --token-env PRESERVATION_TOKEN \
+  --file native.sqlite.zst=/backups/native.sqlite.zst \
+  --file media/attachment.bin=/backups/attachment.bin > upload-receipt.json
+
+crawlctl preservation download \
+  --endpoint https://archive.example.com \
+  --app discrawl --archive discrawl/example \
+  --token-env PRESERVATION_TOKEN \
+  --manifest <manifest_sha256-from-receipt> \
+  --output /restore/new-empty-destination
+```
+
+Keep the upload receipt in the recovery inventory. Its `manifest_sha256` pins
+all file names, complete-file hashes, and ordered chunk hashes. Repeating an
+unchanged upload reuses immutable object identities; it does not fetch upstream
+data again. The default chunk size is 64 MiB; `--chunk-size` can reduce it. A
+manifest supports up to 64 nonempty files and 256 chunks, at most 16 GiB. For a
+larger inventory, retain every separate manifest digest explicitly. The default
+per-request timeout is five minutes and can be set with `--timeout`.
+
+Upload reads sources twice and holds at most one chunk plus bounded copy buffers
+at a time. Sources must already be closed, coherent backups: use the native
+SQLite backup owner first, not an actively written database/WAL pair. Source
+size, each chunk, and the complete-file hash are checked before manifest
+publication. Failed uploads can leave private unreferenced chunks; they never
+publish a successful receipt or change the current archive.
+
+Download creates a new destination (0700 directories and 0600 files on Unix)
+and never overwrites an existing directory. On Windows, use a parent directory
+with an appropriately restricted ACL. It verifies the exact manifest bytes, every downloaded
+chunk, and each complete file. Failure leaves a reported partial destination;
+retry into another new directory. Success reports `files_verified: true`, while
+`restore_qualified` remains false. Decompress separately, run SQLite integrity
+and native fidelity checks, and account for external files before declaring a
+backup recoverable or changing retention. This transport does not certify
+upstream freshness, exclusion policy, query coverage, or restored schemas.
+
+The same operations are available through `remote.PlanPreservation`,
+`Client.UploadPreservation`, `Client.FetchPreservationManifest`, and
+`Client.DownloadPreservationFile`. A failed download may have written partial
+bytes to the supplied writer; callers must discard those bytes.
+
 ## Boundaries
 
 `crawlkit` accepts shared mechanics only when they are provider-neutral, reusable by at least two apps, and preserve each app's database and CLI contracts. The [ownership map](docs/boundary.md) tracks what belongs here and what remains in GitHub-, Discord-, Slack-, Notion-, and other provider-specific applications.

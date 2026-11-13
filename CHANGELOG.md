@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add an opt-in private native backup client and `crawlctl preservation` upload
+  and download commands. Reuse existing opaque backup bytes, verify immutable
+  chunk and complete-file identities, and restore only into a new directory.
+  Byte verification does not claim native database restore qualification.
+
 - Add a closed durable-cluster snapshot profile to the existing GitHub seed
   transport, with a content-bound token and four ordered tables. Existing
   private-report bytes and validation remain unchanged; projection, source

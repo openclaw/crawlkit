@@ -137,11 +137,32 @@ func (c *Client) doRaw(ctx context.Context, method, route string, body io.Reader
 }
 
 func (c *Client) doRequest(ctx context.Context, req *http.Request, hasBody bool, output any, auth, credentials bool) error {
+	resp, err := c.sendRequest(ctx, req, hasBody, auth, credentials)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return decodeRemoteError(resp)
+	}
+	if output == nil || resp.StatusCode == http.StatusNoContent {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(output); err != nil {
+		return fmt.Errorf("decode remote response: %w", err)
+	}
+	return nil
+}
+
+// sendRequest retains the same credential policy for JSON and streaming reads.
+// The caller owns a successful response body.
+func (c *Client) sendRequest(ctx context.Context, req *http.Request, hasBody, auth, credentials bool) (*http.Response, error) {
 	if req.URL.User != nil || req.Header.Get("Authorization") != "" {
 		credentials = true
 	}
 	if credentials && !credentialTransportAllowed(req.URL) {
-		return errors.New("remote credentials require HTTPS except for loopback HTTP")
+		return nil, errors.New("remote credentials require HTTPS except for loopback HTTP")
 	}
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("user-agent", c.userAgent)
@@ -150,11 +171,11 @@ func (c *Client) doRequest(ctx context.Context, req *http.Request, hasBody bool,
 	}
 	if auth {
 		if c.tokenProvider == nil {
-			return ErrMissingToken
+			return nil, ErrMissingToken
 		}
 		token, err := c.tokenProvider.Token(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		req.Header.Set("authorization", "Bearer "+token)
 	}
@@ -186,22 +207,7 @@ func (c *Client) doRequest(ctx context.Context, req *http.Request, hasBody bool,
 		}
 		httpClient = &client
 	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return decodeRemoteError(resp)
-	}
-	if output == nil || resp.StatusCode == http.StatusNoContent {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil
-	}
-	if err := json.NewDecoder(resp.Body).Decode(output); err != nil {
-		return fmt.Errorf("decode remote response: %w", err)
-	}
-	return nil
+	return httpClient.Do(req)
 }
 
 func (c *Client) url(route string) string {

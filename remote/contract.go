@@ -17,6 +17,7 @@ const (
 	AuthPublic    = "public"
 	AuthReader    = "reader"
 	AuthPublisher = "publisher"
+	AuthAdmin     = "admin"
 )
 
 type Contract struct {
@@ -111,7 +112,7 @@ func (c Contract) Validate() error {
 			return fmt.Errorf("remote contract route is incomplete: %#v", route)
 		}
 		switch strings.TrimSpace(route.Auth) {
-		case AuthPublic, AuthReader, AuthPublisher:
+		case AuthPublic, AuthReader, AuthPublisher, AuthAdmin:
 		default:
 			return fmt.Errorf("remote contract route %s %s has unknown auth %q", route.Method, route.Path, route.Auth)
 		}

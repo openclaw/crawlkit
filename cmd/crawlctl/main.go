@@ -108,6 +108,8 @@ func (a *app) run(ctx context.Context, args []string) error {
 		return a.runInstall(rest[1:])
 	case "uninstall":
 		return a.runUninstall(rest[1:])
+	case "preservation":
+		return a.runPreservation(ctx, rest[1:])
 	default:
 		return usageError{fmt.Errorf("unknown command %q", rest[0])}
 	}
@@ -147,6 +149,7 @@ Commands:
   logs       Print recent job logs.
   install    Install OS-native periodic schedule.
   uninstall  Remove OS-native periodic schedule.
+  preservation  Upload or verify private native backup files.
 
 Examples:
   crawlctl init --repo openclaw/openclaw
