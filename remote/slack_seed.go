@@ -3,8 +3,6 @@ package remote
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"slices"
 	"strconv"
@@ -17,7 +15,6 @@ const (
 	SlackSeedsRoute        = "/v1/apps/slacrawl/archives/:archive/seeds"
 	SlackSeedChunksRoute   = SlackSeedsRoute + "/:seed_id/chunks/:index"
 	SlackSeedCompleteRoute = SlackSeedsRoute + "/:seed_id/complete"
-	MaxSeedChunks          = 8192
 )
 
 // SlackSeedScope describes the proposed private archive scope, not permission
@@ -41,19 +38,6 @@ type SlackSeedManifest struct {
 	Tables        []SeedTable    `json:"tables"`
 }
 
-type SeedTable struct {
-	Name   string          `json:"name"`
-	Rows   string          `json:"rows"`
-	SHA256 string          `json:"sha256"`
-	Chunks []SeedChunkInfo `json:"chunks"`
-}
-
-type SeedChunkInfo struct {
-	Rows   int    `json:"rows"`
-	Bytes  int    `json:"bytes"`
-	SHA256 string `json:"sha256"`
-}
-
 type SlackSeedChunk struct {
 	Contract       string   `json:"contract"`
 	App            string   `json:"app"`
@@ -75,21 +59,12 @@ type SlackSeedComplete struct {
 	ExpectedCursor string `json:"expected_cursor"`
 }
 
-// SeedReceipt shares the exact-byte receipt contract. Only a receiver-qualified
-// completion receipt can establish a baseline; begin/chunk receipts cannot.
-type SeedReceipt = ChangeReceipt
-
 // SlackSeedPlan owns a once-validated immutable manifest and indexed chunk
 // descriptors. Reuse it across chunk calls; no whole-manifest scans are needed.
 type SlackSeedPlan struct {
 	manifest SlackSeedManifest
 	digest   string
-	chunks   []slackSeedDescriptor
-}
-
-type slackSeedDescriptor struct {
-	table string
-	SeedChunkInfo
+	chunks   []seedDescriptor
 }
 
 var slackSeedTables = [...]string{"workspaces", "channels", "users", "messages", "message_files", "message_mentions"}
@@ -98,22 +73,11 @@ var slackSeedTables = [...]string{"workspaces", "channels", "users", "messages",
 func (p *SlackSeedPlan) Manifest() SlackSeedManifest {
 	m := p.manifest
 	m.Scope.ChannelIDs = slices.Clone(m.Scope.ChannelIDs)
-	m.Tables = slices.Clone(m.Tables)
-	for i := range m.Tables {
-		m.Tables[i].Chunks = slices.Clone(m.Tables[i].Chunks)
-	}
+	m.Tables = cloneSeedTables(m.Tables)
 	return m
 }
 
 func (p *SlackSeedPlan) ManifestSHA256() string { return p.digest }
-
-func seedBatchID(seedID, suffix string) string { return "seed1:" + seedID + ":" + suffix }
-func seedPreviousCursor(seedID string, index int) string {
-	if index == 0 {
-		return seedBatchID(seedID, "begin")
-	}
-	return seedBatchID(seedID, strconv.Itoa(index-1))
-}
 
 // EncodeSlackSeedManifest sorts scope channels in its own copy. Table/chunk/row
 // order is preserved. Persist these bytes; hashes never use a JSON re-encoding.
@@ -140,23 +104,7 @@ func EncodeSlackSeedComplete(complete SlackSeedComplete) ([]byte, error) {
 	return encodeSeed(complete)
 }
 
-func encodeSeed(value any) ([]byte, error) {
-	body, err := json.Marshal(value)
-	if err == nil && len(body) > MaxChangeBytes {
-		err = errors.New("seed body exceeds 4 MiB")
-	}
-	if err != nil {
-		return nil, err
-	}
-	return body, nil
-}
-
-func seedHex(value string, bytes int) bool {
-	decoded, err := hex.DecodeString(value)
-	return err == nil && len(decoded) == bytes && strings.ToLower(value) == value
-}
-
-func validateSeedIdentity(contract, app, archive, binding, seedID string) error {
+func validateSlackSeedIdentity(contract, app, archive, binding, seedID string) error {
 	if contract != SlackSeedContract || app != "slacrawl" {
 		return errors.New("unsupported Slack seed contract/app")
 	}
@@ -166,8 +114,8 @@ func validateSeedIdentity(contract, app, archive, binding, seedID string) error 
 	return nil
 }
 
-func validateSlackSeedManifest(m SlackSeedManifest) ([]slackSeedDescriptor, error) {
-	if err := validateSeedIdentity(m.Contract, m.App, m.Archive, m.BindingID, m.SeedID); err != nil {
+func validateSlackSeedManifest(m SlackSeedManifest) ([]seedDescriptor, error) {
+	if err := validateSlackSeedIdentity(m.Contract, m.App, m.Archive, m.BindingID, m.SeedID); err != nil {
 		return nil, err
 	}
 	if m.Profile != "slacrawl-private-archive-v1" || m.NativeSchema != 9 {
@@ -191,70 +139,31 @@ func validateSlackSeedManifest(m SlackSeedManifest) ([]slackSeedDescriptor, erro
 		}
 		seen[channel] = true
 	}
-	if len(m.Tables) != len(slackSeedTables) {
-		return nil, errors.New("seed requires all six ordered tables, including empty tables")
+	descriptors, err := validateSeedTables(m.Tables, slackSeedTables[:])
+	if err != nil {
+		return nil, err
 	}
-	var descriptors []slackSeedDescriptor
-	for i, table := range m.Tables {
-		if table.Name != slackSeedTables[i] || table.Chunks == nil || len(table.Chunks) > MaxSeedChunks-len(descriptors) {
-			return nil, errors.New("invalid seed table order/chunks")
-		}
-		var rows int64
-		hash := sha256.New()
-		for _, chunk := range table.Chunks {
-			if chunk.Rows < 1 || chunk.Rows > MaxChanges || chunk.Bytes < 1 || chunk.Bytes > MaxChangeBytes || !seedHex(chunk.SHA256, sha256.Size) {
-				return nil, errors.New("invalid seed chunk rows/bytes/hash")
-			}
-			// At most 8192 * 500 rows; bounded before addition, even on 32-bit.
-			rows += int64(chunk.Rows)
-			digest, _ := hex.DecodeString(chunk.SHA256)
-			_, _ = hash.Write(digest)
-			descriptors = append(descriptors, slackSeedDescriptor{table.Name, chunk})
-		}
-		if table.Rows != strconv.FormatInt(rows, 10) || table.SHA256 != hex.EncodeToString(hash.Sum(nil)) {
-			return nil, errors.New("seed table row count or ordered digest hash mismatch")
-		}
-		if table.Name == "users" && !m.Scope.IncludeWorkspaceUsers && rows != 0 {
-			return nil, errors.New("seed users require explicit scope opt-in")
-		}
+	if !m.Scope.IncludeWorkspaceUsers && m.Tables[2].Rows != "0" {
+		return nil, errors.New("seed users require explicit scope opt-in")
 	}
 	return descriptors, nil
 }
 
 func validateSlackSeedChunk(c SlackSeedChunk) error {
-	if err := validateSeedIdentity(c.Contract, c.App, c.Archive, c.BindingID, c.SeedID); err != nil {
+	if err := validateSlackSeedIdentity(c.Contract, c.App, c.Archive, c.BindingID, c.SeedID); err != nil {
 		return err
 	}
-	if c.Index < 0 || c.Index >= MaxSeedChunks || c.ExpectedCursor != seedPreviousCursor(c.SeedID, c.Index) {
-		return errors.New("invalid seed chunk index/expected cursor")
-	}
-	if len(c.Changes) == 0 {
-		return errors.New("seed chunks must contain rows")
-	}
-	if err := validateChanges(c.Changes); err != nil {
-		return err
-	}
-	for _, change := range c.Changes {
-		if change.Operation != "upsert" || !slices.Contains(slackSeedTables[:], change.Table) || change.Table != c.Changes[0].Table {
-			return errors.New("seed chunks require upserts from one supported table")
-		}
-	}
-	return nil
+	return validateSeedRows(c.Index, c.ExpectedCursor, c.SeedID, c.Changes, slackSeedTables[:])
 }
 
 func validateSlackSeedComplete(c SlackSeedComplete) error {
-	if err := validateSeedIdentity(c.Contract, c.App, c.Archive, c.BindingID, c.SeedID); err != nil {
+	if err := validateSlackSeedIdentity(c.Contract, c.App, c.Archive, c.BindingID, c.SeedID); err != nil {
 		return err
 	}
 	if !seedHex(c.ManifestSHA256, sha256.Size) || !changeMetadata(c.ExpectedCursor, maxChangeCursorBytes, false) {
 		return errors.New("invalid seed completion manifest hash/cursor")
 	}
 	return nil
-}
-
-func seedDigest(body []byte) string {
-	digest := sha256.Sum256(body)
-	return hex.EncodeToString(digest[:])
 }
 
 // ValidateChunk checks one exact body against its indexed manifest descriptor.

@@ -223,3 +223,90 @@ saved native baseline. Crash recovery replays saved bytes. Neither a begin/chunk
 receipt, row counts nor the final seed binding establishes acquisition freshness
 or complete upstream coverage. These lifecycle requirements belong to the
 future source outbox and receiver implementation, not this codec/client slice.
+
+
+## Optional private GitHub seed contract
+
+`GitHubSeedManifest`, `GitHubSeedChunk`, `GitHubSeedComplete` and `GitHubSeedPlan`
+provide `gitcrawl-seed-v1` for the `gitcrawl-private-report-v1` profile and native
+schema `16`. They share the Slack seed's strict JSON/scalar codec, bounded indexed
+descriptors, exact-byte hash rules, cursor chain and receipt transport. Slack's
+public APIs and encoded bytes are unchanged. This contract neither parses native
+SQLite schemas nor implements collection, exclusion policy, a receiver or outbox.
+
+The manifest requires `contract`, `app` (`gitcrawl`), `archive`, `binding_id`,
+`seed_id`, `profile`, `native_schema`, `native_through`, `repository`,
+`repository_id`, `scope_sha256`, `native_sha256` and `tables`.
+`repository` is an exact lowercase `owner/repo`, without whitespace, backslashes
+or NUL, bounded to 128 UTF-8 bytes. `repository_id` is the positive canonical
+int64 **native SQLite `repositories.id`**, encoded as a decimal string. It is
+not GitHub's provider repository ID: `github_repo_id` remains native text in
+projected rows. Archive/binding IDs retain the existing 128-byte metadata bound;
+seed IDs are random 32-character lowercase hexadecimal strings.
+
+The native-through grammar is:
+
+```text
+gitcrawl-native-v1:<epoch32hex>:<generation>:<sqlite_schema_version>:<sequence>:<pruned_through>:<scope64hex>:<inventory64hex>
+```
+
+Epoch is 16 random bytes represented as lowercase hexadecimal. Generation and
+the captured SQLite `PRAGMA schema_version` are positive canonical decimal
+int64s. The SQLite schema cookie is distinct from the fixed `native_schema: 16`.
+Sequence and pruned-through are canonical nonnegative int64s, with the floor no
+greater than sequence; genuine H0 is valid. Both final digests are lowercase
+SHA-256 and must match `scope_sha256` and `native_sha256` respectively. This
+bounded token fits the existing 512-byte change-cursor contract.
+
+`native_sha256` identifies the native inventory, not JSON or chunk bytes. Native
+changes can produce different inventories at the same journal head: producers
+must retain this distinction and must not skip a capture merely because its
+sequence matches. The codec checks the token/digest agreement but cannot prove
+that the capture or digest is correct. Gitcrawl owns consistent native capture,
+physical file custody, private projection, reference holds and exclusion checks.
+Physical identity, local paths and admission credentials stay outside the wire.
+
+All seven table descriptors are mandatory and ordered:
+
+1. `repositories`
+2. `threads`
+3. `comments`
+4. `thread_child_observation_reservations`
+5. `thread_child_observation_memberships`
+6. `thread_exclusions`
+7. `thread_excluded_nodes`
+
+They use the same `SeedTable`/`SeedChunkInfo` wire descriptors: ordered binary
+chunk-digest aggregation, exact row sums, explicit empty arrays and empty-byte
+hashes. These transport hashes are distinct from the manifest's native inventory
+digest. Chunks contain upserts from one descriptor-selected table and retain raw
+row order, multiplicity, NULL, empty text, NUL, exact signed int64s and timestamp
+text. The fixed profile's columns, key correspondence, raw JSON meaning, blob
+references and exclusions remain downstream responsibilities. Empty or ambiguous
+wire rows never establish a qualified native baseline by themselves.
+
+`EncodeGitHubSeedManifest`, `EncodeGitHubSeedChunk` and
+`EncodeGitHubSeedComplete` produce deterministic sender bytes.
+`DecodeGitHubSeedManifest` creates an immutable indexed plan;
+`DecodeGitHubSeedChunk` and `DecodeGitHubSeedComplete` validate their envelopes.
+Use the plan's `ValidateChunk`/`ValidateComplete` before receiver effects.
+All existing seed limits apply: 4 MiB per request, 500 rows per chunk and 8192
+chunks total. There is no manifest hash cycle or full-manifest scan per chunk.
+
+`Client.BeginGitHubSeed`, `ApplyGitHubSeedChunk` and `CompleteGitHubSeed` send
+persisted bytes to the following optional POST routes:
+
+| Request | Route | Batch ID and next cursor |
+| --- | --- | --- |
+| Manifest | `/v1/apps/gitcrawl/archives/:archive/seeds` | `seed1:<seed_id>:begin` |
+| Chunk | `/v1/apps/gitcrawl/archives/:archive/seeds/:seed_id/chunks/:index` | `seed1:<seed_id>:<index>` |
+| Completion | `/v1/apps/gitcrawl/archives/:archive/seeds/:seed_id/complete` | `seed1:<seed_id>:complete` |
+
+The client validates plan/route/bytes before requesting credentials and verifies
+the same `SeedReceipt` identity and payload hash. It has no implicit retries or
+fallback and does not advertise these routes in `BaseContract()`.
+Authenticated native evidence is not policy authority: receivers must separately
+qualify registered repository scope, current exclusions and baseline eligibility.
+Only downstream-qualified completion can establish a baseline. Neither native
+anchors nor completion receipts prove provider freshness, full body/history
+coverage or publication permission.

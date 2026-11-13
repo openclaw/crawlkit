@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add optional private GitHub seed codecs and exact-byte clients with seven ordered table descriptors, native schema-cookie and inventory-bound anchors, and verified receipts. Native projection, exclusions and baseline eligibility remain downstream.
+
 - Add optional private Slack seed codecs and exact-byte clients with an immutable manifest plan, typed row preservation and verified receipts. Receiver eligibility, durable staging and activation remain downstream.
 
 - Expose the change-batch decoder so receivers and clients share strict wire validation while retaining separate authorization and original-byte hashing.
