@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/openclaw/crawlkit/internal/jsontext"
 )
 
 const (
@@ -101,36 +103,10 @@ func snapshotNumber(token string, legacyWriter bool) (any, error) {
 	return f, nil
 }
 
-// encoding/json replaces invalid UTF-8 and unpaired UTF-16 escapes. A snapshot
-// must refuse them instead of committing replacement characters to the archive.
+// Call only after JSON syntax validation; preserve the snapshot error contract.
 func validateJSONText(data []byte) error {
-	if !utf8.Valid(data) {
-		return errors.New("snapshot text is not valid UTF-8")
-	}
-	for i := 0; i < len(data); i++ {
-		if data[i] != '\\' {
-			continue
-		}
-		i++
-		if data[i] != 'u' {
-			continue
-		}
-		code, _ := strconv.ParseUint(string(data[i+1:i+5]), 16, 16)
-		i += 4
-		if code >= 0xdc00 && code <= 0xdfff {
-			return errors.New("snapshot text contains an unpaired UTF-16 surrogate")
-		}
-		if code < 0xd800 || code > 0xdbff {
-			continue
-		}
-		if i+6 >= len(data) || data[i+1] != '\\' || data[i+2] != 'u' {
-			return errors.New("snapshot text contains an unpaired UTF-16 surrogate")
-		}
-		low, _ := strconv.ParseUint(string(data[i+3:i+7]), 16, 16)
-		if low < 0xdc00 || low > 0xdfff {
-			return errors.New("snapshot text contains an unpaired UTF-16 surrogate")
-		}
-		i += 6
+	if err := jsontext.Validate(data); err != nil {
+		return fmt.Errorf("snapshot %w", err)
 	}
 	return nil
 }

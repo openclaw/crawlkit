@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add an optional change-batch client that sends persisted bytes unchanged, preserves typed values and verifies durable receipt identities. Receiver deployment, source projection and outbox ownership remain downstream; the base service contract does not advertise this route.
+
 - Preserve caller-owned query requests when scoping remote batch reads, including when the HTTP request fails.
 
 - Match literal filenames in mirror commit history so bracket and wildcard characters do not include unrelated file changes.
