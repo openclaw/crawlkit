@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add a closed durable-cluster snapshot profile to the existing GitHub seed
+  transport, with a content-bound token and four ordered tables. Existing
+  private-report bytes and validation remain unchanged; projection, source
+  qualification and receiver policy stay with the applications.
+
 - Add explicit v1/v2 GitHub native-anchor parsing and incremental range validation while keeping existing seed manifests v1-only.
 
 - Add a canonical typed inventory digest with explicit layout identity, native keys, ordered compact row hashes and bounded streaming validation. Existing seed hashes and protocol capabilities remain unchanged.

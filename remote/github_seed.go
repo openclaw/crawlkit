@@ -69,6 +69,8 @@ var githubSeedTables = [...]string{
 	"thread_child_observation_memberships", "thread_exclusions", "thread_excluded_nodes",
 }
 
+var githubClusterSeedTables = [...]string{"selection", "groups", "members", "threads"}
+
 // Manifest returns caller-owned metadata; changing it cannot change this plan.
 func (p *GitHubSeedPlan) Manifest() GitHubSeedManifest {
 	m := p.manifest
@@ -115,7 +117,7 @@ func validateGitHubSeedManifest(m GitHubSeedManifest) ([]seedDescriptor, error) 
 	if err := validateGitHubSeedIdentity(m.Contract, m.App, m.Archive, m.BindingID, m.SeedID); err != nil {
 		return nil, err
 	}
-	if m.Profile != "gitcrawl-private-report-v1" || m.NativeSchema != 16 {
+	if (m.Profile != "gitcrawl-private-report-v1" && m.Profile != "gitcrawl.public-durable-cluster-context/v1") || m.NativeSchema != 16 {
 		return nil, errors.New("unsupported GitHub seed profile/schema")
 	}
 	parts := strings.Split(m.Repository, "/")
@@ -130,6 +132,13 @@ func validateGitHubSeedManifest(m GitHubSeedManifest) ([]seedDescriptor, error) 
 	if !seedHex(m.ScopeSHA256, sha256.Size) || !seedHex(m.NativeSHA256, sha256.Size) {
 		return nil, errors.New("invalid seed scope/native inventory digest")
 	}
+	if m.Profile == "gitcrawl.public-durable-cluster-context/v1" {
+		// Cluster snapshots are content-addressed, not native journal positions.
+		if m.NativeThrough != "gitcrawl-cluster-v1:"+m.ScopeSHA256+":"+m.NativeSHA256 {
+			return nil, errors.New("invalid GitHub cluster seed content anchor")
+		}
+		return validateSeedTables(m.Tables, githubClusterSeedTables[:])
+	}
 	// The SQLite schema cookie is not the fixed native schema version. Include
 	// inventory identity because untracked native changes can share a head.
 	anchor, err := ParseGitHubNativeAnchor(m.NativeThrough)
@@ -143,7 +152,10 @@ func validateGitHubSeedChunk(c GitHubSeedChunk) error {
 	if err := validateGitHubSeedIdentity(c.Contract, c.App, c.Archive, c.BindingID, c.SeedID); err != nil {
 		return err
 	}
-	return validateSeedRows(c.Index, c.ExpectedCursor, c.SeedID, c.Changes, githubSeedTables[:])
+	// A chunk has no profile. Its immutable manifest plan must select and
+	// verify the table descriptor before any effect.
+	tables := append(githubSeedTables[:], githubClusterSeedTables[:]...)
+	return validateSeedRows(c.Index, c.ExpectedCursor, c.SeedID, c.Changes, tables)
 }
 
 func validateGitHubSeedComplete(c GitHubSeedComplete) error {

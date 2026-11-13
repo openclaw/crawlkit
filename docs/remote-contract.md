@@ -225,12 +225,13 @@ or complete upstream coverage. These lifecycle requirements belong to the
 future source outbox and receiver implementation, not this codec/client slice.
 
 
-## Optional private GitHub seed contract
+## Optional GitHub seed contract
 
 `GitHubSeedManifest`, `GitHubSeedChunk`, `GitHubSeedComplete` and `GitHubSeedPlan`
 provide `gitcrawl-seed-v1` for the `gitcrawl-private-report-v1` profile and native
-schema `16`. They share the Slack seed's strict JSON/scalar codec, bounded indexed
-descriptors, exact-byte hash rules, cursor chain and receipt transport. Slack's
+schema `16`, plus the closed cluster profile described below. They share the
+Slack seed's strict JSON/scalar codec, bounded indexed descriptors, exact-byte
+hash rules, cursor chain and receipt transport. Slack's
 public APIs and encoded bytes are unchanged. This contract neither parses native
 SQLite schemas nor implements collection, exclusion policy, a receiver or outbox.
 
@@ -307,6 +308,34 @@ the same `SeedReceipt` identity and payload hash. It has no implicit retries or
 fallback and does not advertise these routes in `BaseContract()`.
 Authenticated native evidence is not policy authority: receivers must separately
 qualify registered repository scope, current exclusions and baseline eligibility.
+
+### Durable cluster context
+
+The additive profile `gitcrawl.public-durable-cluster-context/v1` uses the same
+manifest fields, native schema `16`, routes, plan, client methods and receipts.
+It requires exactly four ordered table descriptors: `selection`, `groups`,
+`members`, `threads`. Its `native_through` identifies content only:
+
+```text
+gitcrawl-cluster-v1:<scope64hex>:<inventory64hex>
+```
+
+Both lowercase SHA-256 digests must equal the manifest's `scope_sha256` and
+`native_sha256`. There is no journal epoch, generation, schema cookie or sequence
+in this token. The private profile's native anchor and encoded bytes are unchanged;
+neither profile accepts the other's token or table list.
+
+Chunks have no profile field, so their standalone encoder/decoder accepts the
+closed union of both table lists. The immutable manifest plan's `ValidateChunk`
+checks the exact descriptor table, count, size and hash before any effect.
+Receivers must use that plan; decoding a chunk alone is not profile admission.
+The existing body, row and chunk limits and exact-byte receipt checks apply.
+
+An empty graph can carry one selection row and empty remaining tables. The codec
+does not enforce row cardinality, parse columns or establish public eligibility.
+Gitcrawl and its receiver own those rules, public projection, selection semantics,
+current exclusion checks and activation. A profile name or receipt grants no
+publication authority. These optional routes remain absent from `BaseContract()`.
 Only downstream-qualified completion can establish a baseline. Neither native
 anchors nor completion receipts prove provider freshness, full body/history
 coverage or publication permission.
@@ -390,7 +419,8 @@ not the fixed application schema version.
 
 V1 keeps its original full native inventory hash semantics. V2 uses the canonical
 compact inventory digest above. These hashes are not interchangeable. GitHub seed
-manifests remain strictly v1-only; adding this codec does not admit v2 seeds,
+private-profile manifests remain strictly v1-only; adding this codec does not
+admit v2 seeds,
 change generic `changes-v1` decoding, or advertise a new receiver capability.
 
 `ValidateGitHubNativeRange` validates both typed endpoints and requires a v2

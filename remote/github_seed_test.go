@@ -240,7 +240,16 @@ func githubSeedSend(ctx context.Context, c *Client, archive string, p *GitHubSee
 }
 
 func TestGitHubSeedClientExactBytesReplayAndReceipts(t *testing.T) {
-	m, chunks := githubSeedFixture(t)
+	for name, fixture := range map[string]func(*testing.T) (GitHubSeedManifest, [][]byte){
+		"private": githubSeedFixture, "cluster": githubClusterSeedFixture,
+	} {
+		t.Run(name, func(t *testing.T) { testGitHubSeedClientExactBytesReplayAndReceipts(t, fixture) })
+	}
+}
+
+func testGitHubSeedClientExactBytesReplayAndReceipts(t *testing.T, fixture func(*testing.T) (GitHubSeedManifest, [][]byte)) {
+	t.Helper()
+	m, chunks := fixture(t)
 	// Noncanonical accepted bytes must be sent and hashed unchanged, including
 	// whitespace. Sender encoding is only a convenience.
 	chunks[0] = append([]byte("\n"), chunks[0]...)
