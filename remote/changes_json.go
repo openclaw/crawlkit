@@ -10,7 +10,10 @@ import (
 	"github.com/openclaw/crawlkit/internal/jsontext"
 )
 
-func decodeChangeBatch(body []byte) (ChangeBatch, error) {
+// DecodeChangeBatch validates a bounded changes-v1 request without changing its
+// bytes. Receivers must hash the original body and separately enforce route,
+// publisher, binding and profile authorization before applying it.
+func DecodeChangeBatch(body []byte) (ChangeBatch, error) {
 	if len(body) > MaxChangeBytes {
 		return ChangeBatch{}, errors.New("change body exceeds 4 MiB")
 	}

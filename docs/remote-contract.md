@@ -46,9 +46,10 @@ their own conformance tests.
 
 ## Optional incremental change contract
 
-`ChangeBatch`, `EncodeChangeBatch` and `Client.ApplyChanges` describe the optional
-`changes-v1` contract at `POST /v1/apps/:app/archives/:archive/changes`.
-These client APIs do not establish that a receiver exists. `BaseContract()` does
+`ChangeBatch`, `EncodeChangeBatch`, `DecodeChangeBatch` and `Client.ApplyChanges`
+describe the optional `changes-v1` contract at
+`POST /v1/apps/:app/archives/:archive/changes`.
+These APIs do not establish that a receiver exists. `BaseContract()` does
 not advertise this route or capability. A caller must verify receiver support
 before delivery; unsupported receivers never fall back to snapshot ingestion.
 Existing snapshot manifests, ingest results and cutover behavior are unchanged.
@@ -86,6 +87,9 @@ capture/outbox resources; the protocol's maximum is not an RSS guarantee.
 The outbox persists the complete ordered part set, exact request bytes and hashes,
 expected/next archive cursors and final native watermark before sending any part.
 `EncodeChangeBatch` is a deterministic convenience, not a canonical-JSON mandate.
+`DecodeChangeBatch` gives receivers the same strict wire validation as the client.
+It does not authorize a publisher, binding or profile, and it does not replace the
+original bytes that receivers must hash.
 `ApplyChanges` accepts valid field ordering and whitespace and sends the supplied
 bytes unchanged. Do not mutate that byte slice until the call returns. Unknown,
 duplicate, case-aliased, missing or explicitly null object fields are rejected;

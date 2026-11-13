@@ -92,7 +92,7 @@ func EncodeChangeBatch(batch ChangeBatch) ([]byte, error) {
 // caller owns capability discovery, durable outbox/retries and final native
 // acknowledgment. This method never falls back to snapshot ingestion.
 func (c *Client) ApplyChanges(ctx context.Context, app, archive string, body []byte) (ChangeReceipt, error) {
-	batch, err := decodeChangeBatch(body)
+	batch, err := DecodeChangeBatch(body)
 	if err != nil {
 		return ChangeReceipt{}, err
 	}

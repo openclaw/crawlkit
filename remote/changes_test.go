@@ -78,8 +78,8 @@ func TestApplyChangesPreservesPersistedBytes(t *testing.T) {
 		if !bytes.Equal(got, persisted) || r.ContentLength != int64(len(persisted)) {
 			t.Error("persisted bytes changed in transport")
 		}
-		var decoded ChangeBatch
-		if err := json.Unmarshal(got, &decoded); err != nil {
+		decoded, err := DecodeChangeBatch(got)
+		if err != nil {
 			t.Error(err)
 			return
 		}
@@ -134,6 +134,9 @@ func TestApplyChangesRejectsInvalidBodiesBeforeCredentials(t *testing.T) {
 	cases["null changes"] = string(nullChanges)
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
+			if decoded, err := DecodeChangeBatch([]byte(body)); err == nil || !reflect.DeepEqual(decoded, ChangeBatch{}) {
+				t.Fatalf("receiver decoder accepted invalid body: %v", err)
+			}
 			client, err := NewClient(Options{Endpoint: "https://remote.test", TokenProvider: tokenProviderFunc(func(context.Context) (string, error) { t.Fatal("invalid body reached credentials"); return "", nil })})
 			if err != nil {
 				t.Fatal(err)
