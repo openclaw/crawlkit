@@ -310,3 +310,64 @@ qualify registered repository scope, current exclusions and baseline eligibility
 Only downstream-qualified completion can establish a baseline. Neither native
 anchors nor completion receipts prove provider freshness, full body/history
 coverage or publication permission.
+
+## Canonical compact inventory digest
+
+`NewInventoryCodec`, `EncodeKey`, `RowDigest` and `Digest` provide the pure
+`crawl-inventory-v1` binary identity primitive. This is not a native-token version,
+wire request hash, receiver capability, or proof of privacy/coverage. Existing
+seed manifests and `gitcrawl-native-v1` hashes are unchanged. Applications own
+approved profiles/layouts, primary keys, source snapshots, SQL, index custody,
+policy and any future token/outbox migration.
+
+A codec binds explicit profile and layout IDs, every table, ordered typed columns
+and ordered primary-key column names. Metadata is nonempty NUL-free UTF-8 of at
+most 128 bytes. Columns declare `text` or `integer` and nullability; values reuse
+`ChangeValue`. Integers are canonical signed int64 decimal strings; text preserves
+exact valid UTF-8 including NUL. NULL is distinct from empty text. Key values must
+match their declared row columns. A nullable key is representable when declared,
+but the app must separately decide whether its source admits an unambiguous
+incremental baseline. Never substitute nullable/duplicate provider IDs for the
+source's declared primary key. Unknown tables, invalid types, duplicate layout
+names/keys and row/key disagreement fail.
+
+The following byte grammar is normative. `U(n)` is an unsigned 64-bit big-endian
+integer; `F(b) = U(byte-length(b)) || b`. All string literals/names use UTF-8.
+Digests embedded below are 32 raw SHA-256 bytes, not hexadecimal strings.
+A cell is `00` for NULL, `01 || F(text)` for text, or
+`02 || F(canonical-decimal)` for integer. No Unicode or JSON normalization occurs.
+
+- Layout bytes: `F("crawl-inventory-layout-v1") || F(profile) || F(layoutID) ||
+  U(tableCount)`, then each table in unsigned UTF-8 name-byte order:
+  `F(name) || U(columnCount)`, each declared column's
+  `F(name) || typeByte || nullableByte`, then `U(keyCount)` and each key's
+  zero-based column index as `U(index)` in declared key order. Type bytes are
+  `01` text and `02` integer; nullable is `00` or `01`. `L = SHA256(layoutBytes)`.
+- Key bytes: `F("crawl-inventory-key-v1") || L || F(table) || U(keyCount)`,
+  followed by typed key cells in declared order.
+- Row bytes: `F("crawl-inventory-row-v1") || L || F(table) || F(keyBytes) ||
+  U(columnCount)`, followed by every typed row cell in declared column order.
+  `RowDigest` returns SHA-256 of these bytes.
+- Inventory bytes: `F("crawl-inventory-set-v1") || L || F(scope) ||
+  U(tableCount)`, then each declared table in name-byte order:
+  `F(table) || U(rowCount)`, followed by `F(keyBytes) || rowDigest` for its rows
+  in strictly increasing unsigned encoded-key-byte order. Append `U(totalRows)`.
+  `Digest` returns SHA-256 of these bytes only after complete validation.
+
+Scope is caller-defined nonempty opaque bytes. Every declared table needs an
+explicit count, including empty tables; count declaration order is irrelevant.
+Encoded-key ordering is neither SQL numeric ordering, JSON ordering nor digest
+ordering: integer keys `2`, `-1`, `10` occur in that byte order with this framing.
+Duplicate keys, wrong ordering, wrong layout/domain, missing/extra entries or
+tables, invalid key encodings and exceeded limits return an error and zero digest.
+
+`Digest` streams compact `InventoryEntry` values from a synchronous callback;
+it never reads row bodies or sorts/retains the complete index. The callback ends
+with exactly a zero entry plus `io.EOF`. It may reuse its buffer on its next call.
+The caller supplies a context, maximum entry count and maximum encoded-key size;
+zero entries are permitted. The codec retains at most the layout/counts and one
+previous key. It checks cancellation before/after callbacks; callbacks must honor
+the context themselves. Callers separately bound layout/scope/individual row
+inputs and source-query resources. Row digests are opaque derived evidence here:
+the owner must bind them to `RowDigest`, the same layout and consistent snapshot.
+The digest alone cannot certify that provenance or settle a delivery receipt.
