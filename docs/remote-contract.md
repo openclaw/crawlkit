@@ -371,3 +371,38 @@ the context themselves. Callers separately bound layout/scope/individual row
 inputs and source-query resources. Row digests are opaque derived evidence here:
 the owner must bind them to `RowDigest`, the same layout and consistent snapshot.
 The digest alone cannot certify that provenance or settle a delivery receipt.
+
+## Explicit GitHub native anchors
+
+`GitHubNativeAnchor`, `ParseGitHubNativeAnchor` and `EncodeGitHubNativeAnchor`
+share the exact native-token grammar:
+
+```
+version:epoch:generation:schema_cookie:sequence:pruned_through:scope_sha256:inventory_sha256
+```
+
+Only `gitcrawl-native-v1` and `gitcrawl-native-v2` are accepted. Epoch is exactly
+32 lowercase hexadecimal characters; both digests are exactly 64. Counters use
+canonical signed int64 decimal spelling, with positive generation/schema cookie,
+nonnegative sequence/pruning floor, and floor no greater than sequence. Parsing
+never trims or normalizes tokens. The schema cookie is SQLite's schema cookie,
+not the fixed application schema version.
+
+V1 keeps its original full native inventory hash semantics. V2 uses the canonical
+compact inventory digest above. These hashes are not interchangeable. GitHub seed
+manifests remain strictly v1-only; adding this codec does not admit v2 seeds,
+change generic `changes-v1` decoding, or advertise a new receiver capability.
+
+`ValidateGitHubNativeRange` validates both typed endpoints and requires a v2
+Through following a v1 or v2 From. Epoch, generation, schema cookie and scope
+must match; sequence and floor cannot regress, and From's sequence must be at
+least Through's pruning floor. A first v1→v2 range may keep the same sequence
+while changing hash algorithms. For v2→v2, equal sequence requires equal inventory
+hash; an unchanged range or floor-only advance is valid. Advancing sequence may
+retain the same inventory hash for out-of-scope writes.
+
+These checks establish token/range consistency only. The app and receiver still
+own the exact receipt-qualified predecessor, post-upgrade journal readiness,
+complete interval/dependency capture, source identity, privacy policy and atomic
+outbox/index settlement. Generation changes or journal gaps require explicit
+reconciliation; this codec never reseeds or advances a baseline itself.

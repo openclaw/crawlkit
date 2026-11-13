@@ -132,21 +132,9 @@ func validateGitHubSeedManifest(m GitHubSeedManifest) ([]seedDescriptor, error) 
 	}
 	// The SQLite schema cookie is not the fixed native schema version. Include
 	// inventory identity because untracked native changes can share a head.
-	anchor := strings.Split(m.NativeThrough, ":")
-	if len(anchor) != 8 || anchor[0] != "gitcrawl-native-v1" || !seedHex(anchor[1], 16) ||
-		anchor[6] != m.ScopeSHA256 || anchor[7] != m.NativeSHA256 {
+	anchor, err := ParseGitHubNativeAnchor(m.NativeThrough)
+	if err != nil || anchor.Version != GitHubNativeV1 || anchor.ScopeSHA256 != m.ScopeSHA256 || anchor.InventorySHA256 != m.NativeSHA256 {
 		return nil, errors.New("invalid GitHub seed native anchor")
-	}
-	var counters [4]int64
-	for i := range counters {
-		n, err := strconv.ParseInt(anchor[i+2], 10, 64)
-		if err != nil || n < 0 || (i < 2 && n == 0) || strconv.FormatInt(n, 10) != anchor[i+2] {
-			return nil, errors.New("invalid GitHub seed native counter")
-		}
-		counters[i] = n
-	}
-	if counters[3] > counters[2] {
-		return nil, errors.New("seed native floor exceeds sequence")
 	}
 	return validateSeedTables(m.Tables, githubSeedTables[:])
 }

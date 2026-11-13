@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add explicit v1/v2 GitHub native-anchor parsing and incremental range validation while keeping existing seed manifests v1-only.
+
 - Add a canonical typed inventory digest with explicit layout identity, native keys, ordered compact row hashes and bounded streaming validation. Existing seed hashes and protocol capabilities remain unchanged.
 
 - Add optional private GitHub seed codecs and exact-byte clients with seven ordered table descriptors, native schema-cookie and inventory-bound anchors, and verified receipts. Native projection, exclusions and baseline eligibility remain downstream.
