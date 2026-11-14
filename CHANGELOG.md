@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve literal SQLite database paths in control metadata so trailing whitespace does not select a different file for size and modification stats.
+
 - Reject cron paths containing line feeds instead of rendering a broken multiline crontab entry.
 
 - Preserve percent signs in cron executable, config, and log paths instead of truncating the scheduled command.

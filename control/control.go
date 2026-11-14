@@ -146,13 +146,14 @@ func NewCount(id, label string, value int64) Count {
 	return Count{ID: strings.TrimSpace(id), Label: strings.TrimSpace(label), Value: value}
 }
 
+// SQLiteDatabase reports metadata for the literal path without trimming whitespace.
 func SQLiteDatabase(id, label, role, path string, primary bool, counts []Count) Database {
 	db := Database{
 		ID:        strings.TrimSpace(id),
 		Label:     strings.TrimSpace(label),
 		Kind:      "sqlite",
 		Role:      strings.TrimSpace(role),
-		Path:      strings.TrimSpace(path),
+		Path:      path,
 		IsPrimary: primary,
 		Counts:    append([]Count(nil), counts...),
 	}
