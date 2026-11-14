@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update the SQLite driver to v1.62.0 with its required libc v1.80.1 runtime, x/sys to v0.50.0, and the paired CodeQL actions to v4.39.3; retain the Go 1.27.0 minimum.
+
 - Reject cron intervals that cannot keep a uniform cadence across hour boundaries instead of silently rendering shorter gaps.
 
 - Bound change and seed receipt reads before decoding and reject trailing response data instead of accepting a valid first JSON object.
