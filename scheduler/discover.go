@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -56,7 +57,11 @@ func discoverOne(ctx context.Context, binary string) App {
 	data, err := cmd.Output()
 	if err == nil {
 		var manifest control.Manifest
-		if json.Unmarshal(data, &manifest) == nil && manifest.ID != "" {
+		if parseErr := json.Unmarshal(data, &manifest); parseErr != nil {
+			err = fmt.Errorf("parse metadata: %w", parseErr)
+		} else if manifest.ID == "" {
+			err = fmt.Errorf("metadata manifest ID is required")
+		} else {
 			app.ID = manifest.ID
 			app.DisplayName = manifest.DisplayName
 			app.Manifest = &manifest
