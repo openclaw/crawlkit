@@ -491,3 +491,26 @@ func TestHistoryReturnsCloseFailure(t *testing.T) {
 		t.Fatalf("close error lost: %v", err)
 	}
 }
+
+func TestPlanInstallCronIntervals(t *testing.T) {
+	paths := Paths{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), LogDir: t.TempDir()}
+	for _, tc := range []struct{ every, prefix string }{
+		{every: "1m", prefix: "*/1 * * * * "},
+		{every: "12m", prefix: "*/12 * * * * "},
+		{every: "30m", prefix: "*/30 * * * * "},
+		{every: "7m"}, {every: "40m"}, {every: "45m"}, {every: "59m"},
+	} {
+		t.Run(tc.every, func(t *testing.T) {
+			plan, err := PlanInstall(InstallOptions{Backend: "cron", Every: tc.every, Executable: "crawlctl", Paths: paths})
+			if tc.prefix == "" {
+				if err == nil || !strings.Contains(err.Error(), "evenly divide one hour") || plan.Content != "" {
+					t.Fatalf("cron plan for %s = %#v, %v; want inexact interval refusal", tc.every, plan, err)
+				}
+				return
+			}
+			if err != nil || !strings.HasPrefix(plan.Content, tc.prefix) {
+				t.Fatalf("cron plan for %s = %#v, %v; want prefix %q", tc.every, plan, err, tc.prefix)
+			}
+		})
+	}
+}
