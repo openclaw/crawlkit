@@ -86,6 +86,29 @@ func TestPlanInstallRejectsInexactMinuteBackends(t *testing.T) {
 	}
 }
 
+func TestPlanInstallWholeSecondBackends(t *testing.T) {
+	paths := Paths{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), LogDir: t.TempDir()}
+	for _, backend := range []struct{ name, content string }{
+		{"launchd", "<integer>90</integer>"},
+		{"systemd", "OnUnitActiveSec=90s"},
+	} {
+		for _, every := range []string{"90s", "90.5s", "1m1ns"} {
+			t.Run(backend.name+"/"+every, func(t *testing.T) {
+				plan, err := PlanInstall(InstallOptions{Backend: backend.name, Every: every, Executable: "crawlctl", Paths: paths})
+				if every != "90s" {
+					if err == nil || !strings.Contains(err.Error(), "whole seconds") || plan.Content != "" {
+						t.Fatalf("fractional-second plan = %#v, %v; want refusal without content", plan, err)
+					}
+					return
+				}
+				if err != nil || !strings.Contains(plan.Content, backend.content) {
+					t.Fatalf("whole-second plan = %#v, %v; want %q", plan, err, backend.content)
+				}
+			})
+		}
+	}
+}
+
 func TestPlanInstallLaunchdEscapesXML(t *testing.T) {
 	paths := Paths{ConfigPath: "/tmp/a&b/crawlctl.toml", LogDir: "/tmp/logs<private>"}
 	plan, err := PlanInstall(InstallOptions{Backend: "launchd", Every: "5m", Executable: "/bin/crawlctl", Paths: paths})

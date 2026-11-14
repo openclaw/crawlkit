@@ -71,6 +71,9 @@ func planInstall(opts InstallOptions, installing bool) (InstallPlan, error) {
 	if backend == "auto" {
 		backend = defaultBackend()
 	}
+	if (backend == "launchd" || backend == "systemd") && duration%time.Second != 0 {
+		return InstallPlan{}, fmt.Errorf("%s scheduler interval must be whole seconds: %s", backend, duration)
+	}
 	args := []string{exe, "--config", paths.ConfigPath, "run"}
 	switch backend {
 	case "launchd":
