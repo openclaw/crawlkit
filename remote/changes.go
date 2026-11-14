@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -105,8 +106,20 @@ func (c *Client) ApplyChanges(ctx context.Context, app, archive string, body []b
 // The optional seed and change protocols share exact-byte receipt identity.
 func (c *Client) sendChangeRequest(ctx context.Context, route string, body []byte, app, archive, binding, batchID string) (ChangeReceipt, error) {
 	digest := sha256.Sum256(body)
-	var response json.RawMessage
-	if err := c.doRaw(ctx, http.MethodPost, route, bytes.NewReader(body), int64(len(body)), nil, &response); err != nil {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url(route), bytes.NewReader(body))
+	if err != nil {
+		return ChangeReceipt{}, err
+	}
+	resp, err := c.sendRequest(ctx, req, true, true, true)
+	if err != nil {
+		return ChangeReceipt{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ChangeReceipt{}, decodeRemoteError(resp)
+	}
+	response, err := io.ReadAll(io.LimitReader(resp.Body, MaxChangeBytes+1))
+	if err != nil {
 		return ChangeReceipt{}, err
 	}
 	receipt, err := decodeChangeReceipt(response)

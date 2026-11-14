@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -148,7 +149,7 @@ func TestPreservationDownloadRetainsPrivatePartialOutput(t *testing.T) {
 		"download", "--endpoint", server.URL, "--app", "discrawl", "--archive", "example",
 		"--manifest", digest(body), "--output", output, "--token-env", "PRESERVATION_TEST_TOKEN",
 	})
-	if err == nil || !strings.Contains(err.Error(), "partial download retained at") || !strings.Contains(err.Error(), output) || stdout.Len() != 0 {
+	if err == nil || !strings.Contains(err.Error(), "partial download retained at "+strconv.Quote(output)+":") || stdout.Len() != 0 {
 		t.Fatalf("failed download error = %v, output = %q", err, stdout.String())
 	}
 	filePath := filepath.Join(output, "native", "backup.sqlite")

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bound change and seed receipt reads before decoding and reject trailing response data instead of accepting a valid first JSON object.
+
 - Add an opt-in private native backup client and `crawlctl preservation` upload
   and download commands. Reuse existing opaque backup bytes, verify immutable
   chunk and complete-file identities, and restore only into a new directory.
