@@ -109,7 +109,11 @@ func planInstall(opts InstallOptions, installing bool) (InstallPlan, error) {
 		if 60%minutes != 0 {
 			return InstallPlan{}, fmt.Errorf("cron interval must evenly divide one hour: %s", duration)
 		}
-		line := fmt.Sprintf("*/%d * * * * %s >> %s 2>&1 # crawlctl\n", minutes, shellQuoteArgs(args), shellQuote(filepath.Join(paths.LogDir, "crawlctl-cron.log")))
+		command := fmt.Sprintf("%s >> %s 2>&1 # crawlctl", shellQuoteArgs(args), shellQuote(filepath.Join(paths.LogDir, "crawlctl-cron.log")))
+		// Every percent is inside a shell-quoted path. Close that quote before
+		// escaping for cron so preceding path backslashes cannot consume the escape.
+		command = strings.ReplaceAll(command, "%", "'\\%'")
+		line := fmt.Sprintf("*/%d * * * * %s\n", minutes, command)
 		return InstallPlan{Backend: backend, Content: line}, nil
 	default:
 		return InstallPlan{}, fmt.Errorf("unsupported scheduler backend %q", opts.Backend)
