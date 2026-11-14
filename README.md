@@ -137,6 +137,8 @@ Scheduling uses launchd on macOS, systemd user units on Linux, Task Scheduler on
 
 Cron plans escape percent signs in executable, config, and log paths before
 cron processes the command, including when adjacent to literal backslashes.
+Paths containing line feeds are rejected because each cron entry must occupy
+one physical line.
 
 Systemd plans preserve literal argument text, including quotes, percent signs,
 and dollar signs. Executable paths must follow systemd rules: quotes,
