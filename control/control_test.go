@@ -3,6 +3,7 @@ package control
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -57,6 +58,31 @@ func TestSQLiteDatabaseStatsPathReadOnly(t *testing.T) {
 	}
 	if len(db.Counts) != 1 || db.Counts[0].Value != 7 {
 		t.Fatalf("counts = %#v", db.Counts)
+	}
+}
+
+func TestSQLiteDatabasePreservesPathWhitespace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "archive.db ")
+	db := SQLiteDatabase("primary", "Primary archive", "archive", path, true, nil)
+	if db.Path != path {
+		t.Fatalf("database path = %q, want literal path %q", db.Path, path)
+	}
+}
+
+func TestSQLiteDatabaseStatsUseLiteralPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not preserve trailing spaces in ordinary file paths")
+	}
+	neighbor := filepath.Join(t.TempDir(), "archive.db")
+	path := neighbor + " "
+	for name, body := range map[string]string{neighbor: "other", path: "literal database"} {
+		if err := os.WriteFile(name, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db := SQLiteDatabase("primary", "Primary archive", "archive", path, true, nil)
+	if db.Bytes != int64(len("literal database")) || db.ModifiedAt == "" {
+		t.Fatalf("database stats = %#v; want stats from literal path", db)
 	}
 }
 
