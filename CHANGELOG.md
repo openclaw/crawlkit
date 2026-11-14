@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject fractional-second launchd and systemd intervals instead of silently shortening the requested schedules.
+
 - Preserve literal SQLite database paths in control metadata so trailing whitespace does not select a different file for size and modification stats.
 
 - Reject cron paths containing line feeds instead of rendering a broken multiline crontab entry.
