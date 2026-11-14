@@ -87,8 +87,18 @@ Use patch tags for narrow fixes and minor tags for broader shared crawler or TUI
 infrastructure. After tagging, prime/verify the Go proxy and then update
 downstream apps to the published tag.
 
-## Autoreview priority
+## Independent review
 
-Use `--max-priority P3` with the shared autoreview helper to preserve this
-repository's existing P0–P3 review gate. Follow the
-[shared skill setup](.agents/skills/autoreview/SKILL.md) before running it.
+Before delivery, use an ordinary native OpenClaw subagent with isolated context
+for independent P0–P3 review of the complete pinned candidate. Include staged,
+unstaged and task-owned untracked changes, required unchanged context, and
+explicit scope and limitations. The reviewer is read-only: no edits, provider
+work, releases or deployment. Freeze producer changes during review; if the
+candidate changes, resolve findings and re-review the changed boundaries against
+the new pin before delivery.
+
+Use native subagent review directly, not a scripted review CLI, Codex runner,
+`agent exec`, wrapper or replacement helper. Keep the existing tests, CI,
+secret-scanning and release-verification guards. Historical validation receipts
+record the tools used at the time; they do not prescribe the current workflow.
+See [Contributing](CONTRIBUTING.md#independent-review) for the handoff checklist.
