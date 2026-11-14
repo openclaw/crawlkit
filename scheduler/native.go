@@ -109,7 +109,13 @@ func planInstall(opts InstallOptions, installing bool) (InstallPlan, error) {
 		if 60%minutes != 0 {
 			return InstallPlan{}, fmt.Errorf("cron interval must evenly divide one hour: %s", duration)
 		}
-		command := fmt.Sprintf("%s >> %s 2>&1 # crawlctl", shellQuoteArgs(args), shellQuote(filepath.Join(paths.LogDir, "crawlctl-cron.log")))
+		logPath := filepath.Join(paths.LogDir, "crawlctl-cron.log")
+		for _, path := range []string{exe, paths.ConfigPath, logPath} {
+			if strings.Contains(path, "\n") {
+				return InstallPlan{}, fmt.Errorf("cron paths must not contain newlines")
+			}
+		}
+		command := fmt.Sprintf("%s >> %s 2>&1 # crawlctl", shellQuoteArgs(args), shellQuote(logPath))
 		// Every percent is inside a shell-quoted path. Close that quote before
 		// escaping for cron so preceding path backslashes cannot consume the escape.
 		command = strings.ReplaceAll(command, "%", "'\\%'")

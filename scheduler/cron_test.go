@@ -9,6 +9,28 @@ import (
 	"testing"
 )
 
+func TestPlanInstallCronRejectsNewlinePaths(t *testing.T) {
+	for _, field := range []string{"executable", "config", "logs"} {
+		for _, newline := range []struct{ name, value string }{{"LF", "\n"}, {"CRLF", "\r\n"}} {
+			t.Run(field+"/"+newline.name, func(t *testing.T) {
+				opts := InstallOptions{Backend: "cron", Every: "5m", Executable: "crawlctl", Paths: Paths{ConfigPath: "config.toml", LogDir: "logs"}}
+				switch field {
+				case "executable":
+					opts.Executable = "crawl" + newline.value + "ctl"
+				case "config":
+					opts.Paths.ConfigPath = "config" + newline.value + ".toml"
+				case "logs":
+					opts.Paths.LogDir = "logs" + newline.value + "directory"
+				}
+				plan, err := PlanInstall(opts)
+				if err == nil || !strings.Contains(err.Error(), "newlines") || plan.Content != "" {
+					t.Fatalf("multiline cron plan = %#v, %v; want refusal without content", plan, err)
+				}
+			})
+		}
+	}
+}
+
 func TestPlanInstallCronLiteralPaths(t *testing.T) {
 	for _, suffix := range []string{"plain", "100%", "two%%", "space '%", `slash\%`, `slashes\\%`} {
 		t.Run(suffix, func(t *testing.T) {
