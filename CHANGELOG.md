@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject cron intervals that cannot keep a uniform cadence across hour boundaries instead of silently rendering shorter gaps.
+
 - Bound change and seed receipt reads before decoding and reject trailing response data instead of accepting a valid first JSON object.
 
 - Add an opt-in private native backup client and `crawlctl preservation` upload

@@ -105,6 +105,10 @@ func planInstall(opts InstallOptions, installing bool) (InstallPlan, error) {
 		if minutes < 1 || minutes > 59 {
 			return InstallPlan{}, fmt.Errorf("cron interval must be between 1m and 59m: %s", duration)
 		}
+		// Cron minute steps restart at the beginning of every hour.
+		if 60%minutes != 0 {
+			return InstallPlan{}, fmt.Errorf("cron interval must evenly divide one hour: %s", duration)
+		}
 		line := fmt.Sprintf("*/%d * * * * %s >> %s 2>&1 # crawlctl\n", minutes, shellQuoteArgs(args), shellQuote(filepath.Join(paths.LogDir, "crawlctl-cron.log")))
 		return InstallPlan{Backend: backend, Content: line}, nil
 	default:

@@ -133,7 +133,7 @@ applies private file permissions before replacing existing content.
 | `install` | Install or render a periodic schedule |
 | `uninstall` | Remove an installed periodic schedule |
 
-Scheduling uses launchd on macOS, systemd user units on Linux, Task Scheduler on Windows, and cron rendering as the portable fallback.
+Scheduling uses launchd on macOS, systemd user units on Linux, Task Scheduler on Windows, and cron rendering as the portable fallback. Cron requires whole-minute intervals below one hour that divide 60 evenly, such as `5m`, `12m`, or `30m`; other intervals are rejected because minute steps restart each hour.
 
 Systemd plans preserve literal argument text, including quotes, percent signs,
 and dollar signs. Executable paths must follow systemd rules: quotes,
