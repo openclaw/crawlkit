@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report discovery errors for malformed app metadata or missing manifest IDs while preserving supported legacy fallbacks.
+
 - Reject fractional-second launchd and systemd intervals instead of silently shortening the requested schedules.
 
 - Preserve literal SQLite database paths in control metadata so trailing whitespace does not select a different file for size and modification stats.

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/openclaw/crawlkit/control"
@@ -56,7 +57,7 @@ func TestDiscoverUsesOnlySelectedMetadataAndSupportedJobs(t *testing.T) {
 			continue
 		}
 		found++
-		if app.Manifest == nil || app.Legacy {
+		if app.Manifest == nil || app.Legacy || app.Error != "" {
 			t.Fatalf("metadata not used: %+v", app)
 		}
 		job, ok := DefaultJobForApp(app, nil)
@@ -81,5 +82,40 @@ func TestDiscoverUsesOnlySelectedMetadataAndSupportedJobs(t *testing.T) {
 	invalid := Discover(context.Background(), []string{"weicrawl"})[0]
 	if invalid.Manifest != nil || invalid.Legacy {
 		t.Fatalf("invalid metadata received invented manifest: %+v", invalid)
+	}
+}
+
+func TestDiscoverReportsInvalidMetadata(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("synthetic POSIX executable fixtures")
+	}
+	for _, tc := range []struct {
+		name, binary, body, wantError string
+		legacy                        bool
+	}{
+		{"invalid JSON", "customcrawl", "{", "parse metadata", false},
+		{"missing ID", "customcrawl", "{}", "manifest ID", false},
+		{"legacy fallback", "slacrawl", "{", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			exe := filepath.Join(dir, tc.binary)
+			script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' '%s'\n", tc.body)
+			if err := os.WriteFile(exe, []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", dir)
+			app := Discover(context.Background(), []string{tc.binary})[0]
+			if !app.Found || app.Path != exe || app.Legacy != tc.legacy {
+				t.Fatalf("discovered app = %+v", app)
+			}
+			if tc.legacy {
+				if app.Error != "" || app.Manifest == nil || app.Manifest.ID != tc.binary {
+					t.Fatalf("legacy metadata fallback = %+v", app)
+				}
+			} else if !strings.Contains(app.Error, tc.wantError) || app.Manifest != nil {
+				t.Fatalf("invalid metadata app = %+v; want error containing %q without a manifest", app, tc.wantError)
+			}
+		})
 	}
 }

@@ -115,6 +115,8 @@ Default discovery checks `gitcrawl`, `discrawl`, `notcrawl`, `wacrawl`,
 `telecrawl`, `slacrawl`, `graincrawl`, `imsgcrawl`, `photoscrawl`, and `weicrawl`.
 Use `--app` to select binaries explicitly. Discovery does not automatically
 schedule source-specific commands such as Photos' `import_apple`.
+Discovery reports malformed metadata and missing manifest IDs in the app's
+`error` field. Supported legacy binaries retain their fallback manifests.
 
 If a write is interrupted, history reads ignore a truncated final JSON value and the next run repairs that tail before appending. Valid final records without a trailing newline are retained; complete corrupt records still report an error.
 
