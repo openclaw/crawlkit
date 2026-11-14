@@ -15,11 +15,90 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/openclaw/crawlkit/remote"
 )
+
+func TestPreservationFileRangesReassembleOriginal(t *testing.T) {
+	data := []byte("first volume\x00second volume\xff")
+	source := filepath.Join(t.TempDir(), "source.pack")
+	if err := os.WriteFile(source, data, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	digest := func(body []byte) string { sum := sha256.Sum256(body); return hex.EncodeToString(sum[:]) }
+	objects := map[string][]byte{}
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		sha := r.URL.Query().Get("sha256")
+		if r.Header.Get("Authorization") != "Bearer range-test" {
+			t.Error("missing credential")
+		}
+		key := r.URL.Path + "/" + sha
+		if r.Method == http.MethodPut {
+			body, _ := io.ReadAll(r.Body)
+			if digest(body) != sha {
+				t.Error("wrong digest")
+			}
+			objects[key] = body
+			if strings.HasSuffix(r.URL.Path, "/preservation-manifest") {
+				_ = json.NewEncoder(w).Encode(map[string]any{"sha256": sha, "verification": "chunk-checksums", "restore_qualified": false})
+			} else {
+				_ = json.NewEncoder(w).Encode(remote.PreservationChunk{SHA256: sha, Size: int64(len(body))})
+			}
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/preservation-chunk") {
+			var manifest remote.PreservationManifest
+			_ = json.Unmarshal(objects[strings.TrimSuffix(r.URL.Path, "preservation-chunk")+"preservation-manifest/"+sha], &manifest)
+			index, _ := strconv.Atoi(r.URL.Query().Get("chunk"))
+			key = r.URL.Path + "/" + manifest.Files[0].Chunks[index].SHA256
+		}
+		_, _ = w.Write(objects[key])
+	}))
+	defer server.Close()
+	t.Setenv("CRAWL_REMOTE_TOKEN", "range-test")
+	var restored []byte
+	for i, span := range [][2]int{{0, 13}, {13, len(data) - 13}} {
+		archive := "pack/" + strconv.Itoa(i)
+		common := []string{"--endpoint", server.URL, "--app", "gitcrawl", "--archive", archive}
+		var output bytes.Buffer
+		a := app{stdout: &output, stderr: io.Discard}
+		args := append([]string{"upload"}, common...)
+		args = append(args, "--file-range", "part="+strconv.Itoa(span[0])+":"+strconv.Itoa(span[1])+":"+source, "--chunk-size", "4")
+		if err := a.runPreservation(context.Background(), args); err != nil {
+			t.Fatal(err)
+		}
+		var receipt remote.PreservationReceipt
+		if err := json.Unmarshal(output.Bytes(), &receipt); err != nil {
+			t.Fatal(err)
+		}
+		if receipt.Manifest.Files[0].SHA256 != digest(data[span[0]:span[0]+span[1]]) || receipt.RestoreQualified {
+			t.Fatal("range receipt does not describe the exact section")
+		}
+		destination := filepath.Join(t.TempDir(), "restored")
+		args = append([]string{"download"}, common...)
+		args = append(args, "--manifest", receipt.ManifestSHA256, "--output", destination)
+		if err := a.runPreservation(context.Background(), args); err != nil {
+			t.Fatal(err)
+		}
+		part, err := os.ReadFile(filepath.Join(destination, "part"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		restored = append(restored, part...)
+	}
+	if !bytes.Equal(restored, data) {
+		t.Fatal("reassembled original changed")
+	}
+	if original, err := os.ReadFile(source); err != nil || !bytes.Equal(original, data) {
+		t.Fatal("source changed")
+	}
+}
 
 func TestPreservationArguments(t *testing.T) {
 	common := []string{"--endpoint", "http://127.0.0.1:1", "--app", "discrawl", "--archive", "example"}
@@ -34,6 +113,12 @@ func TestPreservationArguments(t *testing.T) {
 		{"download", "--output", "new-output"},
 		{"download", "--manifest", strings.Repeat("a", 64)},
 		{"download", "--file", "backup=source"},
+		{"upload", "--file-range", "part=0:1"},
+		{"upload", "--file-range", "part=0:1:"},
+		{"upload", "--file-range", "=0:1:source"},
+		{"upload", "--file-range", "part=-1:1:source"},
+		{"upload", "--file-range", "part=0:0:source"},
+		{"upload", "--file-range", "part=0:9223372036854775808:source"},
 	}
 	for _, args := range tests {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {

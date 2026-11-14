@@ -45,7 +45,28 @@ type PreservationManifest struct {
 
 // PreservationSource maps one regular source file to its portable manifest name.
 // Sources must be closed, coherent backups; this API does not snapshot live databases.
-type PreservationSource struct{ Name, Path string }
+type PreservationSource struct {
+	Name, Path string
+	// A positive Length selects exactly these bytes of the original file.
+	// Zero Offset and Length select the entire file.
+	Offset, Length int64
+}
+
+func preservationSourceBounds(source PreservationSource, size int64) (int64, int64, error) {
+	if source.Offset < 0 || source.Length < 0 || source.Offset > size {
+		return 0, 0, errors.New("invalid preservation source range")
+	}
+	if source.Length == 0 {
+		if source.Offset != 0 {
+			return 0, 0, errors.New("preservation source range requires a positive length")
+		}
+		return 0, size, nil
+	}
+	if source.Length > size-source.Offset {
+		return 0, 0, errors.New("preservation source range exceeds file size")
+	}
+	return source.Offset, source.Length, nil
+}
 
 // PreservationReceipt proves upload identities, not database restore fidelity.
 type PreservationReceipt struct {
@@ -151,12 +172,22 @@ func planPreservationFile(ctx context.Context, source PreservationSource, chunkS
 	if err != nil {
 		return result, err
 	}
-	if !info.Mode().IsRegular() || info.Size() < 1 || (info.Size()-1)/chunkSize+1 > preservationMaxChunks {
+	if !info.Mode().IsRegular() || info.Size() < 1 {
+		return result, errors.New("preservation source must be a nonempty regular file")
+	}
+	offset, length, err := preservationSourceBounds(source, info.Size())
+	if err != nil {
+		return result, err
+	}
+	if (length-1)/chunkSize+1 > preservationMaxChunks {
 		return result, errors.New("preservation source must be a nonempty regular file within the chunk limit")
 	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return result, err
+	}
 	whole := sha256.New()
-	result.Size = info.Size()
-	for remaining := info.Size(); remaining > 0; {
+	result.Size = length
+	for remaining := length; remaining > 0; {
 		size := min(remaining, chunkSize)
 		part := sha256.New()
 		n, err := copyWithContext(ctx, io.MultiWriter(whole, part), io.LimitReader(f, size))
@@ -246,8 +277,18 @@ func (c *Client) uploadPreservationFile(ctx context.Context, m PreservationManif
 	if err != nil {
 		return err
 	}
-	if !info.Mode().IsRegular() || info.Size() != file.Size {
+	if !info.Mode().IsRegular() {
+		return errors.New("preservation source must be a regular file")
+	}
+	offset, length, err := preservationSourceBounds(source, info.Size())
+	if err != nil {
+		return err
+	}
+	if length != file.Size {
 		return errors.New("preservation source size changed")
+	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return err
 	}
 	whole := sha256.New()
 	for _, chunk := range file.Chunks {
@@ -281,7 +322,7 @@ func (c *Client) uploadPreservationFile(ctx context.Context, m PreservationManif
 	if err != nil {
 		return err
 	}
-	if end.Size() != file.Size || hex.EncodeToString(whole.Sum(nil)) != file.SHA256 {
+	if end.Size() != info.Size() || !end.ModTime().Equal(info.ModTime()) || hex.EncodeToString(whole.Sum(nil)) != file.SHA256 {
 		return errors.New("preservation source file changed")
 	}
 	return nil

@@ -180,6 +180,22 @@ manifest supports up to 64 nonempty files and 256 chunks, at most 16 GiB. For a
 larger inventory, retain every separate manifest digest explicitly. The default
 per-request timeout is five minutes and can be set with `--timeout`.
 
+For a source file larger than one manifest, `--file-range
+NAME=OFFSET:LENGTH:PATH` reads an exact section without creating a temporary
+copy. Offset and length are decimal byte counts; length must be positive and
+the section must fit the source file. For example, an 8 GiB section can use
+`--file-range pack.part-000=0:8589934592:/backups/archive.pack`. Use a separate
+archive identifier for each volume. The library equivalent is
+`PreservationSource.Offset` and `PreservationSource.Length`; leaving both zero
+keeps the whole-file behavior.
+
+A section receipt verifies only those selected bytes. Retain the original
+file size and SHA-256, each section's offset and length, and all manifest pins
+in the recovery inventory. Restore each pinned volume, concatenate in recorded
+offset order, and verify the original complete-file checksum before declaring
+the original file recoverable. Range upload does not provide a snapshot of a
+file that is still changing.
+
 Upload reads sources twice and holds at most one chunk plus bounded copy buffers
 at a time. Sources must already be closed, coherent backups: use the native
 SQLite backup owner first, not an actively written database/WAL pair. Source

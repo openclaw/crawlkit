@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,11 +28,12 @@ func (a *app) runPreservation(ctx context.Context, args []string) error {
 	archive := fs.String("archive", "", "archive identifier")
 	tokenEnv := fs.String("token-env", "CRAWL_REMOTE_TOKEN", "environment variable containing the admin token")
 	timeout := fs.Duration("timeout", 5*time.Minute, "timeout per HTTP request")
-	var files multiFlag
+	var files, ranges multiFlag
 	var chunkSize int64
 	var digest, output string
 	if command == "upload" {
 		fs.Var(&files, "file", "logical NAME=PATH of a closed backup file (repeatable)")
+		fs.Var(&ranges, "file-range", "logical NAME=OFFSET:LENGTH:PATH of a closed backup file section (repeatable)")
 		fs.Int64Var(&chunkSize, "chunk-size", remote.PreservationChunkBytes, "chunk size in bytes")
 	} else {
 		fs.StringVar(&digest, "manifest", "", "manifest SHA-256")
@@ -53,8 +55,8 @@ func (a *app) runPreservation(ctx context.Context, args []string) error {
 	}
 	var sources []remote.PreservationSource
 	if command == "upload" {
-		if len(files) == 0 || chunkSize < 1 || chunkSize > remote.PreservationChunkBytes {
-			return usageError{fmt.Errorf("upload requires --file NAME=PATH and --chunk-size between 1 and %d", remote.PreservationChunkBytes)}
+		if len(files)+len(ranges) == 0 || chunkSize < 1 || chunkSize > remote.PreservationChunkBytes {
+			return usageError{fmt.Errorf("upload requires --file or --file-range and --chunk-size between 1 and %d", remote.PreservationChunkBytes)}
 		}
 		for _, value := range files {
 			name, path, ok := strings.Cut(value, "=")
@@ -62,6 +64,19 @@ func (a *app) runPreservation(ctx context.Context, args []string) error {
 				return usageError{errors.New("--file must be NAME=PATH with a nonempty name and path")}
 			}
 			sources = append(sources, remote.PreservationSource{Name: name, Path: path})
+		}
+		for _, value := range ranges {
+			name, spec, ok := strings.Cut(value, "=")
+			parts := strings.SplitN(spec, ":", 3)
+			if !ok || name == "" || len(parts) != 3 || parts[2] == "" {
+				return usageError{errors.New("--file-range must be NAME=OFFSET:LENGTH:PATH")}
+			}
+			offset, offsetErr := strconv.ParseInt(parts[0], 10, 64)
+			length, lengthErr := strconv.ParseInt(parts[1], 10, 64)
+			if offsetErr != nil || lengthErr != nil || offset < 0 || length <= 0 {
+				return usageError{errors.New("--file-range requires a nonnegative offset and positive length")}
+			}
+			sources = append(sources, remote.PreservationSource{Name: name, Path: parts[2], Offset: offset, Length: length})
 		}
 	} else {
 		if digest == "" || strings.TrimSpace(output) == "" {

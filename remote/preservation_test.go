@@ -226,6 +226,30 @@ func TestPreservationPlanningRejectsAmbiguousPathsAndBounds(t *testing.T) {
 	}
 }
 
+func TestPreservationPlansBoundedSectionsOfLargerFiles(t *testing.T) {
+	data := bytes.Repeat([]byte("abcdef"), 100)
+	file := filepath.Join(t.TempDir(), "large.pack")
+	if err := os.WriteFile(file, data, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	for _, span := range [][2]int64{{0, 3}, {257, 3}, {597, 3}} {
+		source := PreservationSource{Name: "part", Path: file, Offset: span[0], Length: span[1]}
+		manifest, err := PlanPreservation(context.Background(), "gitcrawl", "example", []PreservationSource{source}, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := manifest.Files[0]; got.Size != 3 || got.SHA256 != preservationDigest(data[span[0]:span[0]+span[1]]) {
+			t.Fatalf("wrong section: %+v", got)
+		}
+	}
+	for _, span := range [][2]int64{{-1, 1}, {0, -1}, {1, 0}, {599, 2}, {601, 1}, {1, 1<<63 - 1}} {
+		source := PreservationSource{Name: "part", Path: file, Offset: span[0], Length: span[1]}
+		if _, err := PlanPreservation(context.Background(), "gitcrawl", "example", []PreservationSource{source}, 1); err == nil {
+			t.Fatalf("accepted out-of-bounds section %v", span)
+		}
+	}
+}
+
 func TestPreservationRejectsFalseReceipt(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "source")
 	if err := os.WriteFile(file, []byte("abc"), 0600); err != nil {

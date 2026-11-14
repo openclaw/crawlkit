@@ -6,6 +6,10 @@
 
 - Bound change and seed receipt reads before decoding and reject trailing response data instead of accepting a valid first JSON object.
 
+- Add exact file-section inputs to private preservation uploads. Large closed
+  files can be transferred in separately pinned volumes without temporary
+  copies; section receipts do not claim whole-file restore qualification.
+
 - Add an opt-in private native backup client and `crawlctl preservation` upload
   and download commands. Reuse existing opaque backup bytes, verify immutable
   chunk and complete-file identities, and restore only into a new directory.
