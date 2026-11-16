@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep scheduler due checks scoped to the exact job and repository when colon-containing names share a legacy history key.
+
 - Keep scheduler status scoped to the exact job name when another job or repository history key shares its prefix.
 
 - Allow native independent review in either Codex or OpenClaw while preserving pinned, isolated, read-only review and existing validation gates.
