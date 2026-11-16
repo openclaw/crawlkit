@@ -121,6 +121,10 @@ func hoistGlobalFlags(args []string) []string {
 	rest := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		if arg == "--" {
+			rest = append(rest, args[i:]...)
+			break
+		}
 		switch {
 		case arg == "--json" || arg == "--version":
 			out = append(out, arg)

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Honor `--` when extracting crawlctl global flags so flag-like job names remain literal selections instead of changing CLI behavior.
+
 - Report a failed job when all configured `{repo}` values are blank instead of silently succeeding without running anything.
 
 - Reject Windows Task Scheduler intervals above 1439 minutes during planning instead of producing unsupported minute-mode commands.
