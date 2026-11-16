@@ -119,3 +119,33 @@ func TestDiscoverReportsInvalidMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestDiscoverLegacyBinaryPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("synthetic POSIX executable fixtures")
+	}
+	dir := filepath.Join(t.TempDir(), "bin space")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	t.Setenv("PATH", dir)
+	for _, binary := range []string{"wacrawl", "telecrawl", "slacrawl"} {
+		exe := filepath.Join(dir, binary)
+		if err := os.WriteFile(exe, []byte("#!/bin/sh\nexit 2\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for _, selected := range []string{binary, exe, "./" + binary} {
+			t.Run(selected, func(t *testing.T) {
+				app := Discover(context.Background(), []string{selected})[0]
+				if !app.Found || !app.Legacy || app.ID != binary || app.Binary != selected || app.Manifest == nil || app.Error != "" {
+					t.Fatalf("legacy discovery = %+v", app)
+				}
+				job, ok := DefaultJobForApp(app, nil)
+				if !ok || len(job.Command) == 0 || job.Command[0] != app.Path {
+					t.Fatalf("selected executable lost: app=%+v, job=%+v", app, job)
+				}
+			})
+		}
+	}
+}

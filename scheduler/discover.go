@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -68,7 +69,7 @@ func discoverOne(ctx context.Context, binary string) App {
 			return app
 		}
 	}
-	if legacy, ok := LegacyManifest(binary); ok {
+	if legacy, ok := LegacyManifest(filepath.Base(binary)); ok {
 		app.ID = legacy.ID
 		app.DisplayName = legacy.DisplayName
 		app.Manifest = &legacy
