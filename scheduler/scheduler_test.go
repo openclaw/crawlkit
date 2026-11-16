@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -535,5 +536,59 @@ func TestPlanInstallCronIntervals(t *testing.T) {
 				t.Fatalf("cron plan for %s = %#v, %v; want prefix %q", tc.every, plan, err, tc.prefix)
 			}
 		})
+	}
+}
+
+func TestRunKeepsJobAndRepoHistoryDistinct(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, job, repo, otherJob, otherRepo string
+	}{
+		{"direct job", "sync:other", "", "sync", "other"},
+		{"repository job", "sync", "other", "sync:other", ""},
+		{"colon in repository", "sync", "other:repo", "sync:other", "repo"},
+	} {
+		for _, alreadyRun := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/alreadyRun=%t", tc.name, alreadyRun), func(t *testing.T) {
+				paths, err := DefaultPaths(filepath.Join(t.TempDir(), "crawlctl.toml"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if alreadyRun {
+					if err := appendHistory(paths.History, RunRecord{Job: tc.job, Repo: tc.repo, Status: "success", FinishedAt: now.Format(time.RFC3339)}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				status := "success"
+				if alreadyRun {
+					status = "failed"
+				}
+				if err := appendHistory(paths.History, RunRecord{Job: tc.otherJob, Repo: tc.otherRepo, Status: status, FinishedAt: now.Format(time.RFC3339)}); err != nil {
+					t.Fatal(err)
+				}
+				job := Job{Enabled: true, Every: "10m", Command: []string{exe, "-test.run=^$"}}
+				if tc.repo != "" {
+					job.Command = append(job.Command, "--", "{repo}")
+					job.Repos = []string{tc.repo}
+				}
+				cfg := DefaultConfig()
+				cfg.Jobs[tc.job] = job
+				records, err := Run(t.Context(), RunOptions{Config: cfg, Paths: paths, Now: func() time.Time { return now.Add(time.Minute) }})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if alreadyRun {
+					if len(records) != 0 {
+						t.Fatalf("job ran again despite its recent success: %+v", records)
+					}
+				} else if len(records) != 1 || records[0].Job != tc.job || records[0].Repo != tc.repo || records[0].Status != "success" {
+					t.Fatalf("unrelated history suppressed due job: %+v", records)
+				}
+			})
+		}
 	}
 }
