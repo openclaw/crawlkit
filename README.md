@@ -144,6 +144,7 @@ applies private file permissions before replacing existing content.
 Scheduling uses launchd on macOS, systemd user units on Linux, Task Scheduler on Windows, and cron rendering as the portable fallback. Cron requires whole-minute intervals below one hour that divide 60 evenly, such as `5m`, `12m`, or `30m`; other intervals are rejected because minute steps restart each hour.
 
 Launchd and systemd plans require whole-second intervals of at least one minute.
+Windows Task Scheduler plans require whole-minute intervals from 1m through 1439m.
 
 Cron plans escape percent signs in executable, config, and log paths before
 cron processes the command, including when adjacent to literal backslashes.
