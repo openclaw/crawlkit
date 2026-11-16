@@ -51,6 +51,46 @@ func TestLatestRecordForJobAggregatesRepoRuns(t *testing.T) {
 	}
 }
 
+func TestStatusDoesNotUseAnotherJobsHistory(t *testing.T) {
+	for _, tc := range []struct {
+		name, job, recordedJob, repo string
+	}{
+		{"job prefix", "sync", "sync:other", ""},
+		{"repository key collision", "sync:owner/repo", "sync", "owner/repo"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			configPath := filepath.Join(dir, "crawlctl.toml")
+			cfg := scheduler.DefaultConfig()
+			cfg.Jobs[tc.job] = scheduler.Job{Enabled: true, Command: []string{"unused"}}
+			paths, err := scheduler.Save(configPath, cfg, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(paths.History), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			data, err := json.Marshal(scheduler.RunRecord{
+				Job: tc.recordedJob, Repo: tc.repo, Status: "success", FinishedAt: "2026-05-22T11:00:00Z",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(paths.History, append(data, '\n'), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout bytes.Buffer
+			a := app{stdout: &stdout, stderr: ioDiscard{}, config: configPath}
+			if err := a.runStatus(nil); err != nil {
+				t.Fatal(err)
+			}
+			if want := tc.job + ": never\n"; stdout.String() != want {
+				t.Fatalf("status = %q, want %q", stdout.String(), want)
+			}
+		})
+	}
+}
+
 func TestRunJSONDoesNotIncludeProgress(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses POSIX echo")
