@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report a failed job when all configured `{repo}` values are blank instead of silently succeeding without running anything.
+
 - Reject Windows Task Scheduler intervals above 1439 minutes during planning instead of producing unsupported minute-mode commands.
 
 ## 0.18.0 - 2026-11-15

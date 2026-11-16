@@ -16,7 +16,7 @@ import (
 )
 
 func TestExpandRepoJob(t *testing.T) {
-	job := Job{Command: []string{"gitcrawl", "refresh", "{repo}", "--json"}, Repos: []string{"a/b", "c/d"}}
+	job := Job{Command: []string{"gitcrawl", "refresh", "{repo}", "--json"}, Repos: []string{"", "a/b", " \t", " c/d "}}
 	expanded, err := expandJob("gitcrawl", job)
 	if err != nil {
 		t.Fatalf("expand: %v", err)

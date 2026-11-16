@@ -144,9 +144,6 @@ func expandJob(name string, job Job) ([]expandedJob, error) {
 	if !hasRepo {
 		return []expandedJob{{command: append([]string(nil), job.Command...)}}, nil
 	}
-	if len(job.Repos) == 0 {
-		return nil, fmt.Errorf("%s uses {repo} but has no repos", name)
-	}
 	out := make([]expandedJob, 0, len(job.Repos))
 	for _, repo := range job.Repos {
 		repo = strings.TrimSpace(repo)
@@ -158,6 +155,9 @@ func expandJob(name string, job Job) ([]expandedJob, error) {
 			command[i] = strings.ReplaceAll(arg, "{repo}", repo)
 		}
 		out = append(out, expandedJob{repo: repo, command: command})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%s uses {repo} but has no repos", name)
 	}
 	return out, nil
 }
