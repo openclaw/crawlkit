@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject malformed log tail counts such as `10oops` or `1.5` instead of silently using their integer prefix.
+
 - Save discovered executables as absolute paths so relative app selections work from another runner directory.
 
 - Preserve each job's latest text status when history keys collide or runs finish in the same second.

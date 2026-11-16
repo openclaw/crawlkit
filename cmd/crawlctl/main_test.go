@@ -197,12 +197,26 @@ every = "7m"
 }
 
 func TestRunLogsRejectsInvalidTail(t *testing.T) {
-	var stdout bytes.Buffer
-	a := app{stdout: &stdout, stderr: ioDiscard{}}
-	err := a.runLogs([]string{"--tail=-1"})
-	var usage usageError
-	if !errors.As(err, &usage) {
-		t.Fatalf("err = %v, want usageError", err)
+	for _, value := range []string{"-1", "0", "10oops", "1.5", "1e2", "1 2", strings.Repeat("9", 40)} {
+		for _, args := range [][]string{{"--tail", value}, {"--tail=" + value}} {
+			t.Run(strings.Join(args, " "), func(t *testing.T) {
+				var stdout bytes.Buffer
+				a := app{stdout: &stdout, stderr: ioDiscard{}, config: filepath.Join(t.TempDir(), "missing.toml")}
+				err := a.runLogs(args)
+				var usage usageError
+				if !errors.As(err, &usage) {
+					t.Fatalf("err = %v, want usageError", err)
+				}
+			})
+		}
+	}
+}
+
+func TestParseTailAcceptsPositiveIntegers(t *testing.T) {
+	for _, value := range []string{"10", "+10", "0010"} {
+		if got, err := parseTail(value); err != nil || got != 10 {
+			t.Errorf("parseTail(%q) = %d, %v; want 10, nil", value, got, err)
+		}
 	}
 }
 
