@@ -310,7 +310,7 @@ func latestRecordForJob(history []scheduler.RunRecord, name string) (scheduler.R
 		if record.Job != name {
 			continue
 		}
-		if !found || record.FinishedAt > latest.FinishedAt {
+		if !found || record.FinishedAt >= latest.FinishedAt {
 			latest = record
 			found = true
 		}

@@ -52,6 +52,17 @@ func TestLatestRecordForJobAggregatesRepoRuns(t *testing.T) {
 	}
 }
 
+func TestLatestRecordForJobUsesLastEntryAtSameTime(t *testing.T) {
+	history := []scheduler.RunRecord{
+		{Job: "sync", Status: "failed", FinishedAt: "2026-05-22T10:00:00Z"},
+		{Job: "sync", Status: "success", FinishedAt: "2026-05-22T10:00:00Z"},
+	}
+	record, ok := latestRecordForJob(history, "sync")
+	if !ok || record.Status != "success" {
+		t.Fatalf("latest record = %+v, found = %v; want the later successful run", record, ok)
+	}
+}
+
 func TestStatusDoesNotUseAnotherJobsHistory(t *testing.T) {
 	for _, tc := range []struct {
 		name, job, recordedJob, repo string
