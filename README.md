@@ -118,7 +118,8 @@ schedule source-specific commands such as Photos' `import_apple`.
 Discovery reports malformed metadata and missing manifest IDs in the app's
 `error` field. Supported legacy binaries retain their fallback manifests.
 Legacy fallback also recognizes supported binaries selected by absolute or
-relative executable path.
+relative executable path. Discovery records an absolute executable path so saved
+jobs keep working when the runner starts from another directory.
 
 Scheduler due checks use the exact job and repository identity, so colon-containing
 names do not share scheduling history.
