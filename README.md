@@ -121,6 +121,9 @@ Legacy fallback also recognizes supported binaries selected by absolute or
 relative executable path. Discovery records an absolute executable path so saved
 jobs keep working when the runner starts from another directory.
 
+Scheduler due checks use the exact job and repository identity, so colon-containing
+names do not share scheduling history.
+
 If a write is interrupted, history reads ignore a truncated final JSON value and the next run repairs that tail before appending. Valid final records without a trailing newline are retained; complete corrupt records still report an error.
 
 History reads accept the full records written by the runner, including long
