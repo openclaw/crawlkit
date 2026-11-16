@@ -294,7 +294,7 @@ func (a *app) runStatus(args []string) error {
 		if job.Enabled {
 			state = "never"
 		}
-		if record, ok := latestRecordForJob(last, name); ok {
+		if record, ok := latestRecordForJob(history, name); ok {
 			state = record.Status
 			detail = " " + record.FinishedAt
 		}
@@ -303,13 +303,10 @@ func (a *app) runStatus(args []string) error {
 	return nil
 }
 
-func latestRecordForJob(last map[string]scheduler.RunRecord, name string) (scheduler.RunRecord, bool) {
-	if record, ok := last[name]; ok && record.Job == name {
-		return record, true
-	}
+func latestRecordForJob(history []scheduler.RunRecord, name string) (scheduler.RunRecord, bool) {
 	var latest scheduler.RunRecord
 	found := false
-	for _, record := range last {
+	for _, record := range history {
 		if record.Job != name {
 			continue
 		}

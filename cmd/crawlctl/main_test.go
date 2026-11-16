@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -38,9 +39,9 @@ func TestResolveVersion(t *testing.T) {
 }
 
 func TestLatestRecordForJobAggregatesRepoRuns(t *testing.T) {
-	records := map[string]scheduler.RunRecord{
-		"gitcrawl:openclaw/old": {Job: "gitcrawl", Repo: "openclaw/old", Status: "success", FinishedAt: "2026-05-22T10:00:00Z"},
-		"gitcrawl:openclaw/new": {Job: "gitcrawl", Repo: "openclaw/new", Status: "failed", FinishedAt: "2026-05-22T11:00:00Z"},
+	records := []scheduler.RunRecord{
+		{Job: "gitcrawl", Repo: "openclaw/old", Status: "success", FinishedAt: "2026-05-22T10:00:00Z"},
+		{Job: "gitcrawl", Repo: "openclaw/new", Status: "failed", FinishedAt: "2026-05-22T11:00:00Z"},
 	}
 	record, ok := latestRecordForJob(records, "gitcrawl")
 	if !ok {
@@ -85,6 +86,50 @@ func TestStatusDoesNotUseAnotherJobsHistory(t *testing.T) {
 				t.Fatal(err)
 			}
 			if want := tc.job + ": never\n"; stdout.String() != want {
+				t.Fatalf("status = %q, want %q", stdout.String(), want)
+			}
+		})
+	}
+}
+
+func TestStatusKeepsJobsWithCollidingHistoryKeys(t *testing.T) {
+	for _, reversed := range []bool{false, true} {
+		t.Run(fmt.Sprint(reversed), func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "crawlctl.toml")
+			cfg := scheduler.DefaultConfig()
+			for _, name := range []string{"sync", "sync:owner/repo"} {
+				cfg.Jobs[name] = scheduler.Job{Enabled: true, Command: []string{"unused"}}
+			}
+			paths, err := scheduler.Save(configPath, cfg, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			records := []scheduler.RunRecord{
+				{Job: "sync:owner/repo", Status: "failed", FinishedAt: "2026-05-22T10:00:00Z"},
+				{Job: "sync", Repo: "owner/repo", Status: "success", FinishedAt: "2026-05-22T11:00:00Z"},
+			}
+			if reversed {
+				records[0], records[1] = records[1], records[0]
+			}
+			var history bytes.Buffer
+			for _, record := range records {
+				if err := json.NewEncoder(&history).Encode(record); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.MkdirAll(filepath.Dir(paths.History), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(paths.History, history.Bytes(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout bytes.Buffer
+			a := app{stdout: &stdout, stderr: ioDiscard{}, config: configPath}
+			if err := a.runStatus(nil); err != nil {
+				t.Fatal(err)
+			}
+			want := "sync: success 2026-05-22T11:00:00Z\nsync:owner/repo: failed 2026-05-22T10:00:00Z\n"
+			if stdout.String() != want {
 				t.Fatalf("status = %q, want %q", stdout.String(), want)
 			}
 		})
