@@ -51,6 +51,11 @@ func discoverOne(ctx context.Context, binary string) App {
 		app.Error = err.Error()
 		return app
 	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		app.Error = err.Error()
+		return app
+	}
 	app.Found = true
 	app.Path = path
 	cmd := exec.CommandContext(ctx, path, "metadata", "--json")

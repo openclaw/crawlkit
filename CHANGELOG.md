@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Save discovered executables as absolute paths so relative app selections work from another runner directory.
+
 - Preserve each job's text status when distinct job and repository histories share the same summary key.
 
 - Keep scheduler status scoped to the exact job name when another job or repository history key shares its prefix.

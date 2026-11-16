@@ -149,3 +149,38 @@ func TestDiscoverLegacyBinaryPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscoveredRelativeExecutableRunsFromAnotherDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("synthetic POSIX executable fixture")
+	}
+	binDir := t.TempDir()
+	executable := filepath.Join(binDir, "wacrawl")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nif [ \"$1\" = metadata ]; then exit 2; fi\nprintf 'synthetic crawler ran\\n'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(binDir)
+	app := Discover(context.Background(), []string{"./wacrawl"})[0]
+	job, ok := DefaultJobForApp(app, nil)
+	if !app.Found || !app.Legacy || !ok {
+		t.Fatalf("relative discovery = %+v, job = %+v", app, job)
+	}
+	cfg := DefaultConfig()
+	cfg.Jobs = map[string]Job{"wacrawl": job}
+	paths, err := Save(filepath.Join(t.TempDir(), "crawlctl.toml"), cfg, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+	loaded, _, err := Load(paths.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, err := Run(context.Background(), RunOptions{Config: loaded, Paths: paths, Names: []string{"wacrawl"}})
+	if err != nil || len(records) != 1 || records[0].Status != "success" {
+		t.Fatalf("relative selection from another directory: records = %+v, error = %v", records, err)
+	}
+	if app.Path != executable || loaded.Jobs["wacrawl"].Command[0] != executable {
+		t.Fatalf("selected executable not retained absolutely: app = %+v, command = %v", app, loaded.Jobs["wacrawl"].Command)
+	}
+}
