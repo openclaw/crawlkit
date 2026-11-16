@@ -89,15 +89,16 @@ downstream apps to the published tag.
 
 ## Independent review
 
-Before delivery, use an ordinary native OpenClaw subagent with isolated context
-for independent P0–P3 review of the complete pinned candidate. Include staged,
+Before delivery, use an ordinary native subagent in the active agent environment
+for independent P0–P3 review of the complete pinned candidate. Native Codex and
+OpenClaw subagents are both supported. Use isolated reviewer context. Include staged,
 unstaged and task-owned untracked changes, required unchanged context, and
 explicit scope and limitations. The reviewer is read-only: no edits, provider
 work, releases or deployment. Freeze producer changes during review; if the
 candidate changes, resolve findings and re-review the changed boundaries against
 the new pin before delivery.
 
-Use native subagent review directly, not a scripted review CLI, Codex runner,
+Use native subagent review directly, not a scripted review CLI, `codex exec`,
 `agent exec`, wrapper or replacement helper. Keep the existing tests, CI,
 secret-scanning and release-verification guards. Historical validation receipts
 record the tools used at the time; they do not prescribe the current workflow.
