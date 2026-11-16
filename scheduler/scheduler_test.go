@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -260,6 +261,63 @@ func TestRunSkipsJobsThatAreNotDue(t *testing.T) {
 	}
 	if len(records) != 0 {
 		t.Fatalf("records = %#v, want skipped", records)
+	}
+}
+
+func TestRunKeepsCollidingHistoryIdentitiesSeparate(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, job, repo, otherJob, otherRepo string
+	}{
+		{"plain job", "sync:repo", "", "sync", "repo"},
+		{"repository job", "sync", "repo", "sync:repo", ""},
+		{"colon in repository", "sync", "group:repo", "sync:group", "repo"},
+	} {
+		for _, due := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/due=%t", tc.name, due), func(t *testing.T) {
+				dir := t.TempDir()
+				paths := Paths{LogDir: filepath.Join(dir, "logs"), StateDir: filepath.Join(dir, "state"), LockPath: filepath.Join(dir, "state", "lock"), History: filepath.Join(dir, "state", "runs.jsonl")}
+				finished := now.Add(-time.Minute)
+				otherStatus := "failed"
+				if due {
+					finished = now.Add(-2 * time.Hour)
+					otherStatus = "success"
+				}
+				for _, record := range []RunRecord{
+					{Job: tc.job, Repo: tc.repo, Status: "success", FinishedAt: finished.Format(time.RFC3339)},
+					{Job: tc.otherJob, Repo: tc.otherRepo, Status: otherStatus, FinishedAt: now.Format(time.RFC3339)},
+				} {
+					if err := appendHistory(paths.History, record); err != nil {
+						t.Fatal(err)
+					}
+				}
+				job := Job{Enabled: true, Every: "1h", Command: []string{exe, "-test.run=^$"}}
+				if tc.repo != "" {
+					job.Command = append(job.Command, "--", "{repo}")
+					job.Repos = []string{tc.repo}
+				}
+				cfg := DefaultConfig()
+				cfg.Jobs[tc.job] = job
+				records, err := Run(t.Context(), RunOptions{Config: cfg, Paths: paths, Now: func() time.Time { return now }})
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := 0
+				if due {
+					want = 1
+				}
+				if len(records) != want {
+					t.Fatalf("runs = %d, want %d: %#v", len(records), want, records)
+				}
+				if due && (records[0].Job != tc.job || records[0].Repo != tc.repo || records[0].Status != "success") {
+					t.Fatalf("unexpected run: %#v", records[0])
+				}
+			})
+		}
 	}
 }
 

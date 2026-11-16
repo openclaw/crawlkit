@@ -52,7 +52,11 @@ func Run(ctx context.Context, opts RunOptions) ([]RunRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	last := LastRecords(history)
+	type runKey struct{ job, repo string }
+	last := make(map[runKey]RunRecord, len(history))
+	for _, record := range history {
+		last[runKey{record.Job, record.Repo}] = record
+	}
 
 	names := selectedNames(opts.Config, opts.Names)
 	records := []RunRecord{}
@@ -72,7 +76,7 @@ func Run(ctx context.Context, opts RunOptions) ([]RunRecord, error) {
 			continue
 		}
 		for _, item := range expanded {
-			lastRun, ok := lastRecord(last, name, item.repo)
+			lastRun, ok := last[runKey{name, item.repo}]
 			if len(opts.Names) == 0 && !jobDue(now(), job, lastRun, ok) {
 				continue
 			}
@@ -89,15 +93,6 @@ func Run(ctx context.Context, opts RunOptions) ([]RunRecord, error) {
 		}
 	}
 	return records, historyErr
-}
-
-func lastRecord(records map[string]RunRecord, name, repo string) (RunRecord, bool) {
-	if repo != "" {
-		record, ok := records[name+":"+repo]
-		return record, ok
-	}
-	record, ok := records[name]
-	return record, ok
 }
 
 func jobDue(now time.Time, job Job, last RunRecord, ok bool) bool {
