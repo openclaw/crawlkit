@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject malformed `crawlctl logs --tail` counts instead of silently accepting an integer prefix.
+
 - Save discovered executables as absolute paths so relative app selections work from another runner directory.
 
 - Preserve each job's latest text status when history keys collide or runs finish in the same second.

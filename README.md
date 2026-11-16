@@ -137,7 +137,7 @@ applies private file permissions before replacing existing content.
 | `discover` | Print discovered crawl apps |
 | `run` | Run enabled refresh jobs |
 | `status` | Show the latest recorded job status |
-| `logs` | Print recent job logs |
+| `logs` | Print recent job logs (`--tail` requires a positive integer) |
 | `install` | Install or render a periodic schedule |
 | `uninstall` | Remove an installed periodic schedule |
 
