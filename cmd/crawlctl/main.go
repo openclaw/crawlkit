@@ -304,14 +304,13 @@ func (a *app) runStatus(args []string) error {
 }
 
 func latestRecordForJob(last map[string]scheduler.RunRecord, name string) (scheduler.RunRecord, bool) {
-	if record, ok := last[name]; ok {
+	if record, ok := last[name]; ok && record.Job == name {
 		return record, true
 	}
 	var latest scheduler.RunRecord
 	found := false
-	prefix := name + ":"
-	for key, record := range last {
-		if !strings.HasPrefix(key, prefix) {
+	for _, record := range last {
+		if record.Job != name {
 			continue
 		}
 		if !found || record.FinishedAt > latest.FinishedAt {
