@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/openclaw/crawlkit/scheduler"
@@ -368,8 +369,8 @@ func (a *app) runLogs(args []string) error {
 }
 
 func parseTail(value string) (int, error) {
-	var parsed int
-	if _, err := fmt.Sscanf(value, "%d", &parsed); err != nil {
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
 		return 0, fmt.Errorf("invalid --tail value %q", value)
 	}
 	if parsed <= 0 {

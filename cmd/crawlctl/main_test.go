@@ -197,12 +197,56 @@ every = "7m"
 }
 
 func TestRunLogsRejectsInvalidTail(t *testing.T) {
-	var stdout bytes.Buffer
-	a := app{stdout: &stdout, stderr: ioDiscard{}}
-	err := a.runLogs([]string{"--tail=-1"})
-	var usage usageError
-	if !errors.As(err, &usage) {
-		t.Fatalf("err = %v, want usageError", err)
+	for _, value := range []string{"-1", "0", "", "bad", "2junk", "1.5", "1e3", "2 3", " 2", "2\n"} {
+		for _, joined := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%q/joined=%t", value, joined), func(t *testing.T) {
+				args := []string{"--tail", value}
+				if joined {
+					args = []string{"--tail=" + value}
+				}
+				var stdout bytes.Buffer
+				a := app{stdout: &stdout, stderr: ioDiscard{}, config: filepath.Join(t.TempDir(), "missing.toml")}
+				err := a.runLogs(args)
+				var usage usageError
+				if !errors.As(err, &usage) || exitCode(err) != 2 || stdout.Len() != 0 {
+					t.Fatalf("err = %v, stdout = %q; want usage error without output", err, stdout.String())
+				}
+			})
+		}
+	}
+}
+
+func TestRunLogsHonorsTailCount(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "crawlctl.toml")
+	paths, err := scheduler.Save(configPath, scheduler.DefaultConfig(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.StateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(paths.BaseDir, "job.log")
+	if err := os.WriteFile(logPath, []byte("first\nsecond\nthird\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	history, err := json.Marshal(scheduler.RunRecord{Job: "sync", LogPath: logPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.History, append(history, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"--tail", "2"}, {"--tail=2"}, {"--tail=+2"}, {"--tail=02"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var stdout bytes.Buffer
+			a := app{stdout: &stdout, stderr: ioDiscard{}, config: configPath}
+			if err := a.runLogs(args); err != nil {
+				t.Fatal(err)
+			}
+			if stdout.String() != "second\nthird\n" {
+				t.Fatalf("tail = %q", stdout.String())
+			}
+		})
 	}
 }
 
