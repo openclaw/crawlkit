@@ -98,6 +98,9 @@ func planInstall(opts InstallOptions, installing bool) (InstallPlan, error) {
 			return InstallPlan{}, fmt.Errorf("windows scheduler interval must be whole minutes: %s", duration)
 		}
 		minutes := int(duration / time.Minute)
+		if minutes < 1 || minutes > 1439 {
+			return InstallPlan{}, fmt.Errorf("windows scheduler interval must be between 1m and 1439m: %s", duration)
+		}
 		tr := quoteWindows(args)
 		return InstallPlan{Backend: backend, Command: []string{"schtasks", "/Create", "/TN", "CrawlCtl", "/SC", "MINUTE", "/MO", strconv.Itoa(minutes), "/TR", tr, "/F"}}, nil
 	case "cron":

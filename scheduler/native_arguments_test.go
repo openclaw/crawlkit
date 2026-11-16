@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -64,5 +65,40 @@ func TestSystemdInstallPlanAllowsLiteralGlobCharacters(t *testing.T) {
 	}
 	if !strings.Contains(plan.Content, "bin[*?]/crawlctl") {
 		t.Fatalf("literal executable was changed: %s", plan.Content)
+	}
+}
+
+func TestWindowsPlanEnforcesMinuteRange(t *testing.T) {
+	for _, tc := range []struct {
+		every, modifier string
+	}{
+		{"1m", "1"},
+		{"10m", "10"},
+		{"1439m", "1439"},
+		{"24h", ""},
+		{"1441m", ""},
+		{"100000m", ""},
+	} {
+		for _, installPreview := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/installPreview=%t", tc.every, installPreview), func(t *testing.T) {
+				opts := InstallOptions{Backend: "windows", Every: tc.every, Executable: "crawlctl.exe", Paths: Paths{ConfigPath: "config.toml"}, DryRun: true}
+				var plan InstallPlan
+				var err error
+				if installPreview {
+					plan, err = Install(opts)
+				} else {
+					plan, err = PlanInstall(opts)
+				}
+				if tc.modifier == "" {
+					if err == nil || !strings.Contains(err.Error(), "between 1m and 1439m") || len(plan.Command) != 0 {
+						t.Fatalf("out-of-range plan = %+v, %v; want refusal without a command", plan, err)
+					}
+					return
+				}
+				if err != nil || !strings.Contains(strings.Join(plan.Command, " "), "/SC MINUTE /MO "+tc.modifier+" /TR ") {
+					t.Fatalf("valid plan = %+v, %v; want minute modifier %s", plan, err, tc.modifier)
+				}
+			})
+		}
 	}
 }

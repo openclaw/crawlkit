@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject Windows Task Scheduler intervals above 1439 minutes during planning instead of producing unsupported minute-mode commands.
+
 ## 0.18.0 - 2026-11-15
 
 **Highlights:** Add verified private backup transfers and shared seed APIs, fix scheduler and archive-path handling, and include the Go security fix for GO-2026-6859.
