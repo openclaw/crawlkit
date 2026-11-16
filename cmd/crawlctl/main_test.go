@@ -310,3 +310,52 @@ func TestRunJobsRejectsBlankRepositories(t *testing.T) {
 		})
 	}
 }
+
+func TestRunHonorsFlagSeparatorForJobNames(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ordinary", "--version", "--json", "--config=literal"} {
+		for _, jsonOutput := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/json=%t", name, jsonOutput), func(t *testing.T) {
+				configPath := filepath.Join(t.TempDir(), "crawlctl.toml")
+				jobName := name
+				if strings.HasPrefix(name, "--config=") {
+					jobName = "--config=" + filepath.Join(t.TempDir(), "missing.toml")
+				}
+				cfg := scheduler.DefaultConfig()
+				for _, job := range []string{jobName, "other"} {
+					cfg.Jobs[job] = scheduler.Job{Enabled: true, Command: []string{exe, "-test.run=^$"}}
+				}
+				paths, err := scheduler.Save(configPath, cfg, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				args := []string{"--config", configPath, "run"}
+				if jsonOutput {
+					args = append(args, "--json")
+				}
+				args = append(args, "--", jobName)
+				var stdout bytes.Buffer
+				a := app{stdout: &stdout, stderr: ioDiscard{}}
+				if err := a.run(t.Context(), args); err != nil {
+					t.Fatal(err)
+				}
+				history, err := scheduler.ReadHistory(paths.History)
+				if err != nil || len(history) != 1 || history[0].Job != jobName || history[0].Status != "success" {
+					t.Fatalf("selected job not run exclusively: %+v, %v", history, err)
+				}
+				if a.json != jsonOutput {
+					t.Fatalf("JSON mode = %t, want %t", a.json, jsonOutput)
+				}
+				if jsonOutput {
+					var records []scheduler.RunRecord
+					if err := json.Unmarshal(stdout.Bytes(), &records); err != nil || len(records) != 1 || records[0].Job != jobName {
+						t.Fatalf("JSON output = %q, %v", stdout.String(), err)
+					}
+				}
+			})
+		}
+	}
+}
