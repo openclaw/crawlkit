@@ -4,6 +4,8 @@
 
 - Keep scheduler status scoped to the exact job name when another job or repository history key shares its prefix.
 
+- Allow native independent review in either Codex or OpenClaw while preserving pinned, isolated, read-only review and existing validation gates.
+
 - Report discovery errors for malformed app metadata or missing manifest IDs while preserving supported legacy fallbacks.
 
 - Reject fractional-second launchd and systemd intervals instead of silently shortening the requested schedules.
