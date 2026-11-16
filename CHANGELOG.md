@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.18.0 - 2026-11-15
+
+**Highlights:** Add verified private backup transfers and shared seed APIs, fix scheduler and archive-path handling, and include the Go security fix for GO-2026-6859.
+
+- Add an opt-in private native backup client and `crawlctl preservation` upload
+  and download commands. Reuse existing opaque backup bytes, verify immutable
+  chunk and complete-file identities, and restore only into a new directory.
+  Byte verification does not claim native database restore qualification.
+
+- Add exact file-section inputs to private preservation uploads. Large closed
+  files can be transferred in separately pinned volumes without temporary
+  copies; section receipts do not claim whole-file restore qualification.
+
+- Use Go 1.27.4 for development and downstream qualification to pick up the standard-library fix for GO-2026-6859.
+
 - Reject malformed `crawlctl logs --tail` counts instead of silently accepting an integer prefix.
 
 - Save discovered executables as absolute paths so relative app selections work from another runner directory.
@@ -32,15 +47,6 @@
 
 - Bound change and seed receipt reads before decoding and reject trailing response data instead of accepting a valid first JSON object.
 
-- Add exact file-section inputs to private preservation uploads. Large closed
-  files can be transferred in separately pinned volumes without temporary
-  copies; section receipts do not claim whole-file restore qualification.
-
-- Add an opt-in private native backup client and `crawlctl preservation` upload
-  and download commands. Reuse existing opaque backup bytes, verify immutable
-  chunk and complete-file identities, and restore only into a new directory.
-  Byte verification does not claim native database restore qualification.
-
 - Add a closed durable-cluster snapshot profile to the existing GitHub seed
   transport, with a content-bound token and four ordered tables. Existing
   private-report bytes and validation remain unchanged; projection, source
@@ -61,8 +67,6 @@
 - Preserve caller-owned query requests when scoping remote batch reads, including when the HTTP request fails.
 
 - Match literal filenames in mirror commit history so bracket and wildcard characters do not include unrelated file changes.
-
-- Use Go 1.27.4 for development and downstream qualification to pick up the standard-library fix for GO-2026-6859.
 
 - Preserve literal whitespace in mirror history paths so reads, commit history, and tree selections address the requested filename.
 
