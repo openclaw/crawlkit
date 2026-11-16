@@ -270,3 +270,43 @@ func TestPrintTailHandlesLongLines(t *testing.T) {
 type ioDiscard struct{}
 
 func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }
+
+func TestRunJobsRejectsBlankRepositories(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		repos []string
+	}{
+		{"missing", nil},
+		{"empty", []string{""}},
+		{"whitespace", []string{" \t\r\n"}},
+		{"multiple blanks", []string{"", " ", "\t"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "crawlctl.toml")
+			cfg := scheduler.DefaultConfig()
+			cfg.Jobs["refresh"] = scheduler.Job{Enabled: true, Command: []string{"unused", "{repo}"}, Repos: tc.repos}
+			paths, err := scheduler.Save(configPath, cfg, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var stdout bytes.Buffer
+			a := app{stdout: &stdout, stderr: ioDiscard{}, json: true, config: configPath}
+			err = a.runJobs(t.Context(), nil)
+			var failure jobFailureError
+			if !errors.As(err, &failure) || failure.Count != 1 || exitCode(err) != 1 {
+				t.Fatalf("run error = %v; want one failed job", err)
+			}
+			var records []scheduler.RunRecord
+			if err := json.Unmarshal(stdout.Bytes(), &records); err != nil {
+				t.Fatal(err)
+			}
+			if len(records) != 1 || records[0].Job != "refresh" || records[0].Status != "failed" || !strings.Contains(records[0].Error, "has no repos") {
+				t.Fatalf("run records = %+v", records)
+			}
+			history, err := scheduler.ReadHistory(paths.History)
+			if err != nil || len(history) != 1 || history[0].ID != records[0].ID {
+				t.Fatalf("failed job not recorded in history: %+v, %v", history, err)
+			}
+		})
+	}
+}

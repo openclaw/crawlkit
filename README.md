@@ -121,6 +121,9 @@ Legacy fallback also recognizes supported binaries selected by absolute or
 relative executable path. Discovery records an absolute executable path so saved
 jobs keep working when the runner starts from another directory.
 
+Jobs using `{repo}` require at least one nonblank repository; blank-only lists
+report a failed job instead of silently doing no work.
+
 Scheduler due checks use the exact job and repository identity, so colon-containing
 names do not share scheduling history.
 
