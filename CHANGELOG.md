@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep CLI-installed schedules tied to the selected config and log directory when `--config` is relative.
+
 - Honor `--` when extracting crawlctl global flags so flag-like job names remain literal selections instead of changing CLI behavior.
 
 - Report a failed job when all configured `{repo}` values are blank instead of silently succeeding without running anything.

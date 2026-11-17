@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -357,5 +358,89 @@ func TestRunHonorsFlagSeparatorForJobNames(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestInstallKeepsRelativeConfigAndLogPaths(t *testing.T) {
+	t.Chdir(t.TempDir())
+	relativeConfig := filepath.Join("config space", "crawlctl.toml")
+	absoluteConfig, err := filepath.Abs(relativeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := scheduler.DefaultConfig()
+	cfg.Runner.Every = "12m"
+	paths, err := scheduler.Save(absoluteConfig, cfg, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, backend := range []string{"cron", "launchd", "systemd", "windows"} {
+		for _, override := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/override=%t", backend, override), func(t *testing.T) {
+				args := []string{"--backend", backend, "--dry-run"}
+				if override {
+					args = append(args, "--every", "5m")
+				}
+				var stdout bytes.Buffer
+				a := app{stdout: &stdout, stderr: ioDiscard{}, config: relativeConfig, json: true}
+				if err := a.runInstall(args); err != nil {
+					t.Fatal(err)
+				}
+				var plan scheduler.InstallPlan
+				if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil {
+					t.Fatal(err)
+				}
+				content := plan.Content + strings.Join(plan.Command, " ")
+				wantConfig := absoluteConfig
+				if backend == "systemd" {
+					wantConfig = strconv.Quote(wantConfig)
+				}
+				if !strings.Contains(content, wantConfig) {
+					t.Fatalf("scheduled config no longer names the selected file: %s", content)
+				}
+				if (backend == "cron" || backend == "launchd") && !strings.Contains(content, paths.LogDir) {
+					t.Fatalf("scheduled logs are relative to a different working directory: %s", content)
+				}
+			})
+		}
+	}
+}
+
+func TestInstallPreservesSymlinkParentConfigPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix symlink parent traversal semantics")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(dir, "target", "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "target", "nested"), filepath.Join(dir, "link")); err != nil {
+		t.Fatal(err)
+	}
+	cfg := scheduler.DefaultConfig()
+	cfg.Runner.Every = "12m"
+	if _, err := scheduler.Save(filepath.Join(dir, "target", "crawlctl.toml"), cfg, false); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Runner.Every = "5m"
+	if _, err := scheduler.Save(filepath.Join(dir, "crawlctl.toml"), cfg, false); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	a := app{stdout: &stdout, stderr: ioDiscard{}, config: "link/../crawlctl.toml", json: true}
+	if err := a.runInstall([]string{"--backend", "cron", "--dry-run"}); err != nil {
+		t.Fatal(err)
+	}
+	var plan scheduler.InstallPlan
+	if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(plan.Content, "*/12 ") || !strings.Contains(plan.Content, "'"+cwd+"/link/../crawlctl.toml'") {
+		t.Fatalf("schedule selected a different config: %s", plan.Content)
 	}
 }
