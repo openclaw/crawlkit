@@ -147,6 +147,9 @@ applies private file permissions before replacing existing content.
 Use `crawlctl run -- JOB` for job names that look like global flags. Global flags
 before `--` retain their normal behavior; names after it stay literal.
 
+The `install` command resolves relative `--config` paths before creating a schedule,
+so the scheduled run uses the same config and log directory from another working directory.
+
 Scheduling uses launchd on macOS, systemd user units on Linux, Task Scheduler on Windows, and cron rendering as the portable fallback. Cron requires whole-minute intervals below one hour that divide 60 evenly, such as `5m`, `12m`, or `30m`; other intervals are rejected because minute steps restart each hour.
 
 Launchd and systemd plans require whole-second intervals of at least one minute.

@@ -395,13 +395,34 @@ func (a *app) runInstall(args []string) error {
 	if fs.NArg() != 0 {
 		return usageError{fmt.Errorf("install takes flags only")}
 	}
-	paths, err := scheduler.DefaultPaths(a.config)
+	configPath := a.config
+	paths, err := scheduler.DefaultPaths(configPath)
 	if err != nil {
 		return err
 	}
+	// Scheduled commands may start outside the caller's working directory.
+	if !filepath.IsAbs(paths.ConfigPath) {
+		if filepath.Separator == '/' {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			// Cleaning Unix components can change symlink/.. traversal.
+			configPath = strings.TrimSuffix(cwd, "/") + "/" + paths.ConfigPath
+		} else {
+			configPath, err = filepath.Abs(paths.ConfigPath)
+			if err != nil {
+				return err
+			}
+		}
+		paths, err = scheduler.DefaultPaths(configPath)
+		if err != nil {
+			return err
+		}
+	}
 	installEvery := *every
 	if strings.TrimSpace(installEvery) == "" {
-		cfg, loadedPaths, err := scheduler.Load(a.config)
+		cfg, loadedPaths, err := scheduler.Load(configPath)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
