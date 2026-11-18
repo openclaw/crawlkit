@@ -144,8 +144,8 @@ applies private file permissions before replacing existing content.
 | `install` | Install or render a periodic schedule |
 | `uninstall` | Remove an installed periodic schedule |
 
-Use `crawlctl run -- JOB` for job names that look like global flags. Global flags
-before `--` retain their normal behavior; names after it stay literal.
+Use `crawlctl run -- JOB` or `crawlctl logs -- JOB` for job names that look like
+flags. Options before `--` retain their normal behavior; names after it stay literal.
 
 The `install` command resolves relative `--config` paths before creating a schedule,
 so the scheduled run uses the same config and log directory from another working directory.

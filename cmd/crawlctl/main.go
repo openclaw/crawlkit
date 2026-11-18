@@ -326,8 +326,18 @@ func latestRecordForJob(history []scheduler.RunRecord, name string) (scheduler.R
 func (a *app) runLogs(args []string) error {
 	tail := 80
 	job := ""
+parseArgs:
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "--":
+			remaining := args[i+1:]
+			if len(remaining) > 1 || (job != "" && len(remaining) > 0) {
+				return usageError{fmt.Errorf("logs accepts at most one job")}
+			}
+			if len(remaining) == 1 {
+				job = remaining[0]
+			}
+			break parseArgs
 		case "--tail":
 			if i+1 >= len(args) {
 				return usageError{fmt.Errorf("--tail requires a line count")}

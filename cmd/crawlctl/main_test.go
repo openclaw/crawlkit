@@ -444,3 +444,61 @@ func TestInstallPreservesSymlinkParentConfigPath(t *testing.T) {
 		t.Fatalf("schedule selected a different config: %s", plan.Content)
 	}
 }
+
+func TestLogsSelectsFlagLikeJobNames(t *testing.T) {
+	for _, name := range []string{"plain", "--version", "--json", "--config=literal", "--tail=1", "--"} {
+		t.Run(name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "crawlctl.toml")
+			paths, err := scheduler.Save(configPath, scheduler.DefaultConfig(), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(paths.StateDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			var history bytes.Buffer
+			for _, record := range []scheduler.RunRecord{
+				{Job: name, LogPath: filepath.Join(paths.BaseDir, "selected.log")},
+				{Job: "other", LogPath: filepath.Join(paths.BaseDir, "other.log")},
+			} {
+				if err := os.WriteFile(record.LogPath, []byte(record.Job+" first\n"+record.Job+" last\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.NewEncoder(&history).Encode(record); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(paths.History, history.Bytes(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout bytes.Buffer
+			a := app{stdout: &stdout, stderr: ioDiscard{}}
+			args := []string{"--config", configPath, "logs", "--tail", "1", "--", name}
+			if err := a.run(t.Context(), args); err != nil {
+				t.Fatal(err)
+			}
+			if want := name + " last\n"; stdout.String() != want {
+				t.Fatalf("logs = %q, want %q", stdout.String(), want)
+			}
+			stdout.Reset()
+			if err := a.run(t.Context(), []string{"--config", configPath, "logs", "--tail=1", "--"}); err != nil {
+				t.Fatal(err)
+			}
+			if stdout.String() != "other last\n" {
+				t.Fatalf("latest logs = %q", stdout.String())
+			}
+		})
+	}
+}
+
+func TestLogsRejectsMultipleJobsAcrossSeparator(t *testing.T) {
+	for _, args := range [][]string{{"first", "--", "second"}, {"--", "first", "second"}} {
+		var stdout bytes.Buffer
+		a := app{stdout: &stdout, stderr: ioDiscard{}, config: filepath.Join(t.TempDir(), "missing.toml")}
+		err := a.runLogs(args)
+		var usage usageError
+		if !errors.As(err, &usage) || !strings.Contains(err.Error(), "at most one job") || stdout.Len() != 0 {
+			t.Fatalf("logs(%q): err = %v, stdout = %q", args, err, stdout.String())
+		}
+	}
+}
