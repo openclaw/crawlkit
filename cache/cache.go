@@ -23,6 +23,9 @@ type Snapshot struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// SnapshotFile copies a file without replacing an existing capture. The cache
+// filesystem must support hard links for atomic publication. A name collision
+// returns an error matching os.ErrExist.
 func SnapshotFile(opts SnapshotOptions) (Snapshot, error) {
 	if opts.SourcePath == "" {
 		return Snapshot{}, errors.New("source path is required")
@@ -66,12 +69,7 @@ func SnapshotFile(opts SnapshotOptions) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("create snapshot: %w", err)
 	}
 	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
+	defer os.Remove(tmpPath)
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
 		return Snapshot{}, fmt.Errorf("chmod snapshot: %w", err)
@@ -87,9 +85,9 @@ func SnapshotFile(opts SnapshotOptions) (Snapshot, error) {
 	if err := tmp.Close(); err != nil {
 		return Snapshot{}, fmt.Errorf("close snapshot: %w", err)
 	}
-	if err := os.Rename(tmpPath, target); err != nil {
+	// Link publishes the complete file only if this name is still available.
+	if err := os.Link(tmpPath, target); err != nil {
 		return Snapshot{}, fmt.Errorf("commit snapshot: %w", err)
 	}
-	cleanup = false
 	return Snapshot{SourcePath: opts.SourcePath, Path: target, SizeBytes: copied, CreatedAt: createdAt}, nil
 }
