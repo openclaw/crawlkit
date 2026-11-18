@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -101,5 +102,82 @@ func TestSnapshotSQLiteValidation(t *testing.T) {
 		if _, err := SnapshotSQLite(opts); err == nil {
 			t.Fatalf("expected validation error for %+v", opts)
 		}
+	}
+}
+
+func TestSnapshotFilePreservesExistingCapture(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.db")
+	opts := SnapshotOptions{SourcePath: source, CacheDir: filepath.Join(dir, "cache"), Now: func() time.Time {
+		return time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	}}
+	if err := os.WriteFile(source, []byte("first capture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	first, err := SnapshotFile(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("later capture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SnapshotFile(opts); !errors.Is(err, os.ErrExist) {
+		t.Errorf("colliding capture error = %v, want already exists", err)
+	}
+	data, err := os.ReadFile(first.Path)
+	if err != nil || string(data) != "first capture" {
+		t.Fatalf("first capture changed: %q, %v", data, err)
+	}
+	entries, err := os.ReadDir(opts.CacheDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("collision left extra cache files: %v, %v", entries, err)
+	}
+}
+
+func TestSnapshotFileConcurrentCollision(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.db")
+	if err := os.WriteFile(source, []byte("capture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opts := SnapshotOptions{SourcePath: source, CacheDir: filepath.Join(dir, "cache"), Now: func() time.Time {
+		return time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	}}
+	type result struct {
+		snapshot Snapshot
+		err      error
+	}
+	const writers = 4
+	results := make(chan result, writers)
+	start := make(chan struct{})
+	for range writers {
+		go func() {
+			<-start
+			snapshot, err := SnapshotFile(opts)
+			results <- result{snapshot, err}
+		}()
+	}
+	close(start)
+	winners := 0
+	var path string
+	for range writers {
+		r := <-results
+		if r.err == nil {
+			winners++
+			path = r.snapshot.Path
+		} else if !errors.Is(r.err, os.ErrExist) {
+			t.Errorf("unexpected capture error: %v", r.err)
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("successful publishers = %d, want 1", winners)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "capture" {
+		t.Fatalf("published capture = %q, %v", data, err)
+	}
+	entries, err := os.ReadDir(opts.CacheDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("publishers left extra cache files: %v, %v", entries, err)
 	}
 }

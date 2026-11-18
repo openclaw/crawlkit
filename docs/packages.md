@@ -17,7 +17,9 @@ their caller-provided parameters; `:memory:` keeps its existing behavior.
 `cache.SnapshotFile` accepts a single filename in `Name`, preserving its literal
 text, including whitespace. An empty name uses the source basename. Paths and
 parent-directory components are rejected before copying so captures stay inside
-`CacheDir`.
+`CacheDir`. Captures never replace an existing file. A timestamp/name collision
+returns an error matching `os.ErrExist`, preserving the earlier capture. Atomic
+publication requires a cache filesystem that supports hard links.
 
 `cache.SnapshotSQLite` preserves literal `SourcePath` and `DestinationDir` paths,
 including whitespace. On Windows, path components ending in spaces or dots are

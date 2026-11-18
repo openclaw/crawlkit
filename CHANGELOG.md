@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve existing file-cache snapshots when timestamps and names collide, including concurrent captures; report the collision instead of overwriting data.
+
 - Let `crawlctl logs -- JOB` display logs for jobs whose names look like command-line flags.
 
 - Keep CLI-installed schedules tied to the selected config and log directory when `--config` is relative.
