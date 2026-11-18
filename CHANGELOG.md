@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Let `crawlctl logs -- JOB` display logs for jobs whose names look like command-line flags.
+
 - Keep CLI-installed schedules tied to the selected config and log directory when `--config` is relative.
 
 - Honor `--` when extracting crawlctl global flags so flag-like job names remain literal selections instead of changing CLI behavior.
