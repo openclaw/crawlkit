@@ -773,6 +773,37 @@ func TestSyncCurrentForWritePreservesLegacyBranch(t *testing.T) {
 	}
 }
 
+func TestCleanSQLiteSidecarsPreservesSelectedRoot(t *testing.T) {
+	roots := []string{" share"}
+	if runtime.GOOS != "windows" {
+		roots = append(roots, "share ")
+	}
+	for _, root := range roots {
+		t.Run(root, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			for _, dir := range []string{root, "share"} {
+				if err := os.Mkdir(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "archive.db-wal"), []byte(dir), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			removed, err := CleanSQLiteSidecars(root)
+			if err != nil || removed != 1 {
+				t.Fatalf("cleanup = %d, %v; want one selected sidecar removed", removed, err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "archive.db-wal")); !os.IsNotExist(err) {
+				t.Errorf("selected sidecar still exists: %v", err)
+			}
+			data, err := os.ReadFile(filepath.Join("share", "archive.db-wal"))
+			if err != nil || string(data) != "share" {
+				t.Errorf("neighboring sidecar changed: %q, %v", data, err)
+			}
+		})
+	}
+}
+
 func TestCleanSQLiteSidecars(t *testing.T) {
 	dir := t.TempDir()
 	files := []string{"archive.db", "archive.db-wal", "archive.db-shm", "notes.txt"}
