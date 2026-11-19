@@ -294,6 +294,8 @@ func Commit(ctx context.Context, opts Options, message string) (bool, error) {
 	return CommitPaths(ctx, opts, message, []string{"."})
 }
 
+// CommitPaths commits selected files or directories without Git pathspec expansion.
+// Paths retain the existing whitespace trimming and repository-relative checks.
 func CommitPaths(ctx context.Context, opts Options, message string, paths []string) (bool, error) {
 	opts = normalize(opts)
 	if message == "" {
@@ -306,7 +308,7 @@ func CommitPaths(ctx context.Context, opts Options, message string, paths []stri
 	if len(pathspecs) == 0 {
 		return false, nil
 	}
-	args := append([]string{"add", "--"}, pathspecs...)
+	args := append([]string{"--literal-pathspecs", "add", "--"}, pathspecs...)
 	if err := run(ctx, opts.RepoPath, opts.Git, args...); err != nil {
 		return false, err
 	}
@@ -318,6 +320,7 @@ func CommitPaths(ctx context.Context, opts Options, message string, paths []stri
 		return false, nil
 	}
 	commitArgs := []string{
+		"--literal-pathspecs",
 		"-c", "commit.gpgsign=false",
 		"-c", "user.name=crawlkit",
 		"-c", "user.email=crawlkit@example.invalid",
@@ -443,7 +446,7 @@ func cleanPathspecs(paths []string) ([]string, error) {
 
 func staged(ctx context.Context, opts Options, pathspecs []string) (bool, error) {
 	opts = normalize(opts)
-	args := []string{"diff", "--cached", "--quiet", "--"}
+	args := []string{"--literal-pathspecs", "diff", "--cached", "--quiet", "--"}
 	args = append(args, pathspecs...)
 	out, err := output(ctx, opts.RepoPath, opts.Git, args...)
 	if err == nil {

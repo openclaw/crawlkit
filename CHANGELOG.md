@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep scoped mirror commits limited to literal file and directory selections, so bracketed filenames do not include matching neighboring files.
+
 - Add `crawlctl preservation verify` to check all remote backup content without retaining a second local copy.
 
 - Add `crawlctl preservation inspect` to verify a pinned remote backup manifest without downloading chunks or writing files.
