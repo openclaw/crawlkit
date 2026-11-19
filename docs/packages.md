@@ -40,6 +40,10 @@ sidecars. Nonpositive limits leave file size unbounded.
 - `backup` writes age-encrypted JSONL/Gzip shards and manifests, manages recipients and identities, lists Git-backed history, and verifies historical restores.
 - `mirror` clones, initializes, pulls, commits, and pushes Git-backed archives. It also provides non-mutating fetches, immutable snapshot tags, Git-object reads, and history inspection.
 
+`mirror.CommitPaths` selects files and directories literally after its existing
+whitespace trimming and repository-relative validation. Git glob patterns and
+pathspec magic are not expanded. Use `.` to commit the whole archive.
+
 Managed sidecar trees reject overlapping source and destination roots, including
 mixed relative and absolute paths. Configured root symlinks remain supported;
 symlink directories inside a destination copy path are rejected so copying and

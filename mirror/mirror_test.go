@@ -250,6 +250,73 @@ func TestCommitPathsDoesNotCommitPrestagedUnrelatedFiles(t *testing.T) {
 	}
 }
 
+func TestCommitPathsTreatsPathsLiterally(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		selected string
+		neighbor string
+	}{
+		{name: "file", selected: "notes[1].md", neighbor: "notes1.md"},
+		{name: "directory", selected: "archives[1]", neighbor: "archives1/note.md"},
+	} {
+		for _, prestaged := range []bool{false, true} {
+			name := tc.name + "/untracked"
+			if prestaged {
+				name = tc.name + "/prestaged"
+			}
+			t.Run(name, func(t *testing.T) {
+				ctx := context.Background()
+				opts := Options{RepoPath: t.TempDir()}
+				if err := EnsureRepo(ctx, opts); err != nil {
+					t.Fatal(err)
+				}
+				selectedFile := tc.selected
+				if tc.name == "directory" {
+					selectedFile += "/note.md"
+				}
+				for _, file := range []string{selectedFile, tc.neighbor} {
+					path := filepath.Join(opts.RepoPath, filepath.FromSlash(file))
+					if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if prestaged {
+					if err := run(ctx, opts.RepoPath, "git", "add", "--", tc.neighbor); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if committed, err := CommitPaths(ctx, opts, "archive: selected path", []string{tc.selected}); err != nil || !committed {
+					t.Fatalf("commit = %v, %v", committed, err)
+				}
+				tree, err := output(ctx, opts.RepoPath, "git", "ls-tree", "-r", "--name-only", "HEAD")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tree != selectedFile+"\n" {
+					t.Errorf("committed tree = %q, want only %q", tree, selectedFile)
+				}
+				staged, err := output(ctx, opts.RepoPath, "git", "diff", "--cached", "--name-only")
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantStaged := ""
+				if prestaged {
+					wantStaged = tc.neighbor + "\n"
+				}
+				if staged != wantStaged {
+					t.Errorf("remaining staged files = %q, want %q", staged, wantStaged)
+				}
+				if committed, err := CommitPaths(ctx, opts, "archive: unchanged selection", []string{tc.selected}); err != nil || committed {
+					t.Errorf("unchanged selected path commit = %v, %v; want false, nil", committed, err)
+				}
+			})
+		}
+	}
+}
+
 func TestPullCurrentUsesExistingOrigin(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
