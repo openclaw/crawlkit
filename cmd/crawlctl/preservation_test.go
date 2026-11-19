@@ -113,6 +113,8 @@ func TestPreservationArguments(t *testing.T) {
 		{"download", "--output", "new-output"},
 		{"download", "--manifest", strings.Repeat("a", 64)},
 		{"download", "--file", "backup=source"},
+		{"inspect"},
+		{"inspect", "--manifest", strings.Repeat("a", 64), "--output", "unused"},
 		{"upload", "--file-range", "part=0:1"},
 		{"upload", "--file-range", "part=0:1:"},
 		{"upload", "--file-range", "=0:1:source"},
@@ -136,6 +138,76 @@ func TestPreservationArguments(t *testing.T) {
 			}
 			if stdout.Len() != 0 {
 				t.Fatalf("unexpected success output: %s", stdout.String())
+			}
+		})
+	}
+}
+
+func TestPreservationInspectReadsOnlyPinnedManifest(t *testing.T) {
+	data := []byte("opaque backup")
+	digest := func(body []byte) string { sum := sha256.Sum256(body); return hex.EncodeToString(sum[:]) }
+	manifest := remote.PreservationManifest{
+		Version: 1, App: "discrawl", Archive: "checkpoint/example",
+		Files: []remote.PreservationFile{{Path: "native.sqlite", SHA256: digest(data), Size: int64(len(data)),
+			Chunks: []remote.PreservationChunk{{SHA256: digest(data), Size: int64(len(data))}}}},
+	}
+	body, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PRESERVATION_INSPECT_TOKEN", "synthetic-inspect-token")
+	for _, mode := range []string{"manifest", "changed digest", "denied"} {
+		t.Run(mode, func(t *testing.T) {
+			var requests atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if r.Method != http.MethodGet || r.URL.EscapedPath() != "/v1/apps/discrawl/archives/checkpoint%2Fexample/preservation-manifest" || r.URL.Query().Get("sha256") != digest(body) {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if r.Header.Get("Authorization") != "Bearer synthetic-inspect-token" {
+					t.Error("custom token environment was not used")
+				}
+				if mode == "denied" {
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				response := body
+				if mode == "changed digest" {
+					response = append(append([]byte(nil), body...), '\n')
+				}
+				_, _ = w.Write(response)
+			}))
+			defer server.Close()
+			var stdout bytes.Buffer
+			a := app{stdout: &stdout, stderr: io.Discard}
+			err := a.runPreservation(context.Background(), []string{"inspect", "--endpoint", server.URL,
+				"--app", "discrawl", "--archive", manifest.Archive, "--manifest", digest(body),
+				"--token-env", "PRESERVATION_INSPECT_TOKEN", "--timeout", "1s"})
+			if requests.Load() != 1 {
+				t.Fatalf("requests = %d, want one manifest GET and no chunks", requests.Load())
+			}
+			if mode != "manifest" {
+				if err == nil || stdout.Len() != 0 {
+					t.Fatalf("error = %v, output = %q", err, stdout.String())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got struct {
+				remote.PreservationReceipt
+				ManifestVerified bool `json:"manifest_verified"`
+				FilesVerified    bool `json:"files_verified"`
+			}
+			if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(got.Manifest)
+			if err != nil || !bytes.Equal(encoded, body) || got.ManifestSHA256 != digest(body) || !got.ManifestVerified || got.FilesVerified || got.RestoreQualified {
+				t.Fatalf("unexpected manifest receipt: %s", stdout.String())
 			}
 		})
 	}

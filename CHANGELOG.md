@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `crawlctl preservation inspect` to verify a pinned remote backup manifest without downloading chunks or writing files.
+
 - Preserve literal table names during full snapshot imports so names with surrounding whitespace do not clear a different table or retain stale rows.
 
 - Preserve existing file-cache snapshots when timestamps and names collide, including concurrent captures; report the collision instead of overwriting data.

@@ -195,7 +195,17 @@ crawlctl preservation download \
   --token-env PRESERVATION_TOKEN \
   --manifest <manifest_sha256-from-receipt> \
   --output /restore/new-empty-destination
+
+crawlctl preservation inspect \
+  --endpoint https://archive.example.com \
+  --app discrawl --archive discrawl/example \
+  --token-env PRESERVATION_TOKEN \
+  --manifest <manifest_sha256-from-receipt>
 ```
+
+`inspect` fetches and verifies only the pinned manifest, without downloading
+chunks or writing files. Its JSON output includes `manifest_verified: true`;
+this does not verify current chunk availability or qualify a database restore.
 
 Keep the upload receipt in the recovery inventory. Its `manifest_sha256` pins
 all file names, complete-file hashes, and ordered chunk hashes. Repeating an

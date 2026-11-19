@@ -17,8 +17,8 @@ import (
 )
 
 func (a *app) runPreservation(ctx context.Context, args []string) error {
-	if len(args) == 0 || (args[0] != "upload" && args[0] != "download") {
-		return usageError{errors.New("usage: crawlctl preservation <upload|download> [flags]")}
+	if len(args) == 0 || (args[0] != "upload" && args[0] != "download" && args[0] != "inspect") {
+		return usageError{errors.New("usage: crawlctl preservation <upload|download|inspect> [flags]")}
 	}
 	command := args[0]
 	fs := flag.NewFlagSet("preservation "+command, flag.ContinueOnError)
@@ -37,7 +37,9 @@ func (a *app) runPreservation(ctx context.Context, args []string) error {
 		fs.Int64Var(&chunkSize, "chunk-size", remote.PreservationChunkBytes, "chunk size in bytes")
 	} else {
 		fs.StringVar(&digest, "manifest", "", "manifest SHA-256")
-		fs.StringVar(&output, "output", "", "new output directory; must not exist")
+		if command == "download" {
+			fs.StringVar(&output, "output", "", "new output directory; must not exist")
+		}
 	}
 	if err := fs.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -79,13 +81,18 @@ func (a *app) runPreservation(ctx context.Context, args []string) error {
 			sources = append(sources, remote.PreservationSource{Name: name, Path: parts[2], Offset: offset, Length: length})
 		}
 	} else {
-		if digest == "" || strings.TrimSpace(output) == "" {
+		if digest == "" {
+			return usageError{errors.New("preservation read requires --manifest SHA")}
+		}
+		if command == "download" && strings.TrimSpace(output) == "" {
 			return usageError{errors.New("download requires --manifest SHA and --output DIR")}
 		}
-		if _, err := os.Lstat(output); err == nil {
-			return fmt.Errorf("download output %q already exists", output)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
+		if command == "download" {
+			if _, err := os.Lstat(output); err == nil {
+				return fmt.Errorf("download output %q already exists", output)
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
 		}
 	}
 	client, err := remote.NewClient(remote.Options{
@@ -106,6 +113,16 @@ func (a *app) runPreservation(ctx context.Context, args []string) error {
 			return err
 		}
 		return writeJSON(a.stdout, receipt)
+	}
+	if command == "inspect" {
+		manifest, err := client.FetchPreservationManifest(ctx, *appID, *archive, digest)
+		if err != nil {
+			return err
+		}
+		return writeJSON(a.stdout, struct {
+			remote.PreservationReceipt
+			ManifestVerified bool `json:"manifest_verified"`
+		}{PreservationReceipt: remote.PreservationReceipt{ManifestSHA256: digest, Manifest: manifest}, ManifestVerified: true})
 	}
 	receipt, err := downloadPreservation(ctx, client, *appID, *archive, digest, output)
 	if err != nil {
