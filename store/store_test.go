@@ -446,8 +446,43 @@ func TestFTS5Helpers(t *testing.T) {
 	if err := OptimizeFTS5(ctx, st.DB(), "docs"); err != nil {
 		t.Fatal(err)
 	}
-	if err := OptimizeFTS5(ctx, st.DB(), `bad"table`); err == nil {
-		t.Fatal("unsafe FTS table should fail")
+	for _, table := range []string{`bad"table`, "", " \t\n", "bad\x00table"} {
+		if err := OptimizeFTS5(ctx, st.DB(), table); err == nil {
+			t.Errorf("unsafe FTS table %q should fail", table)
+		}
+	}
+}
+
+func TestOptimizeFTS5PreservesTableName(t *testing.T) {
+	for _, name := range []string{" docs", "docs ", " docs "} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			st, err := Open(ctx, Options{Path: filepath.Join(t.TempDir(), "archive.db")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			if _, err := st.DB().ExecContext(ctx, `create virtual table `+QuoteIdent(name)+` using fts5(body);
+				create table docs(docs text);`); err != nil {
+				t.Fatal(err)
+			}
+			if err := OptimizeFTS5(ctx, st.DB(), name); err != nil {
+				t.Fatal(err)
+			}
+			var count int
+			if err := st.DB().QueryRowContext(ctx, `select count(*) from docs`).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 0 {
+				t.Fatalf("optimization wrote %d rows to the unrelated docs table", count)
+			}
+			if _, err := st.DB().ExecContext(ctx, `drop table docs`); err != nil {
+				t.Fatal(err)
+			}
+			if err := OptimizeFTS5(ctx, st.DB(), name); err != nil {
+				t.Fatalf("optimize literal FTS table without neighbor: %v", err)
+			}
+		})
 	}
 }
 

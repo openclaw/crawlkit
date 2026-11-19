@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve whitespace in FTS table names during optimization so a similarly named table is not modified instead.
+
 - Keep scoped mirror commits limited to literal file and directory selections, so bracketed filenames do not include matching neighboring files.
 
 - Preserve whitespace in selected mirror commit paths so a similarly named file is not committed instead.

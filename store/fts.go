@@ -63,8 +63,7 @@ type contextExecer interface {
 }
 
 func OptimizeFTS5(ctx context.Context, db contextExecer, table string) error {
-	table = strings.TrimSpace(table)
-	if table == "" || strings.ContainsAny(table, "\"\x00") {
+	if strings.TrimSpace(table) == "" || strings.ContainsAny(table, "\"\x00") {
 		return fmt.Errorf("invalid FTS5 table %q", table)
 	}
 	quoted := QuoteIdent(table)
