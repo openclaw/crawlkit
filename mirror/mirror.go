@@ -358,9 +358,9 @@ func Dirty(ctx context.Context, opts Options) (bool, error) {
 	return strings.TrimSpace(out) != "", nil
 }
 
+// CleanSQLiteSidecars removes SQLite sidecars beneath the literal root path.
 func CleanSQLiteSidecars(rootDir string) (int, error) {
-	rootDir = strings.TrimSpace(rootDir)
-	if rootDir == "" {
+	if strings.TrimSpace(rootDir) == "" {
 		return 0, errors.New("root dir is required")
 	}
 	count := 0

@@ -44,6 +44,9 @@ sidecars. Nonpositive limits leave file size unbounded.
 and validating repository-relative paths. Git glob patterns and
 pathspec magic are not expanded. Use `.` to commit the whole archive.
 
+`mirror.CleanSQLiteSidecars` preserves whitespace in the selected root path;
+it rejects an empty or whitespace-only root instead of selecting another tree.
+
 Managed sidecar trees reject overlapping source and destination roots, including
 mixed relative and absolute paths. Configured root symlinks remain supported;
 symlink directories inside a destination copy path are rejected so copying and
