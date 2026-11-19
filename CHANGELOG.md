@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve literal table names during full snapshot imports so names with surrounding whitespace do not clear a different table or retain stale rows.
+
 - Preserve existing file-cache snapshots when timestamps and names collide, including concurrent captures; report the collision instead of overwriting data.
 
 - Let `crawlctl logs -- JOB` display logs for jobs whose names look like command-line flags.

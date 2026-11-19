@@ -70,6 +70,10 @@ must not commit or roll back. Legacy filter closures retain their own database
 bindings. The driver's `ReadOnly` option is not an authorization boundary for
 trusted callbacks.
 
+Import uses literal table names for both deletion and insertion, including surrounding
+whitespace. Full imports also pass those exact names to `DeleteTable` callbacks;
+blank entries in `DeleteTables` remain ignored.
+
 Snapshot rows remain v1 JSON objects; no new wire format is enabled. Import
 planning compares unique column names independently of their order, so a
 snapshot from an equivalent schema does not require replacement just because
