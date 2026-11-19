@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `crawlctl preservation verify` to check all remote backup content without retaining a second local copy.
+
 - Add `crawlctl preservation inspect` to verify a pinned remote backup manifest without downloading chunks or writing files.
 
 - Preserve literal table names during full snapshot imports so names with surrounding whitespace do not clear a different table or retain stale rows.

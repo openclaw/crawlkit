@@ -207,6 +207,11 @@ crawlctl preservation inspect \
 chunks or writing files. Its JSON output includes `manifest_verified: true`;
 this does not verify current chunk availability or qualify a database restore.
 
+Use `crawlctl preservation verify` with the same flags as `inspect` to stream
+every chunk and verify its length and hash plus each complete-file hash without
+writing files. It returns `files_verified: true` only after all content passes;
+`restore_qualified` remains false. Use `download` when a local copy is needed.
+
 Keep the upload receipt in the recovery inventory. Its `manifest_sha256` pins
 all file names, complete-file hashes, and ordered chunk hashes. Repeating an
 unchanged upload reuses immutable object identities; it does not fetch upstream

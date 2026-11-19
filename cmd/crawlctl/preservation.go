@@ -17,8 +17,8 @@ import (
 )
 
 func (a *app) runPreservation(ctx context.Context, args []string) error {
-	if len(args) == 0 || (args[0] != "upload" && args[0] != "download" && args[0] != "inspect") {
-		return usageError{errors.New("usage: crawlctl preservation <upload|download|inspect> [flags]")}
+	if len(args) == 0 || (args[0] != "upload" && args[0] != "download" && args[0] != "inspect" && args[0] != "verify") {
+		return usageError{errors.New("usage: crawlctl preservation <upload|download|inspect|verify> [flags]")}
 	}
 	command := args[0]
 	fs := flag.NewFlagSet("preservation "+command, flag.ContinueOnError)
@@ -123,6 +123,21 @@ func (a *app) runPreservation(ctx context.Context, args []string) error {
 			remote.PreservationReceipt
 			ManifestVerified bool `json:"manifest_verified"`
 		}{PreservationReceipt: remote.PreservationReceipt{ManifestSHA256: digest, Manifest: manifest}, ManifestVerified: true})
+	}
+	if command == "verify" {
+		manifest, err := client.FetchPreservationManifest(ctx, *appID, *archive, digest)
+		if err != nil {
+			return err
+		}
+		for index := range manifest.Files {
+			if err := client.DownloadPreservationFile(ctx, *appID, *archive, digest, index, io.Discard); err != nil {
+				return err
+			}
+		}
+		return writeJSON(a.stdout, struct {
+			remote.PreservationReceipt
+			FilesVerified bool `json:"files_verified"`
+		}{PreservationReceipt: remote.PreservationReceipt{ManifestSHA256: digest, Manifest: manifest}, FilesVerified: true})
 	}
 	receipt, err := downloadPreservation(ctx, client, *appID, *archive, digest, output)
 	if err != nil {

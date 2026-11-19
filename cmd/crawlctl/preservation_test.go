@@ -115,6 +115,8 @@ func TestPreservationArguments(t *testing.T) {
 		{"download", "--file", "backup=source"},
 		{"inspect"},
 		{"inspect", "--manifest", strings.Repeat("a", 64), "--output", "unused"},
+		{"verify"},
+		{"verify", "--manifest", strings.Repeat("a", 64), "--output", "unused"},
 		{"upload", "--file-range", "part=0:1"},
 		{"upload", "--file-range", "part=0:1:"},
 		{"upload", "--file-range", "=0:1:source"},
@@ -138,6 +140,85 @@ func TestPreservationArguments(t *testing.T) {
 			}
 			if stdout.Len() != 0 {
 				t.Fatalf("unexpected success output: %s", stdout.String())
+			}
+		})
+	}
+}
+
+func TestPreservationVerifyStreamsAllContent(t *testing.T) {
+	data := []byte("first-second")
+	digest := func(body []byte) string { sum := sha256.Sum256(body); return hex.EncodeToString(sum[:]) }
+	parts := [][]byte{data[:6], data[6:]}
+	t.Setenv("PRESERVATION_VERIFY_TOKEN", "synthetic-verify-token")
+	for _, mode := range []string{"valid", "chunk corruption", "whole corruption", "truncated chunk"} {
+		t.Run(mode, func(t *testing.T) {
+			manifest := remote.PreservationManifest{
+				Version: 1, App: "discrawl", Archive: "checkpoint/example",
+				Files: []remote.PreservationFile{{Path: "native.sqlite", SHA256: digest(data), Size: int64(len(data)),
+					Chunks: []remote.PreservationChunk{{SHA256: digest(parts[0]), Size: int64(len(parts[0]))}, {SHA256: digest(parts[1]), Size: int64(len(parts[1]))}}}},
+			}
+			if mode == "whole corruption" {
+				manifest.Files[0].SHA256 = digest([]byte("wrong whole hash"))
+			}
+			body, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var chunks atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer synthetic-verify-token" || r.URL.Query().Get("sha256") != digest(body) {
+					t.Error("unexpected request method, credential or manifest")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				switch r.URL.EscapedPath() {
+				case "/v1/apps/discrawl/archives/checkpoint%2Fexample/preservation-manifest":
+					_, _ = w.Write(body)
+				case "/v1/apps/discrawl/archives/checkpoint%2Fexample/preservation-chunk":
+					index, err := strconv.Atoi(r.URL.Query().Get("chunk"))
+					if err != nil || index < 0 || index >= len(parts) || r.URL.Query().Get("file") != "0" {
+						t.Error("unexpected chunk selection")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					chunks.Add(1)
+					part := parts[index]
+					if mode == "chunk corruption" {
+						part = bytes.Repeat([]byte("x"), len(part))
+					} else if mode == "truncated chunk" {
+						part = part[:len(part)-1]
+					}
+					_, _ = w.Write(part)
+				default:
+					t.Errorf("unexpected path %s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+			var stdout bytes.Buffer
+			a := app{stdout: &stdout, stderr: io.Discard}
+			err = a.runPreservation(context.Background(), []string{"verify", "--endpoint", server.URL,
+				"--app", "discrawl", "--archive", manifest.Archive, "--manifest", digest(body),
+				"--token-env", "PRESERVATION_VERIFY_TOKEN", "--timeout", "1s"})
+			if mode != "valid" {
+				if err == nil || chunks.Load() == 0 || stdout.Len() != 0 {
+					t.Fatalf("error = %v, chunks = %d, output = %q", err, chunks.Load(), stdout.String())
+				}
+				return
+			}
+			if err != nil || chunks.Load() != int64(len(parts)) {
+				t.Fatalf("error = %v, chunks = %d", err, chunks.Load())
+			}
+			var got struct {
+				remote.PreservationReceipt
+				FilesVerified bool `json:"files_verified"`
+			}
+			if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(got.Manifest)
+			if err != nil || !bytes.Equal(encoded, body) || got.ManifestSHA256 != digest(body) || !got.FilesVerified || got.RestoreQualified {
+				t.Fatalf("unexpected content verification receipt: %s", stdout.String())
 			}
 		})
 	}
