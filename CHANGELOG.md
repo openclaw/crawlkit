@@ -4,6 +4,8 @@
 
 - Keep scoped mirror commits limited to literal file and directory selections, so bracketed filenames do not include matching neighboring files.
 
+- Preserve whitespace in selected mirror commit paths so a similarly named file is not committed instead.
+
 - Add `crawlctl preservation verify` to check all remote backup content without retaining a second local copy.
 
 - Add `crawlctl preservation inspect` to verify a pinned remote backup manifest without downloading chunks or writing files.

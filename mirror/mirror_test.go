@@ -211,6 +211,51 @@ func TestCommitPathsDoesNotStageUnrelatedFiles(t *testing.T) {
 	}
 }
 
+func TestCommitPathsPreservesWhitespace(t *testing.T) {
+	names := []string{" report.json"}
+	if runtime.GOOS != "windows" {
+		names = append(names, "report.json ", " ")
+	}
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			opts := Options{RepoPath: t.TempDir()}
+			if err := EnsureRepo(ctx, opts); err != nil {
+				t.Fatal(err)
+			}
+			for _, file := range []string{name, "report.json"} {
+				if err := os.WriteFile(filepath.Join(opts.RepoPath, file), []byte("original"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if committed, err := Commit(ctx, opts, "archive: initial"); err != nil || !committed {
+				t.Fatalf("initial commit = %v, %v", committed, err)
+			}
+			for _, file := range []string{name, "report.json"} {
+				if err := os.WriteFile(filepath.Join(opts.RepoPath, file), []byte("updated"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := run(ctx, opts.RepoPath, "git", "add", "--", "report.json"); err != nil {
+				t.Fatal(err)
+			}
+			if committed, err := CommitPaths(ctx, opts, "archive: selected file", []string{name}); err != nil || !committed {
+				t.Fatalf("selected commit = %v, %v", committed, err)
+			}
+			for file, want := range map[string]string{name: "updated", "report.json": "original"} {
+				body, _, err := ReadFileAt(ctx, opts, "HEAD", file)
+				if err != nil || string(body) != want {
+					t.Errorf("committed %q = %q, %v; want %q", file, body, err, want)
+				}
+			}
+			stagedFiles, err := output(ctx, opts.RepoPath, "git", "diff", "--cached", "--name-only", "-z")
+			if err != nil || stagedFiles != "report.json\x00" {
+				t.Errorf("staged files = %q, %v; want unrelated file preserved", stagedFiles, err)
+			}
+		})
+	}
+}
+
 func TestCommitPathsDoesNotCommitPrestagedUnrelatedFiles(t *testing.T) {
 	ctx := context.Background()
 	repo := filepath.Join(t.TempDir(), "share")

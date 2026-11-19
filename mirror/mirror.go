@@ -295,7 +295,7 @@ func Commit(ctx context.Context, opts Options, message string) (bool, error) {
 }
 
 // CommitPaths commits selected files or directories without Git pathspec expansion.
-// Paths retain the existing whitespace trimming and repository-relative checks.
+// Paths preserve whitespace and must stay relative to the repository.
 func CommitPaths(ctx context.Context, opts Options, message string, paths []string) (bool, error) {
 	opts = normalize(opts)
 	if message == "" {
@@ -424,7 +424,6 @@ func setOrigin(ctx context.Context, opts Options) error {
 func cleanPathspecs(paths []string) ([]string, error) {
 	var out []string
 	for _, path := range paths {
-		path = strings.TrimSpace(path)
 		if path == "" {
 			continue
 		}
