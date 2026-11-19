@@ -47,8 +47,8 @@ func Import(ctx context.Context, opts ImportOptions) (Manifest, error) {
 		}
 	}
 	for i := len(deleteTables) - 1; i >= 0; i-- {
-		table := strings.TrimSpace(deleteTables[i])
-		if table == "" {
+		table := deleteTables[i]
+		if strings.TrimSpace(table) == "" {
 			continue
 		}
 		if opts.DeleteTable != nil {

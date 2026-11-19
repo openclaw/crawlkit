@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -75,6 +76,61 @@ create table sync_state(source_name text, entity_type text, entity_id text, valu
 	}
 	if got != "api:cursor:x:1:now" {
 		t.Fatalf("exported sync state = %q", got)
+	}
+}
+
+func TestImportPreservesLiteralDeleteTableNames(t *testing.T) {
+	for _, table := range []string{" messages", "messages "} {
+		for _, explicit := range []bool{false, true} {
+			for _, custom := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%q/explicit=%t/custom=%t", table, explicit, custom), func(t *testing.T) {
+					ctx := context.Background()
+					dst, err := store.Open(ctx, store.Options{
+						Path: filepath.Join(t.TempDir(), "dst.db"),
+						Schema: `create table messages(id text primary key);
+create table ` + store.QuoteIdent(table) + `(id text primary key);`,
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer dst.Close()
+					mustExec(t, dst.DB(), `insert into messages values ('unrelated')`)
+					mustExec(t, dst.DB(), `insert into `+store.QuoteIdent(table)+` values ('stale')`)
+					root := t.TempDir()
+					writeGzipJSONL(t, filepath.Join(root, "rows.jsonl.gz"), map[string]any{"id": "snapshot"})
+					if err := WriteManifest(root, Manifest{Version: 1, Tables: []TableManifest{{
+						Name: table, Columns: []string{"id"}, Files: []string{"rows.jsonl.gz"}, Rows: 1,
+					}}}); err != nil {
+						t.Fatal(err)
+					}
+					opts := ImportOptions{DB: dst.DB(), RootDir: root}
+					if explicit {
+						opts.DeleteTables = []string{"", " \t", table}
+					}
+					if custom {
+						opts.DeleteTable = func(ctx context.Context, tx *sql.Tx, name string) error {
+							if name != table {
+								t.Errorf("delete callback table = %q, want %q", name, table)
+							}
+							_, err := tx.ExecContext(ctx, "delete from "+store.QuoteIdent(name))
+							return err
+						}
+					}
+					if _, err := Import(ctx, opts); err != nil {
+						t.Fatal(err)
+					}
+					for name, want := range map[string]string{table: "snapshot", "messages": "unrelated"} {
+						var got string
+						if err := dst.DB().QueryRowContext(ctx, "select coalesce(group_concat(id), '') from "+store.QuoteIdent(name)).Scan(&got); err != nil {
+							t.Fatal(err)
+						}
+						if got != want {
+							t.Errorf("table %q rows = %q, want %q", name, got, want)
+						}
+					}
+				})
+			}
+		}
 	}
 }
 
