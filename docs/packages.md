@@ -57,6 +57,10 @@ it rejects an empty or whitespace-only root instead of selecting another tree.
 `mirror.ListTreeFiles` lists Git blob entries, including symlinks. Submodule
 gitlinks reference commits in another repository and are omitted.
 
+`mirror.CreateImmutableTag` never overwrites an existing tag, including one
+pointing to a non-commit object. Reusing a tag already pointing to the current
+commit succeeds without changing it.
+
 Mirror branch and snapshot pushes rebase and retry only when Git reports
 non-fast-forward or fetch-first divergence. Other rejections, including server
 hooks and authentication failures, return without a sync attempt.

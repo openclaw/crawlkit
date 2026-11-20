@@ -9,6 +9,46 @@ import (
 	"testing"
 )
 
+func TestCreateImmutableTagPreservesNonCommitObjects(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	opts := Options{RepoPath: repo}
+	if err := EnsureRepo(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "manifest.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Commit(ctx, opts, "archive: test"); err != nil {
+		t.Fatal(err)
+	}
+	for _, object := range []string{"HEAD:manifest.json", "HEAD^{tree}"} {
+		t.Run(object, func(t *testing.T) {
+			id, err := output(ctx, repo, "git", "rev-parse", object)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id = strings.TrimSpace(id)
+			const tag = "snapshot/existing"
+			if err := run(ctx, repo, "git", "update-ref", "refs/tags/"+tag, id); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := CreateImmutableTag(ctx, opts, tag); err == nil {
+				t.Error("expected refusal to replace an existing non-commit tag")
+			}
+			got, err := output(ctx, repo, "git", "rev-parse", "refs/tags/"+tag)
+			if err != nil || strings.TrimSpace(got) != id {
+				t.Fatalf("tag changed: got %q, error %v, want %s", got, err, id)
+			}
+		})
+	}
+	for range 2 {
+		if tag, err := CreateImmutableTag(ctx, opts, "snapshot/new"); err != nil || tag != "snapshot/new" {
+			t.Fatalf("creating or reusing same-commit tag = %q, %v", tag, err)
+		}
+	}
+}
+
 func TestEnsureRepoCommitDirty(t *testing.T) {
 	ctx := context.Background()
 	repo := filepath.Join(t.TempDir(), "share")
