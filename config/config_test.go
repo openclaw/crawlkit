@@ -48,6 +48,15 @@ func TestHomeExpansionPreservesSymlinkTraversal(t *testing.T) {
 			t.Errorf("config in %s = %q, want %q", entry.dir, got["value"], entry.value)
 		}
 	}
+	if err := WriteTOML("~/link/../new/config.toml", map[string]string{"value": "new"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "new", "config.toml")); err != nil {
+		t.Fatalf("config missing from selected new directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "new")); !os.IsNotExist(err) {
+		t.Fatalf("created a neighboring directory: %v", err)
+	}
 }
 
 func TestWriteTOMLHonorsReplacementPermissions(t *testing.T) {
