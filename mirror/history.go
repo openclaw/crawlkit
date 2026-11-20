@@ -120,7 +120,9 @@ func CreateImmutableTag(ctx context.Context, opts Options, tag string) (string, 
 		}
 		return tag, nil
 	}
-	if err := run(ctx, opts.RepoPath, opts.Git, "update-ref", fullRef, head); err != nil {
+	// An empty expected old value requires the ref to be absent, even if it
+	// points to a non-commit object or appeared after the lookup above.
+	if err := run(ctx, opts.RepoPath, opts.Git, "update-ref", fullRef, head, ""); err != nil {
 		return "", err
 	}
 	return tag, nil
