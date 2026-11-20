@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Publish snapshot manifests through a synced temporary file so replacements do not truncate the version being read.
+
 - Add `crawlctl preservation upload --resume` to verify and reuse stored chunks without retransmitting their contents.
 
 - Keep mirror file listings working in repositories with submodules by skipping gitlinks that have no blob size or content.

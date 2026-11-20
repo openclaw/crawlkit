@@ -143,6 +143,10 @@ func publishSnapshotManifest(ctx context.Context, root *os.Root, manifest Manife
 	if err != nil {
 		return err
 	}
+	return publishSnapshotManifestData(ctx, root, data, generation)
+}
+
+func publishSnapshotManifestData(ctx context.Context, root *os.Root, data []byte, generation string) error {
 	tmp := ".manifest-" + generation + ".tmp"
 	file, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
