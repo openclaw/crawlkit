@@ -54,6 +54,8 @@
 
 - Verify stored encrypted backup contents before reuse so refreshing unchanged data repairs corrupted or incorrect objects instead of reporting success with an unreadable backup.
 
+- Bound encrypted file restores by their declared plaintext size before writing oversized payloads to disk, while retaining authenticated EOF and hash checks.
+
 ## 0.18.0 - 2026-11-15
 
 **Highlights:** Add verified private backup transfers and shared seed APIs, fix scheduler and archive-path handling, and include the Go security fix for GO-2026-6859.

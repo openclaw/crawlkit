@@ -137,6 +137,11 @@ cleanup. This persistent local marker is not manifest-owned; never unlink it
 to release a writer. Publish only exact current/prior manifest paths when an
 app stages a backup for Git. Generic `mirror.Commit` remains unchanged.
 
+Encrypted file restore limits temporary-file writes to the plaintext size in
+the verified file index. Oversized payloads fail after a one-byte probe, while
+exact-size payloads still require authenticated EOF and a matching hash before
+publication. A verification failure preserves its existing destination.
+
 Encrypted backup reuse decrypts and authenticates the stored object, then checks
 its plaintext size and hash against the current source. Unverifiable or damaged
 objects are replaced with fresh ciphertext during refresh. Reuse reads existing
