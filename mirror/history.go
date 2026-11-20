@@ -205,6 +205,7 @@ func pushAtomic(ctx context.Context, opts Options, refs ...string) (string, erro
 	return output(ctx, opts.RepoPath, opts.Git, args...)
 }
 
+// ListTreeFiles lists blob entries, including symlinks, and skips submodule gitlinks.
 func ListTreeFiles(ctx context.Context, opts Options, ref, root string) ([]TreeFile, error) {
 	opts = normalize(opts)
 	commit, err := ResolveCommit(ctx, opts, ref)
@@ -232,6 +233,9 @@ func ListTreeFiles(ctx context.Context, opts Options, ref, root string) ([]TreeF
 		fields := strings.Fields(metadata)
 		if len(fields) != 4 {
 			return nil, fmt.Errorf("parse git tree record %q", metadata)
+		}
+		if fields[1] != "blob" {
+			continue
 		}
 		size, err := strconv.ParseInt(fields[3], 10, 64)
 		if err != nil {
