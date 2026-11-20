@@ -14,6 +14,49 @@ import (
 	"github.com/openclaw/crawlkit/store"
 )
 
+func TestSnapshotSQLitePreservesLiteralNames(t *testing.T) {
+	for _, name := range []string{" archive.db", "archive.db ", " "} {
+		t.Run(name, func(t *testing.T) {
+			source := filepath.Join(t.TempDir(), "source.db")
+			destination := t.TempDir()
+			for _, suffix := range []string{"", "-wal", "-shm"} {
+				if err := os.WriteFile(source+suffix, []byte("captured"+suffix), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(destination, "archive.db")+suffix, []byte("retained"+suffix), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			snap, err := SnapshotSQLite(SQLiteSnapshotOptions{SourcePath: source, DestinationDir: destination, Name: name})
+			ambiguous := runtime.GOOS == "windows" && strings.HasSuffix(name, " ")
+			if ambiguous {
+				if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+					t.Errorf("expected ambiguous Windows name rejection, got %v", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if want := filepath.Join(destination, name); snap.Path != want {
+					t.Errorf("snapshot path = %q, want %q", snap.Path, want)
+				}
+				for _, suffix := range []string{"", "-wal", "-shm"} {
+					data, err := os.ReadFile(filepath.Join(destination, name) + suffix)
+					if err != nil || string(data) != "captured"+suffix {
+						t.Errorf("literal snapshot %q = %q, %v", suffix, data, err)
+					}
+				}
+			}
+			for _, suffix := range []string{"", "-wal", "-shm"} {
+				data, err := os.ReadFile(filepath.Join(destination, "archive.db") + suffix)
+				if err != nil || string(data) != "retained"+suffix {
+					t.Errorf("neighbor %q changed: %q, %v", suffix, data, err)
+				}
+			}
+		})
+	}
+}
+
 func TestSnapshotSQLiteReusedDestinationDropsStaleWAL(t *testing.T) {
 	ctx := context.Background()
 	source := filepath.Join(t.TempDir(), "source.db")
