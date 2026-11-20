@@ -137,6 +137,12 @@ cleanup. This persistent local marker is not manifest-owned; never unlink it
 to release a writer. Publish only exact current/prior manifest paths when an
 app stages a backup for Git. Generic `mirror.Commit` remains unchanged.
 
+Encrypted backup reuse decrypts and authenticates the stored object, then checks
+its plaintext size and hash against the current source. Unverifiable or damaged
+objects are replaced with fresh ciphertext during refresh. Reuse reads existing
+ciphertext in addition to the source; without a usable identity, recipient-only
+writers still work but encrypt fresh objects instead of reusing them.
+
 New encrypted shards and file indexes use unique physical names; legacy
 logical names and manifest fields remain readable. The manifest is published
 last. A failure before publication preserves the prior pack. A cleanup error
