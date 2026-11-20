@@ -955,6 +955,44 @@ func TestCleanSQLiteSidecars(t *testing.T) {
 	}
 }
 
+func TestListTreeFilesSkipsSubmodules(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	opts := Options{RepoPath: repo}
+	if err := EnsureRepo(ctx, opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "manifest.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Commit(ctx, opts, "archive: initial"); err != nil {
+		t.Fatal(err)
+	}
+	head, err := ResolveCommit(ctx, opts, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, repo, "git", "update-index", "--add", "--cacheinfo", "160000,"+head+",module"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, repo, "git", "-c", "commit.gpgsign=false", "-c", "user.name=crawlkit", "-c", "user.email=crawlkit@example.invalid", "commit", "-m", "add gitlink"); err != nil {
+		t.Fatal(err)
+	}
+	for _, root := range []string{"", "manifest.json", "module"} {
+		files, err := ListTreeFiles(ctx, opts, "HEAD", root)
+		if err != nil {
+			t.Fatalf("list root %q: %v", root, err)
+		}
+		if root == "module" {
+			if len(files) != 0 {
+				t.Fatalf("gitlink returned as files: %#v", files)
+			}
+		} else if len(files) != 1 || files[0].Path != "manifest.json" || files[0].Size != 3 {
+			t.Fatalf("files under %q = %#v", root, files)
+		}
+	}
+}
+
 func TestHistoryReadsAndTagsWithoutChangingCheckout(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()

@@ -54,6 +54,9 @@ pathspec magic are not expanded. Use `.` to commit the whole archive.
 `mirror.CleanSQLiteSidecars` preserves whitespace in the selected root path;
 it rejects an empty or whitespace-only root instead of selecting another tree.
 
+`mirror.ListTreeFiles` lists Git blob entries, including symlinks. Submodule
+gitlinks reference commits in another repository and are omitted.
+
 Mirror branch and snapshot pushes rebase and retry only when Git reports
 non-fast-forward or fetch-first divergence. Other rejections, including server
 hooks and authentication failures, return without a sync attempt.
