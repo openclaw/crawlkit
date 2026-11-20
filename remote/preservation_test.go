@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -280,6 +281,99 @@ func TestPreservationRejectsFalseReceipt(t *testing.T) {
 			c, _ := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("test")})
 			if _, err := c.UploadPreservation(context.Background(), m, sources); err == nil {
 				t.Fatal("accepted false receipt")
+			}
+		})
+	}
+}
+
+func TestPreservationResumeReusesOnlyVerifiedChunks(t *testing.T) {
+	for _, mode := range []string{"partial", "all", "bad-size", "bad-hash", "denied", "unsupported", "changed"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			path := filepath.Join(t.TempDir(), "source")
+			if err := os.WriteFile(path, []byte("abcdef"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			sources := []PreservationSource{{Name: "source", Path: path}}
+			m, err := PlanPreservation(ctx, "gitcrawl", "example", sources, 3)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "changed" {
+				if err := os.WriteFile(path, []byte("xbcdef"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			heads, puts, manifests := 0, 0, 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer private-test-token" {
+					t.Error("missing auth")
+					w.WriteHeader(403)
+					return
+				}
+				digest := r.URL.Query().Get("sha256")
+				if r.Method == http.MethodHead {
+					heads++
+					if r.URL.EscapedPath() != "/v1/apps/gitcrawl/archives/example/preservation-chunk" {
+						t.Error("wrong scope")
+					}
+					if mode == "denied" {
+						w.WriteHeader(403)
+						return
+					}
+					if mode == "unsupported" {
+						w.WriteHeader(405)
+						return
+					}
+					if mode == "partial" && digest == m.Files[0].Chunks[1].SHA256 {
+						w.WriteHeader(404)
+						return
+					}
+					size := 3
+					if mode == "bad-size" {
+						size = 2
+					}
+					if mode == "bad-hash" {
+						digest = strings.Repeat("0", 64)
+					}
+					w.Header().Set("Content-Length", strconv.Itoa(size))
+					w.Header().Set("X-Preservation-SHA256", digest)
+					w.WriteHeader(200)
+					return
+				}
+				if r.Method != http.MethodPut {
+					t.Error("unexpected method")
+					w.WriteHeader(400)
+					return
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil || preservationDigest(body) != digest {
+					t.Error("bad body")
+				}
+				if strings.HasSuffix(r.URL.Path, "preservation-manifest") {
+					manifests++
+					_ = json.NewEncoder(w).Encode(map[string]any{"sha256": digest, "verification": "chunk-checksums", "restore_qualified": false})
+				} else {
+					puts++
+					_ = json.NewEncoder(w).Encode(PreservationChunk{SHA256: digest, Size: int64(len(body))})
+				}
+			}))
+			defer server.Close()
+			c, err := NewClient(Options{Endpoint: server.URL, TokenProvider: StaticToken("private-test-token")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = c.ResumePreservation(ctx, m, sources)
+			if mode == "all" || mode == "partial" {
+				wantPuts := 0
+				if mode == "partial" {
+					wantPuts = 1
+				}
+				if err != nil || heads != 2 || puts != wantPuts || manifests != 1 {
+					t.Fatalf("err=%v heads=%d puts=%d manifests=%d", err, heads, puts, manifests)
+				}
+			} else if err == nil || puts != 0 || manifests != 0 {
+				t.Fatalf("unsafe resume: err=%v puts=%d manifests=%d", err, puts, manifests)
 			}
 		})
 	}

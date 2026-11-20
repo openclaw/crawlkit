@@ -30,8 +30,10 @@ func (a *app) runPreservation(ctx context.Context, args []string) error {
 	timeout := fs.Duration("timeout", 5*time.Minute, "timeout per HTTP request")
 	var files, ranges multiFlag
 	var chunkSize int64
+	var resume bool
 	var digest, output string
 	if command == "upload" {
+		fs.BoolVar(&resume, "resume", false, "reuse stored chunks after verifying their checksum and length")
 		fs.Var(&files, "file", "logical NAME=PATH of a closed backup file (repeatable)")
 		fs.Var(&ranges, "file-range", "logical NAME=OFFSET:LENGTH:PATH of a closed backup file section (repeatable)")
 		fs.Int64Var(&chunkSize, "chunk-size", remote.PreservationChunkBytes, "chunk size in bytes")
@@ -108,7 +110,11 @@ func (a *app) runPreservation(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		receipt, err := client.UploadPreservation(ctx, manifest, sources)
+		upload := client.UploadPreservation
+		if resume {
+			upload = client.ResumePreservation
+		}
+		receipt, err := upload(ctx, manifest, sources)
 		if err != nil {
 			return err
 		}

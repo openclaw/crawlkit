@@ -30,6 +30,7 @@ func TestPreservationFileRangesReassembleOriginal(t *testing.T) {
 	}
 	digest := func(body []byte) string { sum := sha256.Sum256(body); return hex.EncodeToString(sum[:]) }
 	objects := map[string][]byte{}
+	chunkPuts := 0
 	var mu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
@@ -39,6 +40,16 @@ func TestPreservationFileRangesReassembleOriginal(t *testing.T) {
 			t.Error("missing credential")
 		}
 		key := r.URL.Path + "/" + sha
+		if r.Method == http.MethodHead {
+			body, ok := objects[key]
+			if !ok {
+				w.WriteHeader(404)
+				return
+			}
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			w.Header().Set("X-Preservation-SHA256", sha)
+			return
+		}
 		if r.Method == http.MethodPut {
 			body, _ := io.ReadAll(r.Body)
 			if digest(body) != sha {
@@ -48,6 +59,7 @@ func TestPreservationFileRangesReassembleOriginal(t *testing.T) {
 			if strings.HasSuffix(r.URL.Path, "/preservation-manifest") {
 				_ = json.NewEncoder(w).Encode(map[string]any{"sha256": sha, "verification": "chunk-checksums", "restore_qualified": false})
 			} else {
+				chunkPuts++
 				_ = json.NewEncoder(w).Encode(remote.PreservationChunk{SHA256: sha, Size: int64(len(body))})
 			}
 			return
@@ -73,8 +85,20 @@ func TestPreservationFileRangesReassembleOriginal(t *testing.T) {
 		if err := a.runPreservation(context.Background(), args); err != nil {
 			t.Fatal(err)
 		}
+		mu.Lock()
+		before := chunkPuts
+		mu.Unlock()
+		if err := a.runPreservation(context.Background(), append(args, "--resume")); err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		if chunkPuts != before {
+			t.Error("resume retransmitted existing chunks")
+		}
+		mu.Unlock()
+		// Both invocations returned receipts; decode the first one.
 		var receipt remote.PreservationReceipt
-		if err := json.Unmarshal(output.Bytes(), &receipt); err != nil {
+		if err := json.NewDecoder(&output).Decode(&receipt); err != nil {
 			t.Fatal(err)
 		}
 		if receipt.Manifest.Files[0].SHA256 != digest(data[span[0]:span[0]+span[1]]) || receipt.RestoreQualified {

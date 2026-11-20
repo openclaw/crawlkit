@@ -230,6 +230,16 @@ func preservationDigest(body []byte) string {
 // UploadPreservation verifies each bounded chunk again before upload and never publishes
 // a manifest after changed source bytes or an unverified receipt. Repeating it is safe.
 func (c *Client) UploadPreservation(ctx context.Context, m PreservationManifest, sources []PreservationSource) (PreservationReceipt, error) {
+	return c.uploadPreservation(ctx, m, sources, false)
+}
+
+// ResumePreservation reuses chunks whose server checksum and length match the plan.
+// Source bytes are still rehashed, and the manifest is published only after all checks.
+func (c *Client) ResumePreservation(ctx context.Context, m PreservationManifest, sources []PreservationSource) (PreservationReceipt, error) {
+	return c.uploadPreservation(ctx, m, sources, true)
+}
+
+func (c *Client) uploadPreservation(ctx context.Context, m PreservationManifest, sources []PreservationSource, resume bool) (PreservationReceipt, error) {
 	body, err := encodePreservationManifest(m)
 	if err != nil {
 		return PreservationReceipt{}, err
@@ -243,7 +253,7 @@ func (c *Client) UploadPreservation(ctx context.Context, m PreservationManifest,
 		}
 	}
 	for i, source := range sources {
-		if err := c.uploadPreservationFile(ctx, m, m.Files[i], source); err != nil {
+		if err := c.uploadPreservationFile(ctx, m, m.Files[i], source, resume); err != nil {
 			return PreservationReceipt{}, err
 		}
 	}
@@ -267,7 +277,7 @@ func (c *Client) UploadPreservation(ctx context.Context, m PreservationManifest,
 	return PreservationReceipt{ManifestSHA256: digest, Manifest: m}, nil
 }
 
-func (c *Client) uploadPreservationFile(ctx context.Context, m PreservationManifest, file PreservationFile, source PreservationSource) error {
+func (c *Client) uploadPreservationFile(ctx context.Context, m PreservationManifest, file PreservationFile, source PreservationSource, resume bool) error {
 	f, err := os.Open(source.Path)
 	if err != nil {
 		return err
@@ -304,6 +314,15 @@ func (c *Client) uploadPreservationFile(ctx context.Context, m PreservationManif
 			return errors.New("preservation source chunk changed")
 		}
 		_, _ = whole.Write(body)
+		if resume {
+			present, err := c.preservationChunkPresent(ctx, m, chunk)
+			if err != nil {
+				return err
+			}
+			if present {
+				continue
+			}
+		}
 		resp, err := c.preservationRequest(ctx, m.App, m.Archive, "preservation-chunk", url.Values{"sha256": {chunk.SHA256}}, body)
 		if err != nil {
 			return err
@@ -326,6 +345,33 @@ func (c *Client) uploadPreservationFile(ctx context.Context, m PreservationManif
 		return errors.New("preservation source file changed")
 	}
 	return nil
+}
+
+func (c *Client) preservationChunkPresent(ctx context.Context, m PreservationManifest, chunk PreservationChunk) (bool, error) {
+	u, err := url.Parse(c.url(archivePath(m.App, m.Archive, "preservation-chunk")))
+	if err != nil {
+		return false, err
+	}
+	u.RawQuery = url.Values{"sha256": {chunk.SHA256}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, u.String(), nil)
+	if err != nil {
+		return false, err
+	}
+	resp, err := c.sendRequest(ctx, req, false, true, true)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("preservation chunk inspection returned HTTP %d", resp.StatusCode)
+	}
+	if resp.ContentLength != chunk.Size || resp.Header.Get("X-Preservation-SHA256") != chunk.SHA256 {
+		return false, errors.New("preservation chunk inspection checksum or size mismatch")
+	}
+	return true, nil
 }
 
 func decodePreservationResponse(r io.Reader, dst any) error {

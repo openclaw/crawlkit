@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `crawlctl preservation upload --resume` to verify and reuse stored chunks without retransmitting their contents.
+
 - Keep mirror file listings working in repositories with submodules by skipping gitlinks that have no blob size or content.
 
 - Preserve exact JSON numbers in remote query and batch-read results instead of rounding large integers and precise decimals through float64.

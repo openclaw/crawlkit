@@ -436,3 +436,13 @@ own the exact receipt-qualified predecessor, post-upgrade journal readiness,
 complete interval/dependency capture, source identity, privacy policy and atomic
 outbox/index settlement. Generation changes or journal gaps require explicit
 reconciliation; this codec never reseeds or advances a baseline itself.
+
+### Resuming private preservation uploads
+
+`crawlctl preservation upload --resume` rehashes each local chunk and uses an
+admin-authenticated `HEAD` on the scoped `preservation-chunk?sha256=…` route.
+A stored chunk is reused only when HTTP 200 includes its exact `Content-Length`
+and `X-Preservation-SHA256`. HTTP 404 uploads the missing chunk; any other status
+or mismatched metadata stops the upload. This requires a server supporting the
+HEAD route. The default upload remains compatible with older servers. A manifest
+is published last, and its receipt does not prove database restore fidelity.
