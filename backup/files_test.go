@@ -1,7 +1,9 @@
 package backup
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +11,95 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestRestoreFileRejectsOversizedPayloadBeforeReadingItAll(t *testing.T) {
+	ctx := context.Background()
+	cfg := publicationConfig(t)
+	key, err := os.ReadFile(cfg.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := parseIdentity(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := make([]byte, 1024*1024)
+	if _, err := rand.Read(payload); err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, _, err := encryptShardContext(ctx, payload, cfg.Recipients)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := bytes.NewReader(ciphertext)
+	root := t.TempDir()
+	target := filepath.Join(root, "file.bin")
+	if err := os.WriteFile(target, []byte("previous"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record := fileIndexRecord{Path: "file.bin", Size: 1, SHA256: SHA256Hex(payload)}
+	if err := restoreFile(ctx, identity, reader, root, record.Path, record); err == nil {
+		t.Fatal("oversized payload was accepted")
+	}
+	if consumed := len(ciphertext) - reader.Len(); consumed > len(ciphertext)/2 {
+		t.Errorf("read %d of %d encrypted bytes despite a one-byte declared size", consumed, len(ciphertext))
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != "previous" {
+		t.Fatalf("previous target changed: %q, %v", got, err)
+	}
+	if entries, err := os.ReadDir(root); err != nil || len(entries) != 1 {
+		t.Fatalf("failed restore leaked temporary files: %v, %v", entries, err)
+	}
+}
+
+func TestRestoreFileChecksExactSizeAndAuthenticatedEOF(t *testing.T) {
+	ctx := context.Background()
+	cfg := publicationConfig(t)
+	key, err := os.ReadFile(cfg.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := parseIdentity(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, payload string
+		size          int64
+		corrupt       bool
+		wantError     bool
+	}{
+		{name: "empty"},
+		{name: "exact", payload: "content", size: 7},
+		{name: "short", payload: "content", size: 8, wantError: true},
+		{name: "long", payload: "content", size: 6, wantError: true},
+		{name: "damaged tail", payload: "content", size: 7, corrupt: true, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ciphertext, _, err := encryptShardContext(ctx, []byte(tc.payload), cfg.Recipients)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.corrupt {
+				ciphertext[len(ciphertext)-1] ^= 1
+			}
+			root := t.TempDir()
+			record := fileIndexRecord{Path: "file.bin", Size: tc.size, SHA256: SHA256Hex([]byte(tc.payload))}
+			err = restoreFile(ctx, identity, bytes.NewReader(ciphertext), root, record.Path, record)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("restore error = %v, want error = %v", err, tc.wantError)
+			}
+			got, readErr := os.ReadFile(filepath.Join(root, record.Path))
+			if tc.wantError {
+				if !os.IsNotExist(readErr) {
+					t.Fatalf("invalid payload was published: %q, %v", got, readErr)
+				}
+			} else if readErr != nil || string(got) != tc.payload {
+				t.Fatalf("restored content = %q, %v", got, readErr)
+			}
+		})
+	}
+}
 
 func TestEncryptedSnapshotFilesDeduplicateAndRestore(t *testing.T) {
 	ctx := context.Background()

@@ -447,7 +447,15 @@ func restoreFile(ctx context.Context, identity *age.X25519Identity, ciphertext i
 		return err
 	}
 	hasher := sha256.New()
-	size, err := copyContext(ctx, io.MultiWriter(tmp, hasher), gz)
+	size, err := copyContext(ctx, io.MultiWriter(tmp, hasher), io.LimitReader(gz, record.Size))
+	if err == nil && size == record.Size {
+		// Verify EOF without writing beyond the declared size or overflowing it.
+		var extra int64
+		extra, err = copyContext(ctx, io.Discard, io.LimitReader(gz, 1))
+		if err == nil && extra != 0 {
+			err = fmt.Errorf("backup file exceeds declared size for %s", logical)
+		}
+	}
 	if err != nil {
 		_ = tmp.Close()
 		return err
