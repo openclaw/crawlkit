@@ -14,6 +14,9 @@ const (
 	GitHubSeedsRoute        = "/v1/apps/gitcrawl/archives/:archive/seeds"
 	GitHubSeedChunksRoute   = GitHubSeedsRoute + "/:seed_id/chunks/:index"
 	GitHubSeedCompleteRoute = GitHubSeedsRoute + "/:seed_id/complete"
+	// GitHubRetainedSnapshotProfile carries a stopped archive without claiming
+	// a live native change journal or incremental acquisition completeness.
+	GitHubRetainedSnapshotProfile = "gitcrawl-retained-snapshot-v1"
 )
 
 // GitHubSeedManifest binds native capture evidence to exact seed request bytes.
@@ -117,7 +120,7 @@ func validateGitHubSeedManifest(m GitHubSeedManifest) ([]seedDescriptor, error) 
 	if err := validateGitHubSeedIdentity(m.Contract, m.App, m.Archive, m.BindingID, m.SeedID); err != nil {
 		return nil, err
 	}
-	if (m.Profile != "gitcrawl-private-report-v1" && m.Profile != "gitcrawl.public-durable-cluster-context/v1") || m.NativeSchema != 16 {
+	if (m.Profile != "gitcrawl-private-report-v1" && m.Profile != "gitcrawl.public-durable-cluster-context/v1" && m.Profile != GitHubRetainedSnapshotProfile) || m.NativeSchema != 16 {
 		return nil, errors.New("unsupported GitHub seed profile/schema")
 	}
 	parts := strings.Split(m.Repository, "/")
@@ -138,6 +141,13 @@ func validateGitHubSeedManifest(m GitHubSeedManifest) ([]seedDescriptor, error) 
 			return nil, errors.New("invalid GitHub cluster seed content anchor")
 		}
 		return validateSeedTables(m.Tables, githubClusterSeedTables[:])
+	}
+	if m.Profile == GitHubRetainedSnapshotProfile {
+		anchor, err := ParseGitHubSnapshotAnchor(m.NativeThrough)
+		if err != nil || anchor.ScopeSHA256 != m.ScopeSHA256 || anchor.InventorySHA256 != m.NativeSHA256 {
+			return nil, errors.New("invalid GitHub retained snapshot anchor")
+		}
+		return validateSeedTables(m.Tables, githubSeedTables[:])
 	}
 	// The SQLite schema cookie is not the fixed native schema version. Include
 	// inventory identity because untracked native changes can share a head.

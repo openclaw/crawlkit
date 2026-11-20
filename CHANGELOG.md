@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add an explicit retained GitHub snapshot seed profile bound to the original
+  file hash, source scope and full-row inventory. Retained snapshots do not
+  claim a live change journal or complete upstream acquisition.
+
 - Preserve literal SQLite snapshot names so surrounding whitespace does not redirect replacement to a neighboring database bundle; reject ambiguous destination names on Windows.
 
 - Preserve whitespace in FTS table names during optimization so a similarly named table is not modified instead.
