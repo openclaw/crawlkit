@@ -408,11 +408,11 @@ func (r *Runner[P, R]) backoff(attempt int) time.Duration {
 		}
 	}
 	// Bounded additive jitter; an explicit provider retry delay is never shortened.
-	delay += time.Duration(float64(delay) * 0.2 * rand.Float64())
-	if delay > r.opts.RetryMax {
-		delay = r.opts.RetryMax
+	jitter := time.Duration(float64(delay) * 0.2 * rand.Float64())
+	if jitter > r.opts.RetryMax-delay {
+		return r.opts.RetryMax
 	}
-	return delay
+	return delay + jitter
 }
 
 // Cancellation gets one bounded cleanup budget for the batch. If storage is

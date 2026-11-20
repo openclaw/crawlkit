@@ -455,6 +455,22 @@ func TestOptionsAndBackoff(t *testing.T) {
 	}
 }
 
+func TestBackoffSaturatesAtMaximumDuration(t *testing.T) {
+	const maximum = time.Duration(1<<63 - 1)
+	q := newQueue(t)
+	for _, base := range []time.Duration{maximum, maximum/2 + 1} {
+		r, err := New[string, string](q, upper, Options{Kind: "documents", RetryBase: base, RetryMax: maximum})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range 16 {
+			if delay := r.backoff(1); delay != maximum {
+				t.Fatalf("base %s: retry delay = %s, want maximum %s", base, delay, maximum)
+			}
+		}
+	}
+}
+
 func TestIndependentTaskKinds(t *testing.T) {
 	blocked := newQueue(t)
 	blocked.put(t, "message", "revision-2", "text", Fresh)
