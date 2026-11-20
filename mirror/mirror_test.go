@@ -172,6 +172,74 @@ func TestPushWritesCurrentBranchToOrigin(t *testing.T) {
 	}
 }
 
+func TestNonFastForwardRequiresDivergence(t *testing.T) {
+	for _, tc := range []struct {
+		output string
+		want   bool
+	}{
+		{"! [rejected] main -> main (non-fast-forward)\nerror: failed to push some refs", true},
+		{"! [rejected] main -> main (fetch first)\nerror: failed to push some refs", true},
+		{"! [remote rejected] main -> main (pre-receive hook declined)\nerror: failed to push some refs", false},
+		{"fatal: Authentication failed\nerror: failed to push some refs", false},
+		{"error: failed to push some refs", false},
+	} {
+		if got := isNonFastForward(tc.output); got != tc.want {
+			t.Errorf("divergence classification for %q = %v, want %v", tc.output, got, tc.want)
+		}
+	}
+}
+
+func TestPushDoesNotRetryServerRejection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX server hook fixture")
+	}
+	for _, mode := range []string{"branch", "snapshot", "current snapshot"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			dir := t.TempDir()
+			remote := filepath.Join(dir, "remote.git")
+			if err := run(ctx, "", "git", "init", "--bare", remote); err != nil {
+				t.Fatal(err)
+			}
+			opts := Options{RepoPath: filepath.Join(dir, "publisher"), Remote: remote, Branch: "main"}
+			if err := EnsureRemote(ctx, opts); err != nil {
+				t.Fatal(err)
+			}
+			writeTestCommit(t, ctx, opts, "manifest.json", "base\n", "base")
+			if err := Push(ctx, opts); err != nil {
+				t.Fatal(err)
+			}
+			writeTestCommit(t, ctx, opts, "manifest.json", "next\n", "next")
+			if _, err := CreateImmutableTag(ctx, opts, "snapshot/rejected"); err != nil {
+				t.Fatal(err)
+			}
+			hook := "#!/bin/sh\necho attempt >> push-attempts\necho 'synthetic server policy rejection' >&2\nexit 1\n"
+			if err := os.WriteFile(filepath.Join(remote, "hooks", "pre-receive"), []byte(hook), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := run(ctx, remote, "git", "config", "core.hooksPath", filepath.Join(remote, "hooks")); err != nil {
+				t.Fatal(err)
+			}
+			var err error
+			switch mode {
+			case "branch":
+				err = Push(ctx, opts)
+			case "snapshot":
+				err = PushSnapshot(ctx, opts, "snapshot/rejected")
+			case "current snapshot":
+				err = PushCurrentSnapshot(ctx, opts, "snapshot/rejected")
+			}
+			if err == nil || !strings.Contains(err.Error(), "synthetic server policy rejection") {
+				t.Fatalf("server rejection not reported: %v", err)
+			}
+			attempts, err := os.ReadFile(filepath.Join(remote, "push-attempts"))
+			if err != nil || string(attempts) != "attempt\n" {
+				t.Fatalf("push attempts = %q, %v; want exactly one", attempts, err)
+			}
+		})
+	}
+}
+
 func TestCommitPathsDoesNotStageUnrelatedFiles(t *testing.T) {
 	ctx := context.Background()
 	repo := filepath.Join(t.TempDir(), "share")

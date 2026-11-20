@@ -47,6 +47,10 @@ pathspec magic are not expanded. Use `.` to commit the whole archive.
 `mirror.CleanSQLiteSidecars` preserves whitespace in the selected root path;
 it rejects an empty or whitespace-only root instead of selecting another tree.
 
+Mirror branch and snapshot pushes rebase and retry only when Git reports
+non-fast-forward or fetch-first divergence. Other rejections, including server
+hooks and authentication failures, return without a sync attempt.
+
 Managed sidecar trees reject overlapping source and destination roots, including
 mixed relative and absolute paths. Configured root symlinks remain supported;
 symlink directories inside a destination copy path are rejected so copying and

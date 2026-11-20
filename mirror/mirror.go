@@ -520,6 +520,5 @@ func redactGitURLs(text string) string {
 func isNonFastForward(out string) bool {
 	lower := strings.ToLower(out)
 	return strings.Contains(lower, "non-fast-forward") ||
-		strings.Contains(lower, "fetch first") ||
-		strings.Contains(lower, "failed to push some refs")
+		strings.Contains(lower, "fetch first")
 }
