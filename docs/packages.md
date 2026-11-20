@@ -9,6 +9,10 @@
 - `state` provides generic crawler cursors and freshness records, including mapped adapters for existing app table layouts.
 - `cache` provides read-only local cache files and staged SQLite database, WAL, and SHM captures. `SnapshotFile` and the SQLite capture need a quiescent source or an application-owned coherent snapshot; copying files from a live writer does not provide a transactional snapshot. For a file or small file set that a live desktop app rewrites in place, `cache.CopyStable` and `cache.CopyStableFiles` take a private copy and accept it only when each source's size, modification time, and file identity are unchanged across the copy, retrying and then returning `*cache.SourceBusyError`.
 
+Home expansion in `config` preserves path traversal: in `~/link/../config.toml`,
+the filesystem resolves `link` before `..`. Config reads and writes therefore
+follow the selected path even when `link` is a symlink.
+
 `store.Open` and `store.OpenReadOnly` preserve literal filesystem paths,
 including whitespace. On Windows, plain filesystem path components ending in
 spaces or dots are rejected before access. Explicit `file:` SQLite URIs retain

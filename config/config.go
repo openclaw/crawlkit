@@ -278,7 +278,11 @@ func LoadTOML(path string, dst any) error {
 
 func WriteTOML(path string, src any, perm os.FileMode) error {
 	resolved := ExpandHome(path)
-	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
+	dir, _ := filepath.Split(resolved)
+	if dir == "" {
+		dir = "."
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 	data, err := toml.Marshal(src)
@@ -337,7 +341,8 @@ func ExpandHome(path string) string {
 		if err != nil {
 			return path
 		}
-		return filepath.Join(home, path[2:])
+		// Let the filesystem resolve symlinks before any subsequent "..".
+		return home + string(filepath.Separator) + filepath.FromSlash(path[2:])
 	}
 	return path
 }
