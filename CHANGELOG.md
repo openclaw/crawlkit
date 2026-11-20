@@ -36,6 +36,8 @@
 
 - Avoid rebasing and retrying mirror pushes rejected by server policy or authentication; retry only explicit branch-divergence failures.
 
+- Preserve surrounding whitespace in mirror repository paths so initialization and commits do not target a similarly named neighboring repository.
+
 ## 0.18.0 - 2026-11-15
 
 **Highlights:** Add verified private backup transfers and shared seed APIs, fix scheduler and archive-path handling, and include the Go security fix for GO-2026-6859.

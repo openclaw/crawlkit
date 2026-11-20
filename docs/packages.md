@@ -40,6 +40,9 @@ sidecars. Nonpositive limits leave file size unbounded.
 - `backup` writes age-encrypted JSONL/Gzip shards and manifests, manages recipients and identities, lists Git-backed history, and verifies historical restores.
 - `mirror` clones, initializes, pulls, commits, and pushes Git-backed archives. It also provides non-mutating fetches, immutable snapshot tags, Git-object reads, and history inspection.
 
+`mirror.Options.RepoPath` preserves surrounding whitespace in filesystem paths.
+Repository initialization rejects empty or whitespace-only paths.
+
 `mirror.CommitPaths` selects files and directories literally, preserving whitespace
 and validating repository-relative paths. Git glob patterns and
 pathspec magic are not expanded. Use `.` to commit the whole archive.

@@ -14,6 +14,7 @@ import (
 )
 
 type Options struct {
+	// RepoPath is a literal filesystem path; surrounding whitespace is preserved.
 	RepoPath string
 	Remote   string
 	Branch   string
@@ -24,7 +25,7 @@ type Options struct {
 
 func EnsureRepo(ctx context.Context, opts Options) error {
 	opts = normalize(opts)
-	if opts.RepoPath == "" {
+	if strings.TrimSpace(opts.RepoPath) == "" {
 		return errors.New("repo path is required")
 	}
 	if _, err := os.Stat(filepath.Join(opts.RepoPath, ".git")); err == nil {
@@ -390,7 +391,6 @@ func CleanSQLiteSidecars(rootDir string) (int, error) {
 }
 
 func normalize(opts Options) Options {
-	opts.RepoPath = strings.TrimSpace(opts.RepoPath)
 	opts.Remote = strings.TrimSpace(opts.Remote)
 	opts.Branch = strings.TrimSpace(opts.Branch)
 	opts.Git = strings.TrimSpace(opts.Git)
