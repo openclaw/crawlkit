@@ -1,6 +1,8 @@
 package snapshot
 
 import (
+	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,16 +61,22 @@ func ReadManifest(rootDir string) (Manifest, error) {
 	return manifest, nil
 }
 
+// WriteManifest replaces the manifest through a synced temporary file.
+// Replacement is atomic on Unix; other platforms follow os.Rename semantics.
 func WriteManifest(rootDir string, manifest Manifest) error {
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal manifest: %w", err)
 	}
-	data = append(data, '\n')
 	if err := os.MkdirAll(rootDir, 0o755); err != nil {
 		return fmt.Errorf("create root dir: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(rootDir, ManifestName), data, 0o600); err != nil {
+	root, err := os.OpenRoot(rootDir)
+	if err != nil {
+		return fmt.Errorf("open root dir: %w", err)
+	}
+	defer root.Close()
+	if err := publishSnapshotManifestData(context.Background(), root, data, rand.Text()); err != nil {
 		return fmt.Errorf("write manifest: %w", err)
 	}
 	return nil
