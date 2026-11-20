@@ -7,6 +7,49 @@ import (
 	"testing"
 )
 
+func TestHomeExpansionPreservesSymlinkTraversal(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX symlink traversal fixture")
+	}
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	target := filepath.Join(dir, "target")
+	for _, path := range []string{home, filepath.Join(target, "child")} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setTestHome(t, home)
+	if err := os.Symlink(filepath.Join(target, "child"), filepath.Join(home, "link")); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []struct{ dir, value string }{{home, "neighbor"}, {target, "selected"}} {
+		if err := os.WriteFile(filepath.Join(entry.dir, "config.toml"), []byte("value = '"+entry.value+"'\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := "~/link/../config.toml"
+	var cfg map[string]string
+	if err := LoadTOML(path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg["value"] != "selected" {
+		t.Errorf("loaded %q, want selected", cfg["value"])
+	}
+	if err := WriteTOML(path, map[string]string{"value": "updated"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []struct{ dir, value string }{{home, "neighbor"}, {target, "updated"}} {
+		var got map[string]string
+		if err := LoadTOML(filepath.Join(entry.dir, "config.toml"), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got["value"] != entry.value {
+			t.Errorf("config in %s = %q, want %q", entry.dir, got["value"], entry.value)
+		}
+	}
+}
+
 func TestWriteTOMLHonorsReplacementPermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX permission bits")

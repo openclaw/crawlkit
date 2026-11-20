@@ -40,6 +40,8 @@
 
 - Preserve surrounding whitespace in mirror repository paths so initialization and commits do not target a similarly named neighboring repository.
 
+- Preserve symlink traversal when expanding home-relative config paths so reads and writes use the selected file instead of a lexical neighbor.
+
 ## 0.18.0 - 2026-11-15
 
 **Highlights:** Add verified private backup transfers and shared seed APIs, fix scheduler and archive-path handling, and include the Go security fix for GO-2026-6859.

@@ -337,7 +337,8 @@ func ExpandHome(path string) string {
 		if err != nil {
 			return path
 		}
-		return filepath.Join(home, path[2:])
+		// Let the filesystem resolve symlinks before any subsequent "..".
+		return home + string(filepath.Separator) + filepath.FromSlash(path[2:])
 	}
 	return path
 }
