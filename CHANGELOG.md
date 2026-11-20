@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve literal SQLite snapshot names so surrounding whitespace does not redirect replacement to a neighboring database bundle; reject ambiguous destination names on Windows.
+
 - Preserve whitespace in FTS table names during optimization so a similarly named table is not modified instead.
 
 - Keep SQLite sidecar cleanup in the selected mirror root when its path contains surrounding whitespace, rather than deleting sidecars from a neighboring directory.

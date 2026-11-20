@@ -24,7 +24,7 @@ type SQLiteSnapshot struct {
 }
 
 // SnapshotSQLite copies a SQLite database and its optional WAL/SHM sidecars.
-// SourcePath and DestinationDir retain literal whitespace. Ambiguous trailing
+// SourcePath, DestinationDir and Name retain literal whitespace. Ambiguous trailing
 // spaces or dots in Windows path components are rejected.
 // The caller owns DestinationDir and decides whether snapshots are temporary
 // or retained. The caller must exclude concurrent destination readers/writers
@@ -50,12 +50,15 @@ func SnapshotSQLite(opts SQLiteSnapshotOptions) (SQLiteSnapshot, error) {
 	if !info.Mode().IsRegular() {
 		return SQLiteSnapshot{}, fmt.Errorf("sqlite source is not a regular file: %s", source)
 	}
-	name := strings.TrimSpace(opts.Name)
+	name := opts.Name
 	if name == "" {
 		name = filepath.Base(source)
 	}
 	if filepath.Base(name) != name || name == "." || name == ".." {
 		return SQLiteSnapshot{}, fmt.Errorf("sqlite snapshot name must be a file name: %q", name)
+	}
+	if err := validateSQLitePath(filepath.Join(destination, name)); err != nil {
+		return SQLiteSnapshot{}, err
 	}
 	if err := os.MkdirAll(destination, 0o700); err != nil {
 		return SQLiteSnapshot{}, fmt.Errorf("create sqlite snapshot dir: %w", err)
