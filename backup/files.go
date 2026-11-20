@@ -142,7 +142,7 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 		if err != nil {
 			return nil, nil, err
 		}
-		if entry, ok, err := reusableFileEntry(cfg, oldByHash, written, hashValue, size); err != nil {
+		if entry, ok, err := reusableFileEntry(ctx, cfg, oldByHash, written, hashValue, size); err != nil {
 			return nil, nil, err
 		} else if ok {
 			out = append(out, entry)
@@ -159,7 +159,7 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 				_ = os.Remove(tmpPath)
 			}
 		}()
-		if entry, ok, err := reusableFileEntry(cfg, oldByHash, written, hashValue, size); err != nil {
+		if entry, ok, err := reusableFileEntry(ctx, cfg, oldByHash, written, hashValue, size); err != nil {
 			return nil, nil, err
 		} else if ok {
 			if err := os.Remove(tmpPath); err != nil {
@@ -197,7 +197,7 @@ func writeFiles(ctx context.Context, cfg Config, old Manifest, files []File, reu
 	return out, index, nil
 }
 
-func reusableFileEntry(cfg Config, oldByHash map[string]indexedFile, written map[string]FileEntry, hashValue string, size int64) (FileEntry, bool, error) {
+func reusableFileEntry(ctx context.Context, cfg Config, oldByHash map[string]indexedFile, written map[string]FileEntry, hashValue string, size int64) (FileEntry, bool, error) {
 	if entry, ok := written[hashValue]; ok {
 		return entry, true, nil
 	}
@@ -215,6 +215,9 @@ func reusableFileEntry(cfg Config, oldByHash map[string]indexedFile, written map
 			return FileEntry{}, false, nil
 		}
 		return FileEntry{}, false, err
+	}
+	if !info.Mode().IsRegular() || !verifiedStoredPayload(ctx, cfg, target, hashValue, size) {
+		return FileEntry{}, false, nil
 	}
 	entry := FileEntry{Shard: oldFile.Entry.Shard, Bytes: info.Size()}
 	written[hashValue] = entry

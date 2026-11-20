@@ -54,6 +54,109 @@ func publishedFiles(t *testing.T, repo string) map[string][]byte {
 	return files
 }
 
+func TestSnapshotRefreshRepairsCorruptShard(t *testing.T) {
+	ctx := context.Background()
+	cfg := publicationConfig(t)
+	shards := []Shard{{Table: "messages", Path: "data/messages.age", Rows: []row{{ID: "1", Body: "keep this"}}}}
+	first, err := WriteSnapshot(ctx, cfg, shards, Manifest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := ResolveShardPath(cfg.Repo, first.Shards[0].Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext[len(ciphertext)-1] ^= 1
+	if err := os.WriteFile(path, ciphertext, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadSnapshot(cfg, first); err == nil {
+		t.Fatal("corrupted fixture still decrypts")
+	}
+	before := publishedFiles(t, cfg.Repo)
+	failing := append(append([]Shard(nil), shards...), Shard{Table: "later", Path: "data/later.age", Rows: make(chan int)})
+	if _, err := WriteSnapshot(ctx, cfg, failing, first); err == nil {
+		t.Fatal("expected later encoding failure")
+	}
+	if !reflect.DeepEqual(before, publishedFiles(t, cfg.Repo)) {
+		t.Fatal("failed repair changed published files or leaked replacements")
+	}
+	refreshed, err := WriteSnapshot(ctx, cfg, shards, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadSnapshot(cfg, refreshed); err != nil {
+		t.Fatalf("refresh succeeded but retained corrupt ciphertext: %v", err)
+	}
+}
+
+func TestSnapshotRefreshWithoutIdentityWritesFreshCiphertext(t *testing.T) {
+	ctx := context.Background()
+	cfg := publicationConfig(t)
+	shards := []Shard{{Table: "messages", Path: "data/messages.age", Rows: []row{{ID: "1"}}}}
+	first, err := WriteSnapshot(ctx, cfg, shards, Manifest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := cfg
+	writer.Identity = ""
+	next, err := WriteSnapshot(ctx, writer, shards, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Shards[0].Path == first.Shards[0].Path {
+		t.Fatal("reused ciphertext without a verification identity")
+	}
+	if _, err := ReadSnapshot(cfg, next); err != nil {
+		t.Fatalf("recipient-only writer did not produce a readable snapshot: %v", err)
+	}
+}
+
+func TestSnapshotRefreshRepairsWrongFilePayload(t *testing.T) {
+	ctx := context.Background()
+	cfg := publicationConfig(t)
+	source := filepath.Join(t.TempDir(), "source.bin")
+	want := []byte("correct media payload")
+	if err := os.WriteFile(source, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files := []File{{Path: "media/file.bin", Source: source}}
+	first, err := WriteSnapshotWithFiles(ctx, cfg, nil, files, Manifest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := ResolveShardPath(cfg.Repo, first.Files[0].Shard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrong, _, err := encryptShardContext(ctx, []byte("incorrect media bytes"), cfg.Recipients)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, wrong, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RestoreFiles(ctx, cfg, first, t.TempDir()); err == nil {
+		t.Fatal("wrong payload fixture restored without error")
+	}
+	next, err := WriteSnapshotWithFiles(ctx, cfg, nil, files, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := t.TempDir()
+	if _, err := RestoreFiles(ctx, cfg, next, restored); err != nil {
+		t.Fatalf("refresh succeeded but reused incorrect file content: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(restored, "media", "file.bin"))
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("restored content = %q, err = %v", got, err)
+	}
+}
+
 func TestSnapshotRotationFailurePreservesPublishedCiphertext(t *testing.T) {
 	cfg := publicationConfig(t)
 	shards := []Shard{{Table: "messages", Path: "data/messages/01.jsonl.gz.age", Rows: []row{{ID: "1", Body: "first"}}}}

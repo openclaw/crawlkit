@@ -238,7 +238,8 @@ func writeShard(ctx context.Context, cfg Config, old Manifest, table, rel string
 		if err != nil {
 			return ShardEntry{}, err
 		}
-		if info, err := os.Stat(target); err == nil && info.Mode().IsRegular() {
+		if info, err := os.Stat(target); err == nil && info.Mode().IsRegular() &&
+			verifiedStoredPayload(ctx, cfg, target, hash, int64(len(plaintext))) {
 			oldEntry.Bytes = info.Size()
 			return oldEntry, nil
 		}

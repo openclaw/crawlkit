@@ -139,6 +139,48 @@ func decryptShard(ciphertext []byte, identityPath string) ([]byte, error) {
 	return plaintext, nil
 }
 
+// Reuse requires authenticated plaintext matching the current source. A missing
+// identity or damaged object falls back to fresh encryption from that source.
+func verifiedStoredPayload(ctx context.Context, cfg Config, target, hash string, size int64) bool {
+	if size < 0 || ctx.Err() != nil {
+		return false
+	}
+	data, err := os.ReadFile(expandHome(cfg.Identity)) // #nosec G304 -- path is the configured local age identity file.
+	if err != nil {
+		return false
+	}
+	identity, err := parseIdentity(data)
+	if err != nil {
+		return false
+	}
+	file, err := os.Open(target) // #nosec G304 -- callers resolve stored paths with ResolveShardPath.
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	decrypted, err := age.Decrypt(file, identity)
+	if err != nil {
+		return false
+	}
+	gz, err := gzip.NewReader(decrypted)
+	if err != nil {
+		return false
+	}
+	defer gz.Close()
+	hasher := sha256.New()
+	n, err := copyContext(ctx, hasher, io.LimitReader(gz, size))
+	if err != nil || n != size {
+		return false
+	}
+	// Probe EOF separately to avoid size+1 overflow and check the gzip/age tail.
+	extra, err := copyContext(ctx, io.Discard, io.LimitReader(gz, 1))
+	return err == nil && extra == 0 && ctx.Err() == nil && hex.EncodeToString(hasher.Sum(nil)) == hash
+}
+
 func parseRecipients(values []string) ([]age.Recipient, error) {
 	var out []age.Recipient
 	for _, value := range values {
