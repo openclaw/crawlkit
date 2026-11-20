@@ -45,6 +45,62 @@ func TestEnsureRepoCommitDirty(t *testing.T) {
 	}
 }
 
+func TestEnsureRepoRejectsBlankPath(t *testing.T) {
+	for _, path := range []string{"", " \t "} {
+		if err := EnsureRepo(context.Background(), Options{RepoPath: path}); err == nil {
+			t.Errorf("expected an error for blank repository path %q", path)
+		}
+	}
+}
+
+func TestMirrorPreservesRepositoryRootWhitespace(t *testing.T) {
+	for _, root := range []string{" share", "share "} {
+		for _, operation := range []string{"ensure", "commit"} {
+			t.Run(operation+"/"+root, func(t *testing.T) {
+				if runtime.GOOS == "windows" && strings.HasSuffix(root, " ") {
+					t.Skip("Windows aliases trailing-space directory names")
+				}
+				t.Chdir(t.TempDir())
+				ctx := context.Background()
+				if err := run(ctx, "", "git", "init", "-b", "main", "share"); err != nil {
+					t.Fatal(err)
+				}
+				opts := Options{RepoPath: root, Branch: "main"}
+				if operation == "ensure" {
+					if err := EnsureRepo(ctx, opts); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
+						t.Fatalf("requested repository was not created: %v", err)
+					}
+					return
+				}
+				if err := run(ctx, "", "git", "init", "-b", "main", root); err != nil {
+					t.Fatal(err)
+				}
+				for _, repo := range []string{root, "share"} {
+					if err := os.WriteFile(filepath.Join(repo, "manifest.json"), []byte(repo+"\n"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if committed, err := CommitPaths(ctx, opts, "archive: selected root", []string{"manifest.json"}); err != nil || !committed {
+					t.Fatalf("commit = %v, %v", committed, err)
+				}
+				body, err := output(ctx, root, "git", "show", "HEAD:manifest.json")
+				if err != nil {
+					t.Fatalf("requested repository has no committed manifest: %v", err)
+				}
+				if strings.ReplaceAll(body, "\r\n", "\n") != root+"\n" {
+					t.Fatalf("committed manifest = %q, want %q", body, root+"\n")
+				}
+				if _, err := output(ctx, "share", "git", "rev-parse", "--verify", "HEAD"); err == nil {
+					t.Fatal("neighboring repository was committed")
+				}
+			})
+		}
+	}
+}
+
 func TestEnsureRepoUpdatesExistingOrigin(t *testing.T) {
 	ctx := context.Background()
 	repo := filepath.Join(t.TempDir(), "share")
