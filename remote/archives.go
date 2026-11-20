@@ -1,7 +1,9 @@
 package remote
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -125,6 +127,15 @@ type QueryResult struct {
 	Stats      QueryStats       `json:"stats,omitempty"`
 	SchemaHash string           `json:"schema_hash,omitempty"`
 	Snapshot   *ArchiveSnapshot `json:"snapshot,omitempty"`
+}
+
+// UnmarshalJSON keeps numbers in Rows and Values as json.Number so identifiers
+// and decimal values survive decoding and re-encoding without float64 rounding.
+func (r *QueryResult) UnmarshalJSON(data []byte) error {
+	type queryResult QueryResult
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	return decoder.Decode((*queryResult)(r))
 }
 
 type IngestManifest struct {

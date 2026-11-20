@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve exact JSON numbers in remote query and batch-read results instead of rounding large integers and precise decimals through float64.
+
 - Add an explicit retained GitHub snapshot seed profile bound to the original
   file hash, source scope and full-row inventory. Retained snapshots do not
   claim a live change journal or complete upstream acquisition.

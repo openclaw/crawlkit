@@ -153,6 +153,11 @@ shorter client or context deadlines still take precedence.
 
 - `remote` provides a provider-neutral HTTP client, configuration, query, ingest, authentication, status, SQLite bundle, and protocol-contract types for Worker-fronted archives.
 
+Remote query results decode numeric values in `Rows` and `Values` as
+`json.Number`, including nested values, to preserve integer and decimal precision.
+Use its `Int64` or `Float64` methods when arithmetic is needed; typed query
+statistics retain their declared Go types.
+
 The service boundary is defined in [Remote Contract](remote-contract.md). The Cloudflare Worker and D1 deployment remain outside this module.
 
 ## Background processing
