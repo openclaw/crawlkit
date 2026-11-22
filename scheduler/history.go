@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 type RunRecord struct {
@@ -92,20 +93,34 @@ func appendHistoryFile(file historyFile, record RunRecord) (err error) {
 }
 
 func readHistoryTail(file io.ReaderAt, end int64) (int64, []byte, error) {
-	var tail []byte
+	var chunks [][]byte
+	window := int64(4096)
 	for end > 0 {
-		start := max(int64(0), end-4096)
+		start := max(int64(0), end-window)
 		block := make([]byte, end-start)
 		if _, err := file.ReadAt(block, start); err != nil {
 			return 0, nil, err
 		}
-		if n := bytes.LastIndexByte(block, '\n'); n >= 0 {
-			return start + int64(n) + 1, append(block[n+1:], tail...), nil
+		n := bytes.LastIndexByte(block, '\n')
+		if n >= 0 {
+			start += int64(n) + 1
+			block = block[n+1:]
 		}
-		tail = append(block, tail...)
+		if n >= 0 || start == 0 {
+			if len(chunks) == 0 {
+				return start, block, nil
+			}
+			chunks = append(chunks, block)
+			slices.Reverse(chunks)
+			return start, bytes.Join(chunks, nil), nil
+		}
+		chunks = append(chunks, block)
 		end = start
+		// Grow reads and join once, avoiding repeated copies of the whole tail.
+		window = min(window, end)
+		window += min(window, end-window)
 	}
-	return 0, tail, nil
+	return 0, nil, nil
 }
 
 func incompleteHistoryRecord(data []byte) bool {
