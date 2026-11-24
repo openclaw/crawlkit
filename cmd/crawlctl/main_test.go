@@ -39,12 +39,13 @@ func TestResolveVersion(t *testing.T) {
 	}
 }
 
-func TestLatestRecordForJobAggregatesRepoRuns(t *testing.T) {
+func TestLatestRecordsForJobsAggregatesRepoRuns(t *testing.T) {
 	records := []scheduler.RunRecord{
 		{Job: "gitcrawl", Repo: "openclaw/old", Status: "success", FinishedAt: "2026-05-22T10:00:00Z"},
 		{Job: "gitcrawl", Repo: "openclaw/new", Status: "failed", FinishedAt: "2026-05-22T11:00:00Z"},
+		{Job: "gitcrawl", Repo: "openclaw/older", Status: "success", FinishedAt: "2026-05-22T09:00:00Z"},
 	}
-	record, ok := latestRecordForJob(records, "gitcrawl")
+	record, ok := latestRecordsForJobs(records)["gitcrawl"]
 	if !ok {
 		t.Fatal("expected record")
 	}
@@ -53,12 +54,12 @@ func TestLatestRecordForJobAggregatesRepoRuns(t *testing.T) {
 	}
 }
 
-func TestLatestRecordForJobUsesLastEntryAtSameTime(t *testing.T) {
+func TestLatestRecordsForJobsUsesLastEntryAtSameTime(t *testing.T) {
 	history := []scheduler.RunRecord{
 		{Job: "sync", Status: "failed", FinishedAt: "2026-05-22T10:00:00Z"},
 		{Job: "sync", Status: "success", FinishedAt: "2026-05-22T10:00:00Z"},
 	}
-	record, ok := latestRecordForJob(history, "sync")
+	record, ok := latestRecordsForJobs(history)["sync"]
 	if !ok || record.Status != "success" {
 		t.Fatalf("latest record = %+v, found = %v; want the later successful run", record, ok)
 	}

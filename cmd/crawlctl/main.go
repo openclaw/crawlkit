@@ -283,10 +283,11 @@ func (a *app) runStatus(args []string) error {
 	if err != nil {
 		return err
 	}
-	last := scheduler.LastRecords(history)
 	if a.json {
+		last := scheduler.LastRecords(history)
 		return writeJSON(a.stdout, map[string]any{"config": paths.ConfigPath, "jobs": cfg.Jobs, "last": last})
 	}
+	last := latestRecordsForJobs(history)
 	names := make([]string, 0, len(cfg.Jobs))
 	for name := range cfg.Jobs {
 		names = append(names, name)
@@ -299,7 +300,7 @@ func (a *app) runStatus(args []string) error {
 		if job.Enabled {
 			state = "never"
 		}
-		if record, ok := latestRecordForJob(history, name); ok {
+		if record, ok := last[name]; ok {
 			state = record.Status
 			detail = " " + record.FinishedAt
 		}
@@ -308,19 +309,14 @@ func (a *app) runStatus(args []string) error {
 	return nil
 }
 
-func latestRecordForJob(history []scheduler.RunRecord, name string) (scheduler.RunRecord, bool) {
-	var latest scheduler.RunRecord
-	found := false
+func latestRecordsForJobs(history []scheduler.RunRecord) map[string]scheduler.RunRecord {
+	latest := make(map[string]scheduler.RunRecord)
 	for _, record := range history {
-		if record.Job != name {
-			continue
-		}
-		if !found || record.FinishedAt >= latest.FinishedAt {
-			latest = record
-			found = true
+		if previous, found := latest[record.Job]; !found || record.FinishedAt >= previous.FinishedAt {
+			latest[record.Job] = record
 		}
 	}
-	return latest, found
+	return latest
 }
 
 func (a *app) runLogs(args []string) error {
