@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Avoid rescanning scheduler history for each job when showing text status.
+
 - Keep scheduler history recovery efficient for long interrupted records.
 
 - Update the ANSI terminal library to 0.11.10 and setup-go to 7.1.0 across CI, downstream checks, and release preflight while retaining Go 1.27.4 and SQLite's required libc version.
