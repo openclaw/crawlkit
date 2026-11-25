@@ -273,6 +273,60 @@ type ioDiscard struct{}
 
 func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }
 
+func TestRunLogsReportsOutputFailure(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "crawlctl.toml")
+	paths, err := scheduler.Save(configPath, scheduler.DefaultConfig(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.StateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(paths.BaseDir, "job.log")
+	const data = "first\nsecond\nthird\n"
+	if err := os.WriteFile(logPath, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	history, err := json.Marshal(scheduler.RunRecord{Job: "sync", LogPath: logPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.History, append(history, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, capacity := range []int{0, 8} {
+		t.Run(fmt.Sprintf("after_%d_bytes", capacity), func(t *testing.T) {
+			outputErr := errors.New("output unavailable")
+			var written bytes.Buffer
+			failed := false
+			writer := logWriterFunc(func(p []byte) (int, error) {
+				if failed {
+					t.Error("attempted another write after output failed")
+				}
+				n := min(len(p), capacity-written.Len())
+				written.Write(p[:n])
+				if n < len(p) {
+					failed = true
+					return n, outputErr
+				}
+				return n, nil
+			})
+			a := app{stdout: writer, stderr: ioDiscard{}}
+			err := a.run(t.Context(), []string{"--config", configPath, "logs", "--tail", "3", "sync"})
+			if !errors.Is(err, outputErr) || exitCode(err) != 1 {
+				t.Fatalf("logs error = %v, exit = %d; want output failure and exit 1", err, exitCode(err))
+			}
+			if written.String() != data[:capacity] {
+				t.Fatalf("output = %q, want %q", written.String(), data[:capacity])
+			}
+		})
+	}
+}
+
+type logWriterFunc func([]byte) (int, error)
+
+func (f logWriterFunc) Write(p []byte) (int, error) { return f(p) }
+
 func TestRunJobsRejectsBlankRepositories(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

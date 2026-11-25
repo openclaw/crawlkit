@@ -521,7 +521,9 @@ func printTail(w io.Writer, path string, limit int) error {
 		return err
 	}
 	for _, line := range lines {
-		fmt.Fprintln(w, line)
+		if _, err := fmt.Fprintln(w, line); err != nil {
+			return err
+		}
 	}
 	return nil
 }
