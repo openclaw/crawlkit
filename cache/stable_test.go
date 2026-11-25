@@ -408,7 +408,7 @@ func TestCopyStableFileDoesNotWritePastApprovedSize(t *testing.T) {
 	}
 	_ = f.Close()
 	dir := t.TempDir()
-	_, reason, err := copyStableFile(context.Background(), &stableSource{path: src, before: before}, dir)
+	_, reason, err := copyStableFile(context.Background(), &stableSource{path: src, before: before}, dir, make([]byte, 1<<20))
 	if err != nil || reason == "" {
 		t.Fatalf("reason=%q err=%v, want a retryable change", reason, err)
 	}

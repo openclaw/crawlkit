@@ -232,9 +232,13 @@ func copyStableOnce(ctx context.Context, srcs []string, dir string, attempt int,
 		opts.afterStat(attempt)
 	}
 
+	var buffer []byte
+	if len(files) > 0 {
+		buffer = make([]byte, 1<<20)
+	}
 	for i := 0; i < len(files); i++ {
 		f := files[i]
-		missing, reason, err := copyStableFile(ctx, f, dir)
+		missing, reason, err := copyStableFile(ctx, f, dir, buffer)
 		if err != nil {
 			return nil, "", err
 		}
@@ -289,7 +293,7 @@ func copyStableOnce(ctx context.Context, srcs []string, dir string, attempt int,
 
 // copyStableFile copies one source. missing reports a file that vanished
 // before it could be opened; reason is a non-empty retryable change.
-func copyStableFile(ctx context.Context, f *stableSource, dir string) (missing bool, reason string, err error) {
+func copyStableFile(ctx context.Context, f *stableSource, dir string, buffer []byte) (missing bool, reason string, err error) {
 	in, err := os.Open(f.path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -322,7 +326,7 @@ func copyStableFile(ctx context.Context, f *stableSource, dir string) (missing b
 	// Copy at most the approved size plus one byte, so a source that keeps
 	// growing cannot outrun the size and space checks; the extra byte shows
 	// the growth.
-	f.n, err = copyContext(ctx, out, io.LimitReader(in, f.before.Size()+1))
+	f.n, err = copyContext(ctx, out, io.LimitReader(in, f.before.Size()+1), buffer)
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}
@@ -351,8 +355,7 @@ func clearDir(dir string) error {
 	return nil
 }
 
-func copyContext(ctx context.Context, w io.Writer, r io.Reader) (int64, error) {
-	buf := make([]byte, 1<<20)
+func copyContext(ctx context.Context, w io.Writer, r io.Reader, buf []byte) (int64, error) {
 	var total int64
 	for {
 		if err := ctx.Err(); err != nil {
