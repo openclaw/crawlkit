@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Report output failures from `crawlctl logs` instead of returning success after truncated output.
+
 - Avoid rescanning scheduler history for each job when showing text status.
 
 - Keep scheduler history recovery efficient for long interrupted records.
