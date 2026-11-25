@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reuse the copy buffer across files in each stable cache capture attempt to reduce allocation overhead for multi-file archives.
+
 - Report output failures from `crawlctl logs` instead of returning success after truncated output.
 
 - Avoid rescanning scheduler history for each job when showing text status.
