@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove empty snapshot generation directories after unchanged, failed, or replacement exports while preserving unlisted files.
+
 - Reuse the copy buffer across files in each stable cache capture attempt to reduce allocation overhead for multi-file archives.
 
 - Report output failures from `crawlctl logs` instead of returning success after truncated output.
