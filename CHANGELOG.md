@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.19.0 - 2026-11-26
+
+**Highlights:** Add inspect, verify and resumable private backup transfers, retain exact snapshot seed identities, and harden archive paths, scheduling and snapshot publication.
+
 - Remove empty snapshot generation directories after unchanged, failed, or replacement exports while preserving unlisted files.
 
 - Reuse the copy buffer across files in each stable cache capture attempt to reduce allocation overhead for multi-file archives.
