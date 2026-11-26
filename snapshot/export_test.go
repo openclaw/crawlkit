@@ -61,6 +61,70 @@ func TestExportFailurePreservesPreviousPack(t *testing.T) {
 	}
 }
 
+func TestExportDoesNotAccumulateEmptyGenerations(t *testing.T) {
+	for _, mode := range []string{"unchanged", "changed", "empty", "failed", "unlisted"} {
+		t.Run(mode, func(t *testing.T) {
+			db := exportTestDB(t, `create table things(id integer primary key, value text); insert into things values(1,'first');`)
+			if mode == "empty" {
+				mustExec(t, db, `delete from things`)
+			}
+			opts := ExportOptions{DB: db, RootDir: t.TempDir(), Tables: []string{"things"}}
+			first, err := Export(t.Context(), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := packBytes(t, opts.RootDir, first)
+			var unlisted string
+			if mode == "unlisted" {
+				unlisted = filepath.Join(opts.RootDir, filepath.Dir(first.Tables[0].Files[0]), "unlisted.txt")
+				if err := os.WriteFile(unlisted, []byte("keep"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for i := 0; i < 3; i++ {
+				if mode == "changed" || mode == "unlisted" || mode == "failed" {
+					mustExec(t, db, `update things set value=value || 'x'`)
+				}
+				if mode == "failed" {
+					opts.Tables = []string{"things", "missing"}
+				}
+				current, err := Export(t.Context(), opts)
+				if mode == "failed" {
+					if err == nil {
+						t.Fatal("missing table accepted")
+					}
+					if !reflect.DeepEqual(before, packBytes(t, opts.RootDir, first)) {
+						t.Fatal("failed export changed previous pack")
+					}
+				} else if err != nil {
+					t.Fatal(err)
+				} else {
+					packBytes(t, opts.RootDir, current)
+				}
+				entries, err := os.ReadDir(filepath.Join(opts.RootDir, "tables", ".generations"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := 1
+				if mode == "empty" {
+					want = 0
+				} else if mode == "unlisted" {
+					want = 2
+				}
+				if len(entries) != want {
+					t.Fatalf("after export %d: %d generations, want %d", i+2, len(entries), want)
+				}
+				if unlisted != "" {
+					data, err := os.ReadFile(unlisted)
+					if err != nil || string(data) != "keep" {
+						t.Fatalf("unlisted file changed: %q, %v", data, err)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestExportOneReadSnapshotAcrossTables(t *testing.T) {
 	db := exportTestDB(t, `create table parents(id integer, version integer); create table children(id integer, version integer);
 insert into parents values(1,1); insert into children values(1,1);`)

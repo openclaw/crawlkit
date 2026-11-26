@@ -81,6 +81,10 @@ func exportSnapshot(ctx context.Context, opts ExportOptions) (result Manifest, r
 				resultErr = errors.Join(resultErr, fmt.Errorf("%s: %w", label, err))
 			}
 		}
+		for _, table := range opts.Tables {
+			removeEmptySnapshotDir(root, generation+"/"+table)
+		}
+		removeEmptySnapshotDir(root, generation)
 	}()
 	tx := opts.ReadTx
 	if tx == nil {
@@ -134,8 +138,23 @@ func exportSnapshot(ctx context.Context, opts ExportOptions) (result Manifest, r
 		if err := root.Remove(filepath.FromSlash(rel)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return result, fmt.Errorf("snapshot manifest committed; cleanup failed: %w", err)
 		}
+		dir := filepath.ToSlash(filepath.Dir(rel))
+		removeEmptySnapshotDir(root, dir)
+		if strings.HasPrefix(dir, "tables/.generations/") {
+			removeEmptySnapshotDir(root, filepath.ToSlash(filepath.Dir(dir)))
+		}
 	}
 	return result, nil
+}
+
+func removeEmptySnapshotDir(root *os.Root, dir string) {
+	local := filepath.FromSlash(dir)
+	info, err := root.Lstat(local)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	// Directory removal is best effort and cannot remove unlisted contents.
+	_ = root.Remove(local)
 }
 
 func publishSnapshotManifest(ctx context.Context, root *os.Root, manifest Manifest, generation string) error {
