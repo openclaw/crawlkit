@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Run TruffleHog 3.100.1 with its matching action version while retaining the existing secret-scan ranges and verification flags.
+
+- Update SQLite to 1.63.0 while retaining its required libc 1.80.1 dependency.
+
 ## 0.19.0 - 2026-11-26
 
 **Highlights:** Add inspect, verify and resumable private backup transfers, retain exact snapshot seed identities, and harden archive paths, scheduling and snapshot publication.
